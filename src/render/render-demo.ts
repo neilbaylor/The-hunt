@@ -125,7 +125,7 @@ async function divotStrip() {
       while (t < tt) { d.update(1 / 60); t += 1 / 60; }
       // the last moment from above, to show the scar and where the strip came to rest
       const last = i === times.length - 1, cp = camera.position.clone(), cq = camera.quaternion.clone();
-      if (last) { camera.position.set(0.25, 1.1, -0.35); camera.lookAt(0, 0, -0.9); }
+      if (last) { camera.position.set(0.45, 1.9, 0.55); camera.lookAt(0, 0, -1.2); }
       range.update(1 / 60, camera, focus); post.render(1 / 60);
       if (last) { camera.position.copy(cp); camera.quaternion.copy(cq); }
       g.drawImage(renderer.domElement, i * w, r * h);

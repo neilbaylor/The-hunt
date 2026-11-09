@@ -11,7 +11,7 @@ import { CLUB_SPECS } from './golfer/club';
 import { Ball, BALL, WIND } from './game/ball';
 import { planShot, LIES, YD, type ShotPlan } from './game/shot';
 import { Tracer } from './game/tracer';
-import { ShotCam, isLongShot, type ShotCamCtx } from './game/shotcam';
+import { ShotCam, isLongShot, pickVariant, type ShotCamCtx } from './game/shotcam';
 import { Sound } from './game/audio';
 import { Hud, viewport, type CardData } from './ui/hud';
 import { tourBallMaterial } from './ui/ballmat';
@@ -325,10 +325,39 @@ function startShotCam() {
   const Y = new THREE.Vector3(0, 1, 0);
   const faceDir = new THREE.Vector3(-side, 0, 0).applyAxisAngle(Y, -aim.dir);   // towards the ball at address
   const targetDir = new THREE.Vector3(ball.vel.x, 0, ball.vel.z);
-  shotcam.start(camPos, camLook, faceDir, targetDir, side);
+  const variant = pickVariant(QS.get('shotcam'));
+  shotcam.start(camPos, camLook, faceDir, targetDir, side, variant);
+  if (variant === 'freeze') turf.burst(golfer.ballWorld(new THREE.Vector3()), targetDir);
   camMode = 'cine';
 }
 /** tap during the flight: run the ball on to just before it lands and show the landing */
+// a little burst of turf and grass at impact (seen hanging in the air during bullet time)
+const turf = (() => {
+  const N = 46, pos = new Float32Array(N * 3), vel = new Float32Array(N * 3), col = new Float32Array(N * 3);
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.028, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false }));
+  pts.visible = false; pts.frustumCulled = false; scene.add(pts);
+  let life = 0;
+  return {
+    burst(at: THREE.Vector3, dir: THREE.Vector3) {
+      const d = dir.clone().setY(0).normalize();
+      for (let i = 0; i < N; i++) {
+        pos.set([at.x + (Math.random() - 0.5) * 0.06, at.y + 0.01, at.z + (Math.random() - 0.5) * 0.06], i * 3);
+        const sp = 1.2 + Math.random() * 2.6, up = 0.8 + Math.random() * 2.2, sd = (Math.random() - 0.5) * 1.2;
+        vel.set([d.x * sp - d.z * sd, up, d.z * sp + d.x * sd], i * 3);
+        const g = Math.random() < 0.7; col.set(g ? [0.25 + Math.random() * 0.15, 0.5 + Math.random() * 0.2, 0.16] : [0.36, 0.26, 0.15], i * 3);
+      }
+      (geo.getAttribute('color') as THREE.BufferAttribute).needsUpdate = true; life = 1.4; pts.visible = true;
+    },
+    update(dt: number) {
+      if (life <= 0) return; life -= dt; if (life <= 0) { pts.visible = false; return; }
+      for (let i = 0; i < N; i++) { vel[i * 3 + 1] -= 9.8 * dt; for (let k = 0; k < 3; k++) pos[i * 3 + k] += vel[i * 3 + k] * dt; if (pos[i * 3 + 1] < 0) { pos[i * 3 + 1] = 0; vel.fill(0, i * 3, i * 3 + 3); } }
+      (geo.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+      (pts.material as THREE.PointsMaterial).opacity = Math.min(1, life * 2);
+    },
+  };
+})();
+
 // the flown path, for the Shot details sketch
 const shotPath: THREE.Vector3[] = [new THREE.Vector3()];
 let shotLand = -1;
@@ -510,7 +539,11 @@ function frame(now: number) {
   if (skip.on) { const g = range?.heightAt(ball.pos.x, ball.pos.z) ?? 0; if (state !== 'flight' || ball.phase !== 'flight' || (ball.vel.y < 0 && (ball.pos.y - g) / Math.max(1, -ball.vel.y) < 0.7)) skip.on = false; }
   ff.scale += ((skip.on ? 6 : ff.held && state === 'flight' ? 3 : 1) - ff.scale) * Math.min(1, dt / (skip.on ? 0.25 : 0.15));
   ff.pill.hidden = !(ff.held && state === 'flight');
-  const simDt = dt * ff.scale;   // the ball sub-steps internally (≤ 4 ms), so 3× stays stable
+  // bullet time (shot cam 'freeze'): the ball, the turf and the golfer's follow-through hold still
+  const ts = camMode === 'cine' ? shotcam.timeScale : 1;
+  if (ts < 1 && G.phase === 'follow') G.followT0 += dt * 1000 * (1 - ts);
+  const simDt = dt * ff.scale * ts;   // the ball sub-steps internally (≤ 4 ms), so 3× stays stable
+  turf.update(simDt);
 
   // golfer
   G.idleT += dt;

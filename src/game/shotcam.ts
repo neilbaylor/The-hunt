@@ -40,6 +40,28 @@ export interface ShotCamCtx {
 }
 export interface ShotCamPose { pos: THREE.Vector3; look: THREE.Vector3; dFov: number; roll: number; dof: number }
 
+/** The variants, picked at random per long shot (weighted, never the same twice running; ?shotcam= forces one):
+ *  orbit  — behind → round to his face and follow-through → crane up and chase the ball (the original)
+ *  freeze — bullet time at impact: the world stops, the camera orbits the frozen golfer to his face, time resumes,
+ *           then it whips off after the ball
+ *  cut    — stays behind him through the follow-through watching the ball start, then a hard cut to a broadcast
+ *           camera down by the landing area looking back up the range (longer lens), which picks the ball up
+ *  low    — a turf-level camera beside the line, looking up as the ball rockets past, then a cut to the broadcast cam */
+export type ShotCamVariant = 'orbit' | 'freeze' | 'cut' | 'low';
+const WEIGHTS: [ShotCamVariant, number][] = [['orbit', 0.28], ['freeze', 0.3], ['cut', 0.27], ['low', 0.15]];
+let lastVariant: ShotCamVariant | null = null;
+export function pickVariant(force?: string | null): ShotCamVariant {
+  if (force && WEIGHTS.some(w => w[0] === force)) return (lastVariant = force as ShotCamVariant);
+  const pool = WEIGHTS.filter(w => w[0] !== lastVariant), tot = pool.reduce((a, w) => a + w[1], 0);
+  let r = Math.random() * tot; for (const [v, w] of pool) { if ((r -= w) <= 0) return (lastVariant = v); }
+  return (lastVariant = pool[0][0]);
+}
+export const VARIANT = {
+  freeze: { hold: 0.12, orbit: 1.35, resume: 0.3, whip: 0.65, radius: 2.5 },
+  cut: { stay: 1.7, tele: 16 },          // tele: fov narrower than the swing cam on the broadcast camera
+  low: { dist: 9, side: 2.2, up: 0.3, hold: 1.25 },
+};
+
 type Phase = 'face' | 'catch' | 'follow' | 'landing';
 const Y = new THREE.Vector3(0, 1, 0);
 const smoother = (x: number) => { const t = Math.max(0, Math.min(1, x)); return t * t * t * (t * (t * 6 - 15) + 10); };
@@ -63,12 +85,18 @@ export class ShotCam {
 
   /** start at impact. faceDir: where the golfer faces at address (towards the ball); side: +1 if the golfer's
    *  back is on +lateral of the target line (lefty), -1 otherwise */
-  start(camPos: THREE.Vector3, camLook: THREE.Vector3, faceDir: THREE.Vector3, targetDir: THREE.Vector3, side: number) {
+  variant: ShotCamVariant = 'orbit';
+  /** sim time scale the variant asks for (0 = frozen: bullet time) */
+  timeScale = 1;
+  private bc: THREE.Vector3 | null = null;   // the broadcast camera (cut / low)
+  private lowPos = new THREE.Vector3();
+  start(camPos: THREE.Vector3, camLook: THREE.Vector3, faceDir: THREE.Vector3, targetDir: THREE.Vector3, side: number, variant: ShotCamVariant = 'orbit') {
     this.active = true; this.phase = 'face'; this.t = 0; this.t0Phase = 0; this.landPos = null; this.folHold = 0;
+    this.variant = variant; this.timeScale = 1; this.bc = null;
     this.startPos.copy(camPos); this.startLook.copy(camLook);
     this.faceDir.copy(faceDir).setY(0).normalize(); this.targetDir.copy(targetDir).setY(0).normalize(); this.side = side;
   }
-  stop() { this.active = false; }
+  stop() { this.active = false; this.timeScale = 1; this.lowPos.set(0, 0, 0); }
   /** tap: jump straight to the landing view (the caller fast-forwards the ball) */
   skipToLanding(ctx: ShotCamCtx) { this.pickLanding(ctx); this.phase = 'landing'; this.t0Phase = this.t - SHOTCAM.land; }
 
@@ -76,6 +104,8 @@ export class ShotCam {
     this.t += dt;
     const C = SHOTCAM, o = this.out, b = ctx.ball;
     o.dFov = 0; o.roll = 0; o.dof = 0;
+    if (this.variant === 'freeze' && (this.phase === 'face' || this.phase === 'catch')) return this.freeze(ctx, o);
+    if ((this.variant === 'cut' || this.variant === 'low') && this.phase !== 'landing') return this.broadcast(ctx, o);
     if (this.phase === 'face') {
       this.facePose(ctx, o, smoother((this.t - C.hold) / C.face));
       o.dof = 1;
@@ -120,6 +150,67 @@ export class ShotCam {
     o.look.copy(fromLook).lerp(lookNow, smoother(Math.min(1, s * 2)));
     o.dFov = (f ? f.dFov : this.from.dFov) * (1 - s) - C.landZoom * s; o.roll = (f ? f.roll : this.from.roll) * (1 - s);
     if (f) { this.from.pos.copy(f.pos); this.from.look.copy(f.look); this.from.dFov = f.dFov; this.from.roll = f.roll; }
+    return o;
+  }
+
+  /** A: bullet time. Frozen while the camera orbits to his face, time resumes, then a quick whip to the chase */
+  private freeze(ctx: ShotCamCtx, o: ShotCamPose): ShotCamPose {
+    const F = VARIANT.freeze, t = this.t;
+    if (this.phase === 'face') {
+      const k = (t - F.hold) / F.orbit;
+      this.timeScale = t < F.hold ? 0.15 : k < 1 ? 0 : Math.min(1, (t - F.hold - F.orbit) / F.resume);
+      const s = smoother(k);
+      this.facePose(ctx, o, s); o.dof = 1;
+      // pull in tighter than the plain orbit: the frozen moment is the show
+      const h = ctx.head, d = o.pos.clone().sub(h); d.y = 0; const r = d.length();
+      if (r > 0.01) { const want = F.radius + (1 - Math.sin(Math.PI * Math.min(1, s))) * 0.0; d.multiplyScalar((r + (Math.min(r, want) - r) * s) / r); o.pos.set(h.x + d.x, o.pos.y, h.z + d.z); }
+      if (t >= F.hold + F.orbit + F.resume) { this.phase = 'catch'; this.t0Phase = t; this.faceEnd.pos.copy(o.pos); this.faceEnd.look.copy(o.look); this.timeScale = 1; }
+      return o;
+    }
+    // whip: a fast ease-out from the face to the chase
+    this.timeScale = 1;
+    const k = Math.min(1, (t - this.t0Phase) / F.whip), s = 1 - Math.pow(1 - k, 4);
+    const f = this.followPose(ctx, new THREE.Vector3(), new THREE.Vector3());
+    o.pos.lerpVectors(this.faceEnd.pos, f.pos, s); o.look.lerpVectors(this.faceEnd.look, f.look, Math.min(1, s * 1.3));
+    o.dFov = f.dFov * s - 6 * Math.sin(Math.PI * s); o.dof = 1 - s;
+    if (k >= 1) { this.phase = 'follow'; this.t0Phase = t; }
+    if (this.nearLanding(ctx)) this.beginLanding(ctx, o);
+    return o;
+  }
+
+  /** B / D: stay behind (or sit low by the line), then a hard cut to a broadcast camera by the landing area */
+  private broadcast(ctx: ShotCamCtx, o: ShotCamPose): ShotCamPose {
+    const b = ctx.ball, t = this.t;
+    const stay = this.variant === 'cut' ? VARIANT.cut.stay : VARIANT.low.hold;
+    if (!this.bc && t < stay && b.phase === 'flight') {
+      if (this.variant === 'cut') {
+        // the swing camera holds; the eye lifts to watch the ball start
+        o.pos.copy(this.startPos);
+        o.look.copy(this.startLook).lerp(b.pos, smoother(t / 0.9) * 0.85);
+      } else {
+        // low, beside the line a few yards ahead, looking back up at the strike; it tracks the ball as it rockets over
+        if (t <= 1e-3 || this.lowPos.lengthSq() === 0) {
+          const lat = new THREE.Vector3(-this.targetDir.z, 0, this.targetDir.x).multiplyScalar(-this.side);
+          this.lowPos.copy(this.startPos).setY(0).addScaledVector(this.targetDir, VARIANT.low.dist + 4).addScaledVector(lat, VARIANT.low.side);
+          this.lowPos.y = ctx.groundAt(this.lowPos.x, this.lowPos.z) + VARIANT.low.up;
+        }
+        o.pos.copy(this.lowPos); o.look.copy(b.pos); o.dFov = 10;   // a wider lens, low and close
+      }
+      return o;
+    }
+    // the cut: a fixed broadcast camera beyond the landing area, off the line, raised, looking back up the range
+    if (!this.bc) {
+      const land = ctx.predictLanding() ?? b.pos.clone();
+      const lat = new THREE.Vector3(-this.targetDir.z, 0, this.targetDir.x).multiplyScalar(-this.side);
+      const c = land.clone().addScaledVector(this.targetDir, 34).addScaledVector(lat, 13);
+      c.y = Math.max(land.y, ctx.groundAt(c.x, c.z)) + 7;
+      this.bc = c; this.landLook.copy(land);
+    }
+    o.pos.copy(this.bc);
+    o.look.copy(b.pos).lerp(this.landLook, b.phase === 'flight' ? 0.15 : 0).addScaledVector(Y, 0.3);
+    // a longer lens than the swing cam, closing in further as the ball comes down
+    const g = ctx.groundAt(b.pos.x, b.pos.z), near = b.phase === 'flight' ? smoother(1 - (b.pos.y - g) / 25) : 1;
+    o.dFov = -VARIANT.cut.tele - 6 * near;
     return o;
   }
 
