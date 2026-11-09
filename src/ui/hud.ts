@@ -232,7 +232,7 @@ function drawSpinBall(cv: HTMLCanvasElement, m: Mat3, spin: { x: number; y: numb
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (blur && blur.d > 0.02) {
     // motion blur at high spin: the ball shaded at a few angles across one frame's turn, layered
-    const n = 4;
+    const n = 3;
     for (let i = 0; i < n; i++) { const mm = m.slice(); mat3RotateAxis(mm, blur.axis[0], blur.axis[1], blur.axis[2], (i / (n - 1) - 0.5) * blur.d); ctx.globalAlpha = i === 0 ? 1 : 1 / (i + 1); ctx.drawImage(shadeBall(px, mm), Math.round((cx - R) * k), Math.round((cy - R) * k)); }
     ctx.globalAlpha = 1;
   } else ctx.drawImage(shadeBall(px, m), Math.round((cx - R) * k), Math.round((cy - R) * k));
@@ -343,7 +343,7 @@ export class Hud {
       <div class="corner tr"><div id="lieSlot"></div><div class="wind-chip" id="wind" role="img" aria-label="No wind"><svg viewBox="-12 -12 24 24" aria-hidden="true"><circle r="11" class="wc-ring"/><g class="wc-arrow"><path d="M0 -8 L5 -1 L1.8 -1 L1.8 7 L-1.8 7 L-1.8 -1 L-5 -1 Z"/></g></svg><b>0</b><small>mph</small></div></div>
       <div class="corner bl"><div id="cardSlot"><div class="card-wrap" id="cardWrap"><button type="button" class="hud-panel card-mini" data-act="card-open" aria-expanded="false"></button><div class="card-body" id="cardBody"></div></div></div></div>
       <div class="corner br"><button type="button" class="strike-btn" data-act="strike" aria-label="Strike point: centre. Choose where to hit the ball"><canvas width="112" height="112" aria-hidden="true"></canvas><i class="dot" aria-hidden="true"></i><span>Strike</span></button><div class="pad" id="pad" aria-label="Swing pad: press, pull down, push up"></div></div>
-      <div class="corner bc"><div class="spin off" id="spin"><canvas width="272" height="272" aria-label="Spin ball: swipe to add spin"></canvas><div class="spin-label" id="spinLabel">Swipe the ball to add spin</div></div></div>
+      <div class="corner bc"><div class="spin off" id="spin"><canvas width="408" height="408" aria-label="Spin ball: swipe to add spin"></canvas><div class="spin-label" id="spinLabel">Swipe the ball to add spin</div></div></div>
       <div class="toast" id="toast"></div>
       <div class="confetti" id="confetti" aria-hidden="true"></div>
       <div class="strike-pop" id="strikePop" hidden><div class="sp-card" role="dialog" aria-modal="true" aria-labelledby="spTitle">

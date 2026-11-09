@@ -458,9 +458,6 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 
 /* ───────────── calmer, friendlier play screen ───────────── */
 /* spin ball in flight: a little bigger than before, bottom-right where the thumb rests, clear of the ball (upper third) */
-.hud.spin-on .bc { left: auto; right: max(12px, env(safe-area-inset-right)); bottom: calc(max(10px, env(safe-area-inset-bottom)) + 76px); transform: scale(calc(var(--s, 1) * 1.06)); transform-origin: 100% 100%; transition: opacity .2s, transform .35s cubic-bezier(.2,1.6,.4,1); }
-.hud.cine-face .bc { opacity: 0; transform: translateY(24px) scale(calc(var(--s, 1) * .5)); pointer-events: none; }
-.hud.cine-face .bc * { pointer-events: none !important; }
 .hud .spin canvas { transition: transform .15s cubic-bezier(.3,1.8,.5,1); border-radius: 50%; }
 .hud .spin.grab canvas { transform: scale(1.07); }
 .hud .spin.pulse:not(.used) canvas { animation: spinPulse 1.1s ease-out 3; }
@@ -540,3 +537,16 @@ body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-orig
 .sc-shape svg { width: 100%; height: auto; display: block; }
 .sc-shape .sk-lab { font: 800 9px 'Nunito', sans-serif; fill: #13294b; }
 .card.simple .stats dd small { font: 800 10px/1 'Nunito', sans-serif; color: var(--red); }
+
+/* the spin ball takes the swing stick's place: same centre, a touch bigger, so the thumb stays put.
+   At impact the stick shrinks out and the ball pops in; after the landing it hands back to the stick. */
+.hud .bc { left: 50%; right: auto; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%) scale(var(--s, 1)); transform-origin: 50% 100%; }
+.hud .spin { position: relative; transition: opacity .25s ease, transform .4s cubic-bezier(.2,1.5,.4,1); }
+.hud .spin.off { opacity: 0; transform: scale(.7); pointer-events: none; }
+.hud.skin-f .spin canvas, .hud .spin canvas { width: 252px; height: 252px; }
+.hud .spin-label { position: absolute; left: 50%; top: -6px; transform: translate(-50%, -100%); }
+.hud .br { transition: opacity .25s ease, transform .4s cubic-bezier(.2,1.5,.4,1); }
+.hud.spin-on .br { opacity: 0 !important; pointer-events: none; transform: translateX(-50%) scale(calc(var(--s, 1) * .7)) !important; }
+/* during the face shot it stays, but faint, so the follow-through reads */
+.hud.cine-face .bc .spin { opacity: .28; pointer-events: none; }
+.hud.cine-face .bc * { pointer-events: none !important; }
