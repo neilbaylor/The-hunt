@@ -1217,20 +1217,23 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
       // cup: white liner ring and the dark hole
       // the cup: 108 mm hole; 25 mm of soil and roots, then the white liner's rim, the liner, a dark bottom
       const HR = 0.054, LIP = 0.025, DEEP = 0.102;
-      const lip = new THREE.CylinderGeometry(HR, HR, LIP, 32, 1, true); lip.translate(0, -LIP / 2, 0);
+      // the terrain mesh can sit a few mm off the analytic height, so the mask floats just above it and the
+      // soil lip reaches up to the mask (every ray through the mask then lands on the inside of the cup)
+      const UP = 0.012;
+      const lip = new THREE.CylinderGeometry(HR, HR, LIP + UP, 32, 1, true); lip.translate(0, (UP - LIP) / 2, 0);
       const liner = new THREE.CylinderGeometry(HR - 0.002, HR - 0.002, DEEP - LIP, 32, 1, true); liner.translate(0, -LIP - (DEEP - LIP) / 2, 0);
       const rim = new THREE.RingGeometry(HR - 0.0075, HR, 32); rim.rotateX(-Math.PI / 2); rim.translate(0, -LIP, 0);
       const bottom = new THREE.CircleGeometry(HR, 32); bottom.rotateX(-Math.PI / 2); bottom.translate(0, -DEEP, 0);
       for (const w of [lip, liner]) { const n = w.getAttribute('normal') as THREE.BufferAttribute; for (let v = 0; v < n.count; v++) n.setXYZ(v, -n.getX(v), -n.getY(v), -n.getZ(v)); }
       const ao = (y: number) => 0.3 + 0.7 * Math.pow(clamp(1 + y / DEEP, 0, 1), 1.6); // darker toward the bottom
       cups.push(
-        paint(lip, (x, y, z, _a, _b, _c, c) => c.copy(lin('#4a3826')).lerp(lin('#3f5a22'), clamp(1 + y / 0.008, 0, 1) * 0.8).multiplyScalar(ao(y) * (0.8 + 0.4 * hash2(Math.round(Math.atan2(z, x) * 30), 3)))),
+        paint(lip, (x, y, z, _a, _b, _c, c) => c.copy(lin('#4a3826')).lerp(lin('#3f5a22'), clamp(1 + y / 0.008, 0, 1) * 0.8).multiplyScalar(y > 0 ? 0.6 : 1).multiplyScalar(ao(y) * (0.8 + 0.4 * hash2(Math.round(Math.atan2(z, x) * 30), 3)))),
         paint(liner, (_x, y, _z, _a, _b, _c, c) => c.copy(lin('#efefea')).multiplyScalar(ao(y))),
         paint(rim, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#f6f6f2'))),
         paint(bottom, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#2a2a26')).multiplyScalar(0.35)),
       );
       cups.slice(-4).forEach(c => c.translate(g.x, y0, g.z));
-      const hole = new THREE.CircleGeometry(HR, 32); hole.rotateX(-Math.PI / 2); hole.translate(g.x, y0 + 0.001, g.z); holes.push(hole);
+      const hole = new THREE.CircleGeometry(HR, 32); hole.rotateX(-Math.PI / 2); hole.translate(g.x, y0 + UP, g.z); holes.push(hole);
       // the flagstick's base ferrule, seated in the bottom of the cup
       const fer = new THREE.CylinderGeometry(pr * 1.35, pr * 1.2, 0.045, 12); fer.translate(g.x, y0 - DEEP + 0.0225, g.z); ferrules.push(fer);
       // yardage board beside the green on the outside, turned to face the tee
@@ -1258,7 +1261,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
       }
     });
     // glossy painted fibreglass: a crisp clear-coat highlight running up the stick
-    const pinMat = new THREE.MeshPhysicalMaterial({ color: FLAG_YELLOW, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.4 });
+    const pinMat = new THREE.MeshPhysicalMaterial({ color: FLAG_YELLOW, emissive: FLAG_YELLOW, emissiveIntensity: 0.06, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.4 });
     const poleMesh = new THREE.Mesh(mergeGeometries(poles.map(p => p.toNonIndexed()), false)!, pinMat);
     poleMesh.castShadow = true;
     const tipMesh = new THREE.Mesh(mergeGeometries(tips.map(p => p.toNonIndexed()), false)!, new THREE.MeshStandardMaterial({ color: '#2a2a2a', roughness: 0.4, metalness: 0.6 }));

@@ -45,7 +45,7 @@ class Ribbon {
           float rim = 1.0 - smoothstep(0.88, 1.0, x);
           vec3 c = mix(edge, color, body);
           float a = rim * opacity;
-          if (dash > 0.0) { float d = fract((vA - flow) / dash); a *= smoothstep(0.0, 0.08, d) * (1.0 - smoothstep(0.55, 0.63, d)); }
+          if (dash > 0.0) { float d = fract((vA - flow) / dash); a *= smoothstep(0.0, 0.06, d) * (1.0 - smoothstep(0.38, 0.46, d)); }
           a *= 1.0 - smoothstep(fadeStart, fadeEnd, vA);
           if (a < 0.01) discard;
           gl_FragColor = vec4(c, a);
@@ -151,7 +151,7 @@ export class AimController {
   active = false;
   zoom = 1;
   private enabled = false;
-  private guide = new Ribbon(80, GOLD, { dash: 2.2, fadeStart: 12, fadeEnd: 38, opacity: 0.95 });
+  private guide = new Ribbon(80, GOLD, { dash: 1.1, fadeStart: 10, fadeEnd: 34, opacity: 0.8 });
   private marker = makeRing();
   private aimLine = new Ribbon(80, GOLD, { opacity: 0.95 });
   private pathLine = new Ribbon(96, CYAN, { opacity: 0.95, edge: new THREE.Color('#0b3a52') });
@@ -239,10 +239,12 @@ export class AimController {
 
   /** camera for the aim view: high behind the ball, looking steeply down the aim line */
   cameraWant(pos: THREE.Vector3, look: THREE.Vector3) {
-    const b = this.o.ballPos(), d = this.dirVec(), D = aim.distanceYds * YD, z = this.zoom;
-    pos.copy(b).addScaledVector(d, -(6 + D * 0.12) * z).add(new THREE.Vector3(0, (14 + D * 0.62) * z, 0));
-    look.copy(b).addScaledVector(d, D * (0.5 + 0.12 * (1 - Math.min(1, z))));
-    look.y = this.ground(look.x, look.z);
+    // solved so that on a portrait phone the ball sits just above the swing stick (~62% down the
+    // screen) and the landing ring near the top (~20%): height 0.7·D, 0.625·D behind, pitched 41° down
+    const b = this.o.ballPos(), d = this.dirVec(), D = Math.max(25, aim.distanceYds * YD), z = this.zoom;
+    const H = 0.7 * D * z, B = 0.625 * D * z;
+    pos.copy(b).addScaledVector(d, -B); pos.y = b.y + H;
+    look.copy(pos).addScaledVector(d, H / Math.tan(THREE.MathUtils.degToRad(41))); look.y = b.y;
   }
 
   private worldAt(cx: number, cy: number): THREE.Vector3 | null {
@@ -314,8 +316,8 @@ export class AimController {
     this.guide.mesh.visible = g; this.marker.group.visible = g;
     if (g) {
       const pts: THREE.Vector3[] = []; const L = Math.min(D, 46);
-      for (let i = 0; i <= 60; i++) { const s = 0.35 + (L - 0.35) * (i / 60); const p = b.clone().addScaledVector(d, s); p.y = this.ground(p.x, p.z) + 0.012; pts.push(p); }
-      this.guide.set(pts, 0.11);
+      for (let i = 0; i <= 60; i++) { const s = 0.9 + (L - 0.9) * (i / 60); const p = b.clone().addScaledVector(d, s); p.y = this.ground(p.x, p.z) + 0.012; pts.push(p); }
+      this.guide.set(pts, 0.06);
       this.guide.mat.uniforms.flow.value = -this.t * 1.4;
       this.marker.group.position.set(T.x, T.y + 0.05, T.z); this.marker.group.scale.setScalar(disp * 0.8);
       this.marker.chevron.visible = false;
