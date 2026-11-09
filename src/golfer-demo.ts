@@ -98,6 +98,7 @@ else if (view === 'close' || view === 'three') {
 }
 renderer.render(scene, cam);
 (window as any).__g = golfer;
+(window as any).__render = () => renderer.render(scene, cam);   // frame-by-frame captures (face animation clips)
 if (view === 'probe') {
   // bare head, flat front light, narrow lens: for face-landmark detection on our own mesh
   golfer.body.root.traverse(o => { if (o.name === 'visor' || o.name === 'hair-shell') o.visible = false; });
