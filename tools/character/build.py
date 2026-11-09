@@ -246,6 +246,24 @@ for b, lst in W.items():
     bi = BONES.index(b2)
     for vi, w in lst:
         vw[vi][bi] = vw[vi].get(bi, 0) + w
+# tight hinge weights at the elbows, knees and wrists: the default weights blend over a long stretch of the limb,
+# so a bent elbow reads as a smooth rubber hose. Make the upper bone ~100% down to just above the joint, then a short
+# blend, so the bend creases on the inside and the olecranon / kneecap make a point on the outside.
+def tighten(up, lo, a, b):
+    ju, jl, jt = np.array(heads[up]), np.array(heads[lo]), np.array(tails[lo])
+    axis = (jl - ju) / np.linalg.norm(jl - ju) + (jt - jl) / np.linalg.norm(jt - jl); axis /= np.linalg.norm(axis)
+    bu, bl = BONES.index(up), BONES.index(lo)
+    for vi, d in vw.items():
+        wu, wl = d.get(bu, 0.0), d.get(bl, 0.0); tot = wu + wl
+        if tot < 0.6 * sum(d.values()) or tot <= 0: continue
+        sdist = float(np.dot(V[vi] - jl, axis))
+        f = min(1.0, max(0.0, (sdist - a) / (b - a))); f = f * f * (3 - 2 * f)
+        d[bu] = tot * (1 - f); d[bl] = tot * f
+if P.get('clothes', {}).get('tightJoints', True):
+    for sfx in 'lr':
+        tighten(f'upperarm_{sfx}', f'lowerarm_{sfx}', -0.02, 0.012)
+        tighten(f'thigh_{sfx}', f'calf_{sfx}', -0.025, 0.015)
+        tighten(f'lowerarm_{sfx}', f'hand_{sfx}', -0.015, 0.012)
 def top4(vi):
     items = sorted(vw[vi].items(), key=lambda x: -x[1])[:4] or [(0, 1.0)]
     tot = sum(w for _, w in items)

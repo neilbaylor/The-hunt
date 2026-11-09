@@ -30,7 +30,7 @@ ap.add_argument('--unwrap', default=None, help="front-on cylindrical face textur
 ap.add_argument('--hair', default=None, help='hair colour (default: the profile look.hair in src/golfer/profile.ts, else #4a3628)')
 ap.add_argument('--unwrap-weight', type=float, default=4.0, help='how strongly the unwrap wins over the portrait where both see')
 ap.add_argument('--mpfb', default='/tmp/mh/mpfb2/src/mpfb/data', help='MakeHuman (MPFB2) data, for the expression targets')
-ap.add_argument('--neck', default='cap', choices=['cap', 'loft'], help="cap: keep the generator's cap, the body's neck shows below; loft: grow a neck down into the collar")
+ap.add_argument('--neck', default='loft', choices=['cap', 'loft'], help="cap: keep the generator's cap, the body's neck shows below; loft: grow a neck down into the collar")
 ap.add_argument('--head-scale', type=float, default=1.0)
 ap.add_argument('--head-width', type=float, default=1.0, help='overall width of the whole head (the face reshape sets the face itself)')
 ap.add_argument('--head-width-face', type=float, default=0.96, help='starting face width for the reshape fit')
@@ -438,7 +438,7 @@ if A.neck == 'loft':
     top = LV[loop]
     ta = np.arctan2(top[:, 0] - axis_c[0], top[:, 2] - axis_c[1])
     OVER = 0.012   # the neck runs on past the seam, down inside the collar, over the body's neck
-    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) + 0.0015), 0, axis_c[1] + math.cos(a) * (neck_r(a) + 0.0015)] for a in ta]); bot[:, 1] = y_seam_at(bot[:, 2]) - OVER
+    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) + 0.0015), 0, axis_c[1] + math.cos(a) * (neck_r(a) + 0.0015)] for a in ta]); bot[:, 1] = np.minimum(y_seam_at(bot[:, 2]) - OVER, top[:, 1] - 0.025)   # at the back the collar rides high: the neck still runs down
     # smooth the bottom ring a little round the neck
     for _ in range(3): bot = 0.5 * bot + 0.25 * (np.roll(bot, 1, 0) + np.roll(bot, -1, 0))
     ROWS = 7
@@ -484,7 +484,11 @@ wts = []
 kk = np.clip(hgt / BAND, 0, 1); kk = kk * kk * (3 - 2 * kk)
 # with the jaw cap the body's own neck rises into the head: the head is rigid on the head bone (blending the jaw's
 # underside into neck weights pulled the chin about as the neck bent through the swing)
-if A.neck == 'cap': kk[:] = 1.0
+if A.neck == 'cap':
+    # rigid, except the back of the neck stub: there the bottom 3 cm blends into the body's neck weights so the flat
+    # cap never swings out from behind when he looks down at the ball (the chin and jaw stay rigid)
+    backw = sstep(cen[2] + 0.02, cen[2] - 0.01, LV[:, 2])
+    kk = 1 - (1 - np.clip((hgt + 0.006) / 0.03, 0, 1) ** 1.5) * backw
 for i in range(len(LV)):
     w = {}
     for j in range(4):
@@ -710,7 +714,7 @@ if A.unwrap != 'none' and os.path.exists(A.unwrap):
     ang = np.abs(np.arctan2(cp[:, 0] - hc_[0], cp[:, 2] - hc_[2]))
     wu = np.clip(np.minimum.reduce([xy[:, 0] - 4, UW - 4 - xy[:, 0], xy[:, 1] - 4, UH - 4 - xy[:, 1]]) / 60, 0, 1) ** 1.5   # wide, soft edges
     wu *= np.clip((np.radians(UCFG.get('maxAngle', 105)) - ang) / 0.6, 0, 1) ** 1.5   # a long, soft fade round the back
-    wu *= np.clip((cp[:, 1] - (lm_f[152, 1] - 0.05)) / 0.02, 0, 1)
+    wu *= np.clip((cp[:, 1] - (lm_f[152, 1] - (0.13 if A.neck == 'loft' else 0.05))) / 0.02, 0, 1)   # the unwrap paints the neck right down
     # the unwrap's flat orange margins (round the ears, the corners) are not skin detail
     # where the unwrap sees, the portrait steps back (two lightings side by side read as seams)
     keep_p = 1 - np.clip(wu * 1.5, 0, 1)
@@ -791,7 +795,9 @@ near_eye = np.minimum(np.linalg.norm(cp - lm_f[IRIS[0]], axis=1), np.linalg.norm
 sideang = np.abs(np.arctan2(cp[:, 0] - eye_lmh[0], cp[:, 2] - (eye_lmh[2] - 0.09)))
 near_ear = np.zeros(len(cp), bool)
 for e_ in ear_pts: near_ear |= np.linalg.norm((cp - e_) * [1.6, 0.8, 1], axis=1) < 0.04   # the ears stay skin
-region = ((cp[:, 1] > eyeY + 0.03) | ((sideang > np.radians(55)) & (cp[:, 1] > eyeY - 0.06))) & ~near_eye
+# dark texels read as hair only above the temples, at the sideburns (down to the ear's middle) and behind the ears
+# above the nape line, never on the neck
+region = ((cp[:, 1] > eyeY + 0.03) | ((sideang > np.radians(55)) & (cp[:, 1] > eyeY - 0.03)) | ((back > 0.5) & (cp[:, 1] > nape + 0.006))) & ~near_eye
 dark = np.clip((0.8 * skinL - L_) / (0.2 * skinL), 0, 1) * region
 # round the ears only clearly dark texels are hair (the ear's own shadows are not)
 dark_ear = np.clip((0.6 * skinL - L_) / (0.15 * skinL), 0, 1) * region
@@ -809,7 +815,7 @@ out = out * (1 - H_[:, None]) + rec * H_[:, None]
 print('hair recoloured to', hair_hex, 'over', int((H_ > 0.5).sum()), 'texels; source hair lum', round(float(hm_mean), 1))
 # the neck band fades to the body's skin tone (the body is tinted to the face below)
 nk = np.clip(((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn / (BAND + 0.012), 0, 1) ** 0.7 if A.neck == 'loft' else np.clip((((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn + 0.004) / 0.004, 0, 1)
-if A.neck == 'loft': out = out * nk[:, None] + neck_c * (1 - nk[:, None])
+# (loft: the unwrap paints the neck; it only eases to the body's tone below the seam, inside the collar — below)
 # ── skin colour across the seam: the body's skin is transferred onto the head's tone (Lab mean and spread), and
 #    the head's last few cm above its cap ease toward that body tone so the jaw meets the neck without a step ──
 def srgb2lin(c): c = np.clip(c, 0, 1); return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
@@ -840,7 +846,7 @@ print('skin Lab: head', mu_t.round(1), '±', sd_t.round(1), '| body', mu_s.round
 tone_lin = lab2lin(mu_t[None])[0]
 h_tex = ((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn
 chinfront = sstep(lm_f[152, 2] - 0.035, lm_f[152, 2] - 0.01, cp[:, 2])
-fe = np.clip(1 - (h_tex + 0.006) / 0.025, 0, 1) ** 1.5 * (1 - chinfront) * (~hairy)
+fe = (np.clip(-h_tex / 0.012, 0, 1) if A.neck == 'loft' else np.clip(1 - (h_tex + 0.006) / 0.025, 0, 1) ** 1.5 * (1 - chinfront)) * (~hairy)
 out_lin = srgb2lin(out / 255)
 out_lin = out_lin * (1 - 0.55 * fe[:, None]) + tone_lin * 0.82 * 0.55 * fe[:, None]
 out = lin2srgb(out_lin) * 255
@@ -850,6 +856,32 @@ hv_sum = np.zeros(len(UV)); hv_n = np.zeros(len(UV))
 for k_ in range(3): np.add.at(hv_sum, UF[tt, k_], H_ * tw[:, k_]); np.add.at(hv_n, UF[tt, k_], tw[:, k_])
 hair_v = hv_sum / np.maximum(hv_n, 1e-6)
 hair_v[(VV - cen) @ pn < 0.01] = 0
+# ── surface detail the 16k mesh loses (ear folds, hair, creases): a tangent-space normal map baked from the hi-res
+#    surface (tangent frame from the UVs, as three.js derives it without tangents), and crevices darkened a touch ──
+P0, P1, P2 = VV[UF[:, 0]], VV[UF[:, 1]], VV[UF[:, 2]]
+U0_, U1_, U2_ = UV[UF[:, 0]], UV[UF[:, 1]], UV[UF[:, 2]]
+d1, d2 = P1 - P0, P2 - P0; e1, e2 = U1_ - U0_, U2_ - U0_
+den = e1[:, 0] * e2[:, 1] - e2[:, 0] * e1[:, 1]; den = np.where(np.abs(den) < 1e-12, 1e-12, den)
+Tt = (d1 * e2[:, 1:2] - d2 * e1[:, 1:2]) / den[:, None]; Bt = (d2 * e1[:, 0:1] - d1 * e2[:, 0:1]) / den[:, None]
+Tx, Bx = Tt[tt], Bt[tt]
+Tx = Tx - tn * np.einsum('ij,ij->i', Tx, tn)[:, None]; Tx /= np.linalg.norm(Tx, axis=1, keepdims=True) + 1e-12
+Bx = Bx - tn * np.einsum('ij,ij->i', Bx, tn)[:, None]; Bx /= np.linalg.norm(Bx, axis=1, keepdims=True) + 1e-12
+nts = np.c_[np.einsum('ij,ij->i', hiN, Tx), np.einsum('ij,ij->i', hiN, Bx), np.einsum('ij,ij->i', hiN, tn)]
+nts[:, 2] = np.maximum(nts[:, 2], 0.25); nts /= np.linalg.norm(nts, axis=1, keepdims=True)
+nmap = np.zeros((T, T, 3), np.float32); nmap[..., 2] = 1.0
+nmap[ty, tx] = nts
+nimg = ((nmap * 0.5 + 0.5) * 255).astype(np.uint8)
+NT = 1024
+nhave = np.zeros((T, T), np.uint8); nhave[ty, tx] = 255
+nimg = cv2.inpaint(nimg, 255 - nhave, 2, cv2.INPAINT_TELEA)
+nimg = cv2.resize(nimg, (NT, NT), interpolation=cv2.INTER_AREA)
+import io
+_b = io.BytesIO(); Image.fromarray(nimg).save(_b, 'JPEG', quality=90); normal_jpg = np.frombuffer(_b.getvalue(), np.uint8)
+print(f'  normal map {NT}px: {len(normal_jpg) // 1024} KB')
+# crevices (the hi-res surface sits below the low-res one): concha, behind the ear, the nose and mouth corners
+dep = np.einsum('ij,ij->i', cp - tp, tn)
+ao = 1 - np.clip(-dep / 0.004, 0, 1) * 0.35
+out = out * ao[:, None]
 tex = np.zeros((T, T, 3), np.float32); have = np.zeros((T, T), np.uint8)
 tex[ty, tx] = out; have[ty, tx] = 255
 # dilate into the gutters so mips don't bleed black
@@ -917,6 +949,7 @@ put('position', PV.ravel()); put('normal', PN.ravel()); put('uv', UV.astype(np.f
 put('index', IDX.astype(np.uint16 if len(UV) < 65536 else np.uint32).ravel())
 put('hair', np.round(np.clip(hair_v, 0, 1) * 255).astype(np.uint8))
 if iris_png is not None: put('irisPng', iris_png)
+put('normalJpg', normal_jpg)
 put('skinIndex', bidx.ravel()); put('skinWeight', bw.ravel()); put('seam', seamw)
 _ea, _eb = eyeA[vmap], eyeB[vmap]; _ei = np.nonzero(_ea[:, 0] < 8)[0]          # sparse: only the verts round the eyes
 put('eye_i', _ei.astype(np.uint16 if len(UV) < 65536 else np.uint32)); put('eye_v', np.c_[_ea[_ei], _eb[_ei]].astype(np.float32).ravel())

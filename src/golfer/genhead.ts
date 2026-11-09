@@ -100,7 +100,14 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   const t = new THREE.Texture(gh.tex); t.needsUpdate = true; t.flipY = true; t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
   // the portrait already carries its own light and shade: a soft, slightly sheeny skin that doesn't add much more
-  const mat = new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.62, sheen: 0.3, sheenColor: new THREE.Color('#ff9a7a'), sheenRoughness: 0.55 });
+  // the same skin response as the body's skin (human.ts skinMat) so the head and neck don't differ in sheen
+  const mat = new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.55, sheen: 0.4, sheenColor: new THREE.Color('#ff8e6e'), sheenRoughness: 0.5, clearcoat: 0.04, clearcoatRoughness: 0.5 });
+  // surface detail baked from the hi-res generated head (ear folds, creases, hair), a JPEG inside head.bin
+  if (G.arrays.normalJpg) {
+    const jb = arr('normalJpg') as Uint8Array, nurl = URL.createObjectURL(new Blob([jb as BlobPart], { type: 'image/jpeg' })), nim = new Image();
+    nim.onload = () => { const nt = new THREE.Texture(nim); nt.needsUpdate = true; nt.flipY = true; nt.anisotropy = 4; mat.normalMap = nt; mat.normalScale.set(1, 1); mat.needsUpdate = true; URL.revokeObjectURL(nurl); };
+    nim.src = nurl;
+  }
   const face = { gaze: new THREE.Vector2(), blink: { value: 0 }, gazeU: { value: new THREE.Vector2() } };
   // the irises cropped from the unwrap (a small PNG inside head.bin); a flat blue-grey until it decodes
   const c0 = document.createElement('canvas'); c0.width = c0.height = 2; const g0 = c0.getContext('2d')!; g0.fillStyle = '#7d97a8'; g0.fillRect(0, 0, 2, 2);
