@@ -66,9 +66,16 @@ ballMat.onBeforeCompile = sh => {
 ballMat.customProgramCacheKey = () => 'tour-ball';
 const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(BALL.r, 48, 32), ballMat);
 ballMesh.castShadow = true; scene.add(ballMesh);
-const tee = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0018, 0.06, 10), new THREE.MeshStandardMaterial({ color: '#f2f2ee', roughness: 0.5 }));
-const teeCup = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.0035, 0.008, 12), tee.material);
-tee.add(teeCup); teeCup.position.y = 0.03; scene.add(tee);
+// a white painted wooden tee: pointed shank, flared neck and a shallow cup with a rolled rim (origin = old centre,
+// so the ball's bottom sits in the cup at y = +0.022); most of the shank is pushed into the turf by teeUp()
+const tee = new THREE.Mesh(new THREE.LatheGeometry([
+  [0.0002, -0.031], [0.0013, -0.027], [0.002, -0.017], [0.0022, 0.006], [0.0027, 0.012], [0.0046, 0.018], [0.0066, 0.0214],
+  [0.0074, 0.0231], [0.0068, 0.0236], [0.0058, 0.0226], [0.0036, 0.0212], [0.0, 0.0207],
+].map(([r, y]) => new THREE.Vector2(r, y)), 24), new THREE.MeshStandardMaterial({ color: '#f3f0e6', roughness: 0.55 }));
+const teeCup = new THREE.Mesh(new THREE.TorusGeometry(0.0071, 0.0006, 6, 24), tee.material);
+teeCup.rotation.x = Math.PI / 2; teeCup.position.y = 0.0232;
+tee.castShadow = teeCup.castShadow = true; tee.receiveShadow = true;
+tee.add(teeCup); scene.add(tee);
 const tracer = new Tracer(); scene.add(tracer.mesh);
 // a soft key/fill light that follows the camera so the golfer reads in golden-hour backlight (TV-style)
 const fill = new THREE.DirectionalLight('#fff3e6', 0.9);

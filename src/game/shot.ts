@@ -94,9 +94,11 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   const tilt = (ang / 35) * 0.42 * C.curve + gauss() * 0.06 * e + (lefty ? -1 : 1) * sx * 0.1 * C.curve;
   const startDeg = -0.3 * (ang / 35) * 9 * C.curve + gauss() * 2.4 * e + gauss() * 1.8 * eB + lie.side * lie.slope * 0.45;
   // a lefty's draw curves right, so name shapes by handedness
-  const curvesLeft = ang < 0;
+  // name the shape from the whole curve (push angle + strike point), in push-angle degrees
+  const effAng = ang + (lefty ? -1 : 1) * sx * (0.1 / 0.42) * 35;
+  const curvesLeft = effAng < 0;
   const drawSide = lefty ? !curvesLeft : curvesLeft;
-  const shape = Math.abs(ang) < 3 ? 'Straight' : drawSide ? (Math.abs(ang) < 12 ? 'Draw' : 'Hook') : (Math.abs(ang) < 12 ? 'Fade' : 'Slice');
+  const shape = Math.abs(effAng) < 3 ? 'Straight' : drawSide ? (Math.abs(effAng) < 12 ? 'Draw' : 'Hook') : (Math.abs(effAng) < 12 ? 'Fade' : 'Slice');
   const tempoWord = eT === 0 && eP < 0.2 ? 'Smooth' : r.offMs < -70 ? 'Quick' : r.offMs > 160 ? 'Late' : 'Slow push';
   const tempoCls = tempoWord === 'Smooth' ? 'good' : (eT > 0.5 || eP > 0.5) ? 'bad' : 'warn';
   const why = tempoWord === 'Smooth'

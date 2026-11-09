@@ -36,20 +36,20 @@ const K = (o: Partial<Keys>, base: Keys): Keys => ({ ...base, ...o });
 // address: spine bent toward the ball and tilted away from the target (trail shoulder low, lead hip high)
 const A: Keys = { hipTurn: 0.04, hipTilt: 0.22, hipSide: 0.07, chestTurn: 0.04, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15, hinge: 0, beta: 0 };
 const TAKE = K({ hipTurn: -0.12, hipSide: 0.05, chestTurn: -0.5, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.18, beta: -0.06 }, A);
-const HALF = K({ hipTurn: -0.36, hipSide: 0.02, chestTurn: -0.98, chestTilt: 0.65, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.15 }, A);
-const B3Q = K({ hipTurn: -0.6, hipTilt: 0.21, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.67, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.26 }, A);
-const T: Keys = { hipTurn: -0.78, hipTilt: 0.2, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.67, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.18, pro: 0.1, hinge: 1, beta: -0.32 };
+const HALF = K({ hipTurn: -0.36, hipSide: 0.02, chestTurn: -0.98, chestTilt: 0.67, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.1 }, A);
+const B3Q = K({ hipTurn: -0.6, hipTilt: 0.21, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.69, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.18 }, A);
+const T: Keys = { hipTurn: -0.78, hipTilt: 0.2, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.18, pro: 0.1, hinge: 1, beta: -0.2 };
 // downswing: the hips lead (they're already unwinding while the chest is still turned), the trail side drops
 const TRANS = K({ hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
-const DOWN = K({ hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 1, beta: -0.25 }, T);
-const LATE = K({ hipTurn: 0.32, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.38, shift: 0.075, drop: 0.008, heel: 0.1, shrug: 0.0, pro: -0.08, hinge: 0.62, beta: -0.12 }, T);
-const I: Keys = { hipTurn: 0.7, hipTilt: 0.16, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.4, shift: 0.08, drop: 0.012, heel: 0.28, shrug: -0.05, pro: -0.13, hinge: 0, beta: 0 };
+const DOWN = K({ hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 1, beta: -0.16 }, T);
+const LATE = K({ hipTurn: 0.32, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.38, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.08, hinge: 0.62, beta: -0.12 }, T);
+const I: Keys = { hipTurn: 0.7, hipTilt: 0.16, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.4, shift: 0.08, drop: -0.012, heel: 0.28, shrug: -0.05, pro: -0.13, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
-const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.46, chestSide: 0.38, shift: 0.1, heel: 0.5, hinge: -0.08, beta: 0.08, pro: -0.12 }, I);
-const THRU = K({ hipTurn: 1.25, hipTilt: 0.12, hipSide: 0.06, chestTurn: 1.35, chestTilt: 0.28, chestSide: 0.3, shift: 0.13, drop: 0.0, heel: 0.8, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
-const T3Q = K({ hipTurn: 1.5, hipTilt: 0.08, hipSide: 0.03, chestTurn: 1.75, chestTilt: 0.12, chestSide: 0.22, shift: 0.16, drop: -0.025, heel: 0.95, shrug: -0.12, pro: -0.02, hinge: -0.85, beta: 0.42 }, I);
+const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.5, hinge: -0.08, beta: 0.08, pro: -0.12 }, I);
+const THRU = K({ hipTurn: 1.25, hipTilt: 0.1, hipSide: 0.05, chestTurn: 1.35, chestTilt: 0.14, chestSide: 0.28, shift: 0.13, drop: -0.035, heel: 0.8, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
+const T3Q = K({ hipTurn: 1.5, hipTilt: 0.06, hipSide: 0.02, chestTurn: 1.75, chestTilt: 0.03, chestSide: 0.2, shift: 0.16, drop: -0.04, heel: 0.95, shrug: -0.12, pro: -0.02, hinge: -0.85, beta: 0.42 }, I);
 // full finish: belt buckle and chest past the target, weight on the lead leg, upright with a slight reverse-C
-const F: Keys = { hipTurn: 1.62, hipTilt: 0.04, hipSide: 0.0, chestTurn: 1.95, chestTilt: 0.0, chestSide: 0.18, shift: 0.17, drop: -0.035, heel: 1, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.55 };
+const F: Keys = { hipTurn: 1.62, hipTilt: 0.04, hipSide: 0.0, chestTurn: 1.95, chestTilt: 0.0, chestSide: 0.18, shift: 0.17, drop: -0.04, heel: 1, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.55 };
 // where each key sits: back/follow by the hands' angle as a fraction of a full top/finish, down by fraction of this top
 const KF_BACK: [number, Keys][] = [[0, A], [0.3, TAKE], [0.55, HALF], [0.8, B3Q], [1, T]];
 const KF_DOWN: [number, Keys][] = [[0, T], [0.15, TRANS], [0.45, DOWN], [0.75, LATE], [1, I]];
@@ -332,7 +332,7 @@ export class Golfer {
       // full finish target, built in the chest's frame: hands up past the lead shoulder, shaft wrapped behind the neck
       const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];
       const L = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(qChest);
-      const gripFin = neck.clone().add(L(0.12, 0.16, 0.1));
+      const gripFin = neck.clone().add(L(0.15, 0.1, 0.0));
       const shaftFin = L(-0.6, -0.24, -0.76).normalize();   // across the back of the shoulders, behind the neck            // grip → club head
       const faceFin = L(0, 0.35, -0.9).normalize();                  // where the club face points
       // club local frame: shaft runs hosel → butt along shaftDir, face looks along +X
