@@ -45,7 +45,20 @@ const ball = new THREE.Mesh(new THREE.SphereGeometry(0.0214, 24, 16), new THREE.
 ball.position.set(0, 0.0214, 0); ball.castShadow = true; scene.add(ball);
 
 const focus = new THREE.Vector3(0.6, 0, 0);
-if (view === 'portrait') { camera.position.set(2.35, 1.3, 3.7); camera.lookAt(-0.1, 1.0, -6); }
+if (view === 'portrait') {
+  // the game's portrait swing cam: behind the left-hander's trail side, lens shifted up 20%
+  camera.position.set(0.7, 1.75, 3.6); camera.lookAt(0.45, 0.35, -6);
+  camera.setViewOffset(innerWidth, innerHeight, 0, innerHeight * 0.2, innerWidth, innerHeight); camera.updateProjectionMatrix();
+} else if (view === 'flag' || view === 'sign') {
+  const t = range.targets.find(g => g.yards === Number(qs.get('yds') ?? 100))!;
+  if (view === 'flag') { camera.position.set(t.pos.x - 4.2, t.pos.y + 1.7, t.pos.z + 4.4); camera.lookAt(t.pos.x, t.pos.y + 1.7, t.pos.z); }
+  else {
+    const side = t.pos.x < 0 ? -1 : 1, W = 2.0 + t.yards * 0.012, bx = t.pos.x + side * (t.radius + W / 2 + 4.0), bz = t.pos.z - 1.0;
+    camera.position.set(bx * 0.55, t.pos.y + 1.7, bz + 9); camera.lookAt(bx, t.pos.y + 1.1, bz);
+  }
+  focus.copy(t.pos);
+} else if (view === 'trees') { camera.position.set(22, 1.9, -30); camera.lookAt(62, 6.0, -22); focus.set(45, 0, -28);
+} else if (view === 'turf') { camera.position.set(1.2, 0.9, 1.6); camera.lookAt(-0.2, 0.0, -1.5); }
 else if (view === 'flight') {
   const z = -150 * YD; camera.position.set(1.5, 25, z + 30); camera.lookAt(0, 6, z - 120); focus.set(0, range.heightAt(0, z - 20), z - 20);
 } else { camera.position.set(-0.6, 1.62, 5.2); camera.lookAt(0.45, 0.92, -22); }

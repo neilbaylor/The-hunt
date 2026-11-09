@@ -51,7 +51,7 @@ function materials() {
   mats = {
     chrome: new THREE.MeshStandardMaterial({ color: '#d9dde2', metalness: 1, roughness: 0.18 }),
     satin: new THREE.MeshStandardMaterial({ color: '#c9ccd0', metalness: 1, roughness: 0.38 }),
-    steel: new THREE.MeshStandardMaterial({ color: '#e6e8eb', metalness: 1, roughness: 0.14 }),
+    steel: new THREE.MeshStandardMaterial({ color: '#d4d6d8', metalness: 1, roughness: 0.26, envMapIntensity: 0.8 }),
     graphite: new THREE.MeshPhysicalMaterial({ color: '#1c1f24', metalness: 0.3, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.15 }),
     crown: new THREE.MeshPhysicalMaterial({ color: '#121417', metalness: 0.4, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 }),
     face: new THREE.MeshStandardMaterial({ color: '#4a4f57', metalness: 0.9, roughness: 0.35 }),
@@ -109,6 +109,43 @@ function woodHead(spec: ClubSpec) {
   return { g, size };
 }
 
+/** forged iron finish: satin-blasted face with milled score lines, polished back and topline, brushed sole, cavity badge */
+const ironMats: Record<string, THREE.MeshStandardMaterial> = {};
+function ironMaterial(wedge: boolean) {
+  const key = wedge ? 'w' : 'i';
+  if (ironMats[key]) return ironMats[key];
+  const m = new THREE.MeshStandardMaterial({ color: wedge ? '#b9b7b2' : '#cfd0d1', metalness: 1, roughness: 0.2, envMapIntensity: 0.75 });
+  m.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vP; varying vec3 vN;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvP = position; vN = normal;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vP; varying vec3 vN;')
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        vec3 on = normalize(vN);
+        float face = smoothstep(0.55, 0.8, on.x);              // the hitting face looks toward +x
+        float sole = smoothstep(0.5, 0.8, -on.y);
+        float back = smoothstep(0.3, 0.7, -on.x);
+        // face: bead-blasted satin, darker, with milled score lines across it
+        float inZone = step(0.004, vP.y) * step(vP.y, 0.036) * step(abs(vP.z + 0.002), 0.031);
+        float groove = (1.0 - smoothstep(0.0003, 0.0007, abs(fract(vP.y / 0.0034) - 0.5) * 0.0034)) * inZone;
+        float mill = 0.5 + 0.5 * sin(vP.z * 9000.0 + vP.y * 400.0);
+        roughnessFactor = mix(roughnessFactor, ${wedge ? '0.62' : '0.5'} + 0.06 * mill, face);
+        diffuseColor.rgb *= mix(1.0, ${wedge ? '0.7' : '0.78'} - 0.45 * groove, face);
+        // sole: brushed, scuffed from turf
+        roughnessFactor = mix(roughnessFactor, 0.45, sole);
+        diffuseColor.rgb *= mix(1.0, 0.82, sole);
+        // back: polished, with a dark badge in the cavity
+        vec2 bp = vec2(vP.z - 0.006, vP.y - 0.018);
+        float badge = back * (1.0 - smoothstep(0.011, 0.0125, length(bp * vec2(0.5, 1.7))));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.1, 0.12, 0.16), badge * 0.75);
+        roughnessFactor = mix(roughnessFactor, 0.35, badge);
+        roughnessFactor = mix(roughnessFactor, ${wedge ? '0.4' : '0.12'}, back * (1.0 - badge));`)
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.4, badge);');
+  };
+  m.customProgramCacheKey = () => 'iron-' + key;
+  ironMats[key] = m;
+  return m;
+}
+
 export function buildClub(spec: ClubSpec, extraLength: number, gloveMat: THREE.Material, skinMat: THREE.Material): ClubModel {
   const M = materials();
   const group = new THREE.Group(); group.name = `club-${spec.id}`;
@@ -128,7 +165,7 @@ export function buildClub(spec: ClubSpec, extraLength: number, gloveMat: THREE.M
     sweet = 0.019 * size + 0.002;
     hosel = new THREE.Vector3(-0.022 * size, 0.025 * size, -0.058 * size);
   } else {
-    head = new THREE.Mesh(ironHead(spec), spec.kind === 'wedge' ? M.satin : M.chrome);
+    head = new THREE.Mesh(ironHead(spec), ironMaterial(spec.kind === 'wedge'));
     sweet = 0.018;
     hosel = new THREE.Vector3(-0.012, 0.026, -0.043);
   }
