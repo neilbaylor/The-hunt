@@ -55,7 +55,7 @@ float depthEdge(vec2 uv, float r) {
   float m = min(min(a, b), min(d, e));
   float lap = abs(a + b + d + e - 4.0 * c) / max(c, 0.5);
   float jump = (c - m) / max(m, 0.5);
-  return max(smoothstep(0.05, 0.16, jump), smoothstep(0.12, 0.3, lap));
+  return max(smoothstep(0.14, 0.32, jump), smoothstep(0.3, 0.6, lap));
 }
 // interior lines: luminance Sobel
 float lumaEdge(vec2 uv, float r) {
@@ -86,7 +86,7 @@ void main() {
   // wash: soften texture, slightly desaturate and pool pigment at edges of tone changes
   vec3 c = mix(texture2D(tColor, uv).rgb, blur5(uv, 2.5 * px), 0.75);
   c = sat(c, 0.82);
-  c = 1.0 - (1.0 - c) * 0.84; // watercolour is transparent: lift toward the paper
+  c = 1.0 - (1.0 - c) * 0.9; // watercolour is transparent: lift toward the paper
   float bleed = fbm(p * 0.035 + 3.1);
   c *= 0.94 + 0.12 * bleed;
   // pigment pools darker at tone boundaries
@@ -153,8 +153,7 @@ void main() {
   // three soft-edged value bands (shadow / mid / light) plus a highlight band
   float q = 0.18 + 0.32 * smoothstep(0.24, 0.3, L) + 0.28 * smoothstep(0.5, 0.56, L) + 0.18 * smoothstep(0.8, 0.86, L);
   float keep = smoothstep(200.0, 1500.0, z); // sky and far hills stay smooth gradients
-  vec3 c = mix(chroma * q, base, keep * 0.85);
-  c = sat(c, 1.06);
+  vec3 c = mix(mix(chroma * q, base, 0.35), base, keep * 0.85);
   // halftone dots where it's in shadow relative to its surroundings (cast shadows, folds, under the arms)
   vec2 hp = mat2(0.7071, -0.7071, 0.7071, 0.7071) * p / 3.6;
   float shade = L / max(localL(uv, 14.0 * px), 0.03);
@@ -214,11 +213,11 @@ void main() {
   float L = luma(blur5(uv, 1.5 * px));
   float keep = smoothstep(150.0, 900.0, z);
   float shade = L / max(localL(uv, 16.0 * px), 0.03);
-  float h1 = hatch(p, 0.785, 3.6, 0.18) * (1.0 - smoothstep(0.6, 0.85, shade));
-  float h2 = hatch(p, -0.785, 3.6, 0.18) * (1.0 - smoothstep(0.4, 0.62, shade));
+  float h1 = hatch(p, 0.785, 3.4, 0.2) * (1.0 - smoothstep(0.7, 0.92, shade));
+  float h2 = hatch(p, -0.785, 3.4, 0.2) * (1.0 - smoothstep(0.45, 0.7, shade));
   float h3 = hatch(p, 0.2, 2.8, 0.2) * (1.0 - smoothstep(0.08, 0.16, L));
   float h = max(max(h1, h2), h3) * (1.0 - keep);
-  c = mix(c, c * 0.35 + vec3(0.02, 0.02, 0.04), h * 0.75);
+  c = mix(c, c * 0.25 + vec3(0.02, 0.02, 0.04), h * 0.85);
   float de = depthEdge(uv, px * (0.9 + 0.5 * nw));
   float le = smoothstep(0.3, 0.65, lumaEdge(uv, px)) * nw;
   c = mix(c, vec3(0.05, 0.05, 0.07), clamp(max(de * (0.4 + 0.6 * nw), le * 0.55), 0.0, 1.0));
