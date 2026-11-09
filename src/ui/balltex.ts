@@ -182,6 +182,13 @@ export function mat3Rotate(m: Mat3, ax: number, ay: number) {
   m.splice(0, 9, ...r0, ...r1, ...r2);
 }
 
+/** premultiply by a rotation of `ang` about the unit view-space axis (ax, ay, az) */
+export function mat3RotateAxis(m: Mat3, ax: number, ay: number, az: number, ang: number) {
+  const c = Math.cos(ang), s = Math.sin(ang), t = 1 - c;
+  const R = [t * ax * ax + c, t * ax * ay - s * az, t * ax * az + s * ay, t * ax * ay + s * az, t * ay * ay + c, t * ay * az - s * ax, t * ax * az - s * ay, t * ay * az + s * ax, t * az * az + c];
+  const o = m.slice();
+  for (let r = 0; r < 3; r++) for (let col = 0; col < 3; col++) m[r * 3 + col] = R[r * 3] * o[col] + R[r * 3 + 1] * o[3 + col] + R[r * 3 + 2] * o[6 + col];
+}
 let scratch: { cv: HTMLCanvasElement; img: ImageData } | null = null;
 /** Shade the ball into a square of `size` px; returns a canvas to drawImage. */
 export function shadeBall(size: number, m: Mat3): HTMLCanvasElement {

@@ -30,6 +30,16 @@ export class Sound {
     s.connect(bp).connect(g).connect(this.master); s.start(t); s.stop(t + dur + 0.05);
   }
 
+  /** a short rising whirr as spin is added on the spin ball; level 0..1 */
+  whirr(level: number) {
+    const c = this.ctx; if (!c) return;
+    const t = c.currentTime, s = this.src(0.2), bp = c.createBiquadFilter(), g = c.createGain();
+    bp.type = 'bandpass'; bp.Q.value = 6;
+    bp.frequency.setValueAtTime(700 + 900 * level, t); bp.frequency.exponentialRampToValueAtTime(1100 + 1500 * level, t + 0.16);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.06 + 0.08 * level, t + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    s.connect(bp).connect(g).connect(this.master); s.start(t); s.stop(t + 0.2);
+  }
+
   /** ball strike: crisp click for irons, a hollow "tink-thwack" for woods */
   strike(kind: ClubKind, quality: number) {
     const c = this.ctx; if (!c) return;

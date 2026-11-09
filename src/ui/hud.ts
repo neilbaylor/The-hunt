@@ -2,7 +2,7 @@
 // Plain DOM over the WebGL canvas. The default look ('f', Clubhouse Candy) is playful and tactile:
 // cream toy-like chips in Toronto Hunt navy, red and gold. The older looks (A Broadcast, B Clubhouse,
 // C Y2K Pro Tour) are still there (tap the player chip to cycle). Corner groups scale with the screen.
-import { shadeBall, mat3Identity, mat3Rotate, onBallTexUpdate, type Mat3 } from './balltex';
+import { shadeBall, mat3Identity, mat3Rotate, mat3RotateAxis, onBallTexUpdate, type Mat3 } from './balltex';
 import { CLUB_SPECS } from '../golfer/club';
 import type { ShotMode } from '../golfer/golfer';
 import { CLUB_DATA, LIES, MODES, type ShotPlan } from '../game/shot';
@@ -205,7 +205,7 @@ const SKIN_COL: Record<Skin, { ring: string; acc: string; acc2: string; back: st
   b: { ring: 'rgba(244,236,216,.3)', acc: '#d4ad57', acc2: '#9fd38a', back: 'rgba(13,44,29,.82)' },
   c: { ring: 'rgba(255,255,255,.4)', acc: '#ffe234', acc2: '#5cff8a', back: 'rgba(11,31,138,.82)' },
 };
-function drawSpinBall(cv: HTMLCanvasElement, m: Mat3, spin: { x: number; y: number }, skin: Skin, active: boolean) {
+function drawSpinBall(cv: HTMLCanvasElement, m: Mat3, spin: { x: number; y: number }, skin: Skin, active: boolean, blur?: { axis: number[]; d: number }) {
   const ctx = cv.getContext('2d')!, k = cv.width / 136, c = SKIN_COL[skin];
   ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, 136, 136);
   const cx = 68, cy = 67, R = 43, mag = Math.hypot(spin.x, spin.y);
@@ -229,7 +229,14 @@ function drawSpinBall(cv: HTMLCanvasElement, m: Mat3, spin: { x: number; y: numb
   sh.addColorStop(0, 'rgba(0,0,0,.45)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = sh; ctx.beginPath(); ctx.arc(cx + 3, cy + 7, R * 1.1, 0, Math.PI * 2); ctx.fill();
   const px = Math.round(R * 2 * k);
-  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(shadeBall(px, m), Math.round((cx - R) * k), Math.round((cy - R) * k)); ctx.restore();
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (blur && blur.d > 0.02) {
+    // motion blur at high spin: the ball shaded at a few angles across one frame's turn, layered
+    const n = 4;
+    for (let i = 0; i < n; i++) { const mm = m.slice(); mat3RotateAxis(mm, blur.axis[0], blur.axis[1], blur.axis[2], (i / (n - 1) - 0.5) * blur.d); ctx.globalAlpha = i === 0 ? 1 : 1 / (i + 1); ctx.drawImage(shadeBall(px, mm), Math.round((cx - R) * k), Math.round((cy - R) * k)); }
+    ctx.globalAlpha = 1;
+  } else ctx.drawImage(shadeBall(px, m), Math.round((cx - R) * k), Math.round((cy - R) * k));
+  ctx.restore();
   if (mag > 0.03) {
     // a comet sweeping across the ball's face in the spin direction, curving with the surface
     const ang = Math.atan2(-spin.y, spin.x), len = 0.5 + 0.45 * mag;
@@ -580,8 +587,10 @@ export class Hud {
     el.dataset.lvl = !w ? '' : mag < 0.45 ? 'lo' : mag < 0.8 ? 'mid' : 'hi';
     el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick');
   }
-  showSpin(on: boolean) {
+  showSpin(on: boolean, base?: { rpm: number; tilt: number }) {
     this.spinOn = on;
+    if (base) this.spinBase = base;
+    this.spinFelt = 0; this.spinRate = 0;
     this.q('#spin').classList.toggle('off', !on);
     this.el.classList.toggle('spin-on', on);
     if (on) {
@@ -598,11 +607,27 @@ export class Hud {
     this.spinLabel('Spin: ');
     setTimeout(() => { if (!this.spinOn) { this.q('#spin').classList.add('off'); this.el.classList.remove('spin-on'); } }, 1800);
   }
+  /** the shot's real spin, for the spin ball's turning (set at launch) */
+  spinBase = { rpm: 6000, tilt: 0 };
+  onSpinTick: (level: number) => void = () => {};
+  private spinFelt = 0; private spinFeltT = 0; private spinRate = 0;
   tickSpin(dt: number, flying: boolean) {
     if (this.q('#spin').classList.contains('off')) return;
-    const rate = flying ? 1 : 0.15;
-    mat3Rotate(this.spinM, (-1.2 - this.spin.y * 4) * dt * rate * 3, this.spin.x * 4 * dt * rate * 3);
-    drawSpinBall(this.spinCv, this.spinM, this.spin, this.skin, flying);
+    // backspin from the strike plus what the player swipes in (spin.y < 0 = more backspin), read at phone size:
+    // 0.3–3 rev/s on screen, non-linear; sidespin tilts the axis, enough topspin reverses it
+    const eff = this.spinBase.rpm - this.spin.y * 5000;
+    const rps = Math.sign(eff || 1) * (0.3 + 2.7 * Math.pow(Math.min(1, Math.abs(eff) / 11000), 0.75));
+    const want = flying ? rps : rps * 0.25;
+    this.spinRate += (want - this.spinRate) * Math.min(1, dt * 4);
+    const th = Math.max(-1, Math.min(1, this.spin.x * 0.75 + this.spinBase.tilt * 1.5));
+    const axis = [Math.cos(th), Math.sin(th), 0];
+    const ang = this.spinRate * Math.PI * 2 * dt;
+    mat3RotateAxis(this.spinM, axis[0], axis[1], axis[2], ang);
+    drawSpinBall(this.spinCv, this.spinM, this.spin, this.skin, flying, Math.abs(this.spinRate) > 1.3 ? { axis, d: Math.min(0.9, Math.abs(ang) * 1.6) } : undefined);
+    // a whirr and a buzz as spin is added
+    const lvl = Math.hypot(this.spin.x, this.spin.y), t = performance.now();
+    if (lvl > this.spinFelt + 0.07 && t - this.spinFeltT > 90) { this.spinFelt = lvl; this.spinFeltT = t; this.onSpinTick(lvl); try { navigator.vibrate?.(5); } catch { /* not allowed */ } }
+    if (lvl < this.spinFelt - 0.1) this.spinFelt = lvl;
   }
 
   // ── strike point picker ──

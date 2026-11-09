@@ -88,6 +88,7 @@ scene.add(fill, fill.target);
 
 // ── HUD + sound ──
 const hud = new Hud(document.body, profile);
+hud.onSpinTick = lvl => sound.whirr(lvl);
 hud.el.classList.add('hidden');
 const sound = new Sound();
 hud.club = 6; hud.mode = 'full'; hud.lie = 0; hud.render(null);
@@ -240,7 +241,7 @@ function strike(now: number, p: [number, number], released: boolean) {
   shake = 0.5;
   Object.assign(G, { phase: 'follow', phi: 0, followT0: now, followTo: PHI_FINISH * (0.55 + 0.45 * power) });
   state = 'flight';
-  hud.showSpin(true);
+  hud.showSpin(true, { rpm: plan.launch.spinRpm, tilt: plan.launch.tilt });
   camMode = 'chase'; chaseT0 = now;
   // long shots get the cinematic: face and follow-through, fly after the ball, settle on the landing
   { const land = ball.predictLanding(14), carry = land ? Math.hypot(land.x - ball.start.x, land.z - ball.start.z) / YD : 0;
