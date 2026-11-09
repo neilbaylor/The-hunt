@@ -221,7 +221,7 @@ export class Golfer {
         // (finger base half-thickness out from the grip), and the wrist follows from the hand's own bind geometry
         const E = this.extras!, mcp = this.body.bones[E.fingers[side][2][0]].position;
         const along = mcp.dot(E.handDir[side]), depth = mcp.dot(E.palm[side]);
-        const rMcp = GRIP_R + 0.011 * k;
+        const rMcp = GRIP_R + 0.0125 * k;
         const wrist = grip.clone().addScaledVector(palm, -rMcp).addScaledVector(dir, -along).addScaledVector(palm, -depth);
         return { dir, palm, wrist };
       };
@@ -464,7 +464,7 @@ export class Golfer {
       const handP = this.rig.P[fore].clone().add(bones[E.hand[s]].position.clone().applyQuaternion(Q[fore]));
       (this as any).__handGap = (this as any).__handGap ?? {}; (this as any).__handGap[s] = handP.distanceTo(this.rig.wristPos[s]);
       const gripPt = (s === 'L' ? this.club.gripLead : this.club.gripTrail);
-      const rFinger = GRIP_R + 0.0085 * this.k; void gripPt;
+      const rFinger = GRIP_R + 0.0098 * this.k; void gripPt;
       E.fingers[s].forEach((chain, fi) => {
         let parentQ = qh, acc = 0;
         if (fi === 0) {
@@ -476,7 +476,7 @@ export class Golfer {
           chain.forEach((b, si) => {
             const d = P.clone().sub(axisP), along = d.dot(axisD);
             const radial = d.clone().addScaledVector(axisD, -along); const rl = radial.length(); radial.normalize();
-            const target = axisP.clone().addScaledVector(axisD, along - (0.03 + 0.012 * si)).addScaledVector(radial, Math.max(rFinger, rl * 0.6 + rFinger * 0.4));
+            const target = axisP.clone().addScaledVector(axisD, along - (0.03 + 0.012 * si)).addScaledVector(radial, rFinger + 0.15 * Math.max(0, rl - rFinger));
             const segW = segs[si].clone().applyQuaternion(qPrev).normalize();
             const q = new THREE.Quaternion().setFromUnitVectors(segW, target.sub(P).normalize()).multiply(qPrev);
             local(b, parentQ, q); parentQ = q; qPrev = q;
