@@ -256,6 +256,52 @@ export const spinWords = (s: { x: number; y: number }) => {
 export interface CardData {
   plan: ShotPlan; power: number; offMs: number;
   carry?: number; total?: number; offline?: number; apex?: number; done: boolean;
+  /** the flight as flown, in yards: f = along the aim line, s = to the right of it, h = height; land = index of touchdown */
+  path?: { f: number; s: number; h: number }[]; land?: number; aimYds?: number;
+  /** side curve vs the start line at touchdown (yards, + = bent right) and the spin the player added in the air */
+  curveYds?: number; addSpin?: { x: number; y: number }; lefty?: boolean;
+}
+
+const curveTxt = (c: CardData) => {
+  const v = c.curveYds; if (v === undefined) return c.plan.shape;
+  if (Math.abs(v) < 1.5) return 'Straight';
+  const right = v > 0, draw = c.lefty ? right : !right;
+  return `${Math.abs(v) > 18 ? (draw ? 'Hook' : 'Slice') : (draw ? 'Draw' : 'Fade')} · ${Math.abs(v).toFixed(0)} yds`;
+};
+const spinTxt = (c: CardData) => {
+  const s = c.addSpin; if (!s) return '';
+  const tilt = c.plan.launch.tilt;
+  const parts = [s.y < -0.05 ? '+backspin' : s.y > 0.05 ? '+topspin' : '', Math.abs(s.x) > 0.05 ? (s.x < 0 ? '←' : '→') : Math.abs(tilt) > 0.04 ? (tilt < 0 ? '↶' : '↷') : ''].filter(Boolean);
+  return parts.length ? ` <small>${parts.join(' ')}</small>` : '';
+};
+/** Shot details sketch: top-down flight (dashed aim line, target ring, flight, roll) and a little side view with the apex */
+function shotSketch(c: CardData) {
+  const P = c.path!, L = Math.max(1, Math.min(P.length - 1, c.land ?? P.length - 1)), aimY = c.aimYds ?? (c.carry ?? 100);
+  const fMax = Math.max(aimY, ...P.map(p => p.f)) * 1.08, W = 268, H = 92, pad = 12;
+  const sx = (f: number) => pad + (f / fMax) * (W - 2 * pad), EX = 3;   // lateral exaggerated ×3 so the shape reads
+  const sy = (s: number) => H / 2 + Math.max(-H / 2 + 8, Math.min(H / 2 - 8, s * EX * ((W - 2 * pad) / fMax)));
+  const pts = (a: number, b: number) => P.slice(a, b + 1).map(p => `${sx(p.f).toFixed(1)},${sy(p.s).toFixed(1)}`).join(' ');
+  const end = P[P.length - 1], ld = P[L], rr = Math.max(5, (3 + 0.06 * aimY) * ((W - 2 * pad) / fMax) * 1.4);
+  const top = `<svg class="sk-top" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <rect x="0" y="0" width="${W}" height="${H}" rx="14" fill="#e9f5df"/>
+    ${[0.2, 0.4, 0.6, 0.8].map(k => `<line x1="${sx(fMax * k).toFixed(1)}" x2="${sx(fMax * k).toFixed(1)}" y1="6" y2="${H - 6}" stroke="#cfe5c2" stroke-width="1"/>`).join('')}
+    <line x1="${sx(0)}" y1="${H / 2}" x2="${sx(aimY)}" y2="${H / 2}" stroke="#13294b" stroke-width="1.6" stroke-dasharray="4 4" opacity=".55"/>
+    <ellipse cx="${sx(aimY).toFixed(1)}" cy="${H / 2}" rx="${(rr * 0.55).toFixed(1)}" ry="${rr.toFixed(1)}" fill="rgba(242,169,0,.14)" stroke="#f2a900" stroke-width="2"/>
+    <polyline points="${pts(0, L)}" fill="none" stroke="#f2a900" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="${pts(L, P.length - 1)}" fill="none" stroke="#13294b" stroke-width="2" stroke-dasharray="2 3" stroke-linecap="round"/>
+    <circle cx="${sx(0)}" cy="${H / 2}" r="4" fill="#fff" stroke="#13294b" stroke-width="1.5"/>
+    <circle cx="${sx(ld.f).toFixed(1)}" cy="${sy(ld.s).toFixed(1)}" r="3" fill="#f2a900"/>
+    <circle cx="${sx(end.f).toFixed(1)}" cy="${sy(end.s).toFixed(1)}" r="4.2" fill="#fff" stroke="#c8102e" stroke-width="2"/>
+  </svg>`;
+  const hMax = Math.max(1, ...P.map(p => p.h)), SH = 46, ai = P.reduce((m, p, i) => p.h > P[m].h ? i : m, 0);
+  const hy = (h: number) => SH - 6 - (h / hMax) * (SH - 16);
+  const side = `<svg class="sk-side" viewBox="0 0 ${W} ${SH}" aria-hidden="true">
+    <line x1="${pad}" x2="${W - pad}" y1="${SH - 6}" y2="${SH - 6}" stroke="#7cc95a" stroke-width="3" stroke-linecap="round"/>
+    <polyline points="${P.slice(0, L + 1).map(p => `${sx(p.f).toFixed(1)},${hy(p.h).toFixed(1)}`).join(' ')}" fill="none" stroke="#f2a900" stroke-width="2.6" stroke-linecap="round"/>
+    <circle cx="${sx(P[ai].f).toFixed(1)}" cy="${hy(P[ai].h).toFixed(1)}" r="3.4" fill="#13294b"/>
+    <text x="${(sx(P[ai].f) + 6).toFixed(1)}" y="${(hy(P[ai].h) + 3).toFixed(1)}" class="sk-lab">apex ${(c.apex ?? P[ai].h).toFixed(0)} yds</text>
+  </svg>`;
+  return `<div class="sc-shape">${top}${side}</div>`;
 }
 
 export class Hud {
@@ -424,9 +470,10 @@ export class Hud {
         <div><dt>Takeaway</dt><dd class="${P.driftCls}">${P.driftWord}</dd></div>
         <div><dt>Timing</dt><dd>${c.offMs > 0 ? '+' : ''}${Math.round(c.offMs)} ms</dd></div>
         <div><dt>Launch</dt><dd>${(P.launch.launch * 180 / Math.PI).toFixed(1)}°</dd></div>
-        <div><dt>Spin</dt><dd>${Math.round(P.launch.spinRpm / 50) * 50} rpm</dd></div>
+        <div><dt>Curve</dt><dd>${curveTxt(c)}</dd></div>
+        <div><dt>Spin</dt><dd>${Math.round(P.launch.spinRpm / 50) * 50} rpm${spinTxt(c)}</dd></div>
         <div><dt>Apex</dt><dd>${c.apex !== undefined ? c.apex.toFixed(0) + ' yds' : '…'}</dd></div>
-      </dl></div>`;
+      </dl>${c.done && c.path && c.path.length > 3 ? shotSketch(c) : ''}</div>`;
     const yd = c.done && c.total !== undefined ? `${c.total.toFixed(0)} yds` : c.carry !== undefined ? `${c.carry.toFixed(0)} carry` : 'in the air';
     mini.innerHTML = `<i class="dot ${P.tempoCls}"></i><b>${yd}</b><span>Shot details</span><span class="chev" aria-hidden="true"></span>`;
     this.runTicks();

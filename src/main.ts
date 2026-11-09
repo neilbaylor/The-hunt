@@ -228,6 +228,7 @@ function strike(now: number, p: [number, number], released: boolean) {
   plan.launch.azimuth += aim.dir; // aimed off the straight line (aim view)
   ball.hit(plan.launch);
   tracer.clear(); tracer.push(ball.pos);
+  shotPath.length = 0; shotPath.push(ball.pos.clone()); shotLand = -1;
   card = { plan, power, offMs: SW.off, done: false };
   if (dbg) dbg.textContent = `pull ${Math.round(SW.tDeep - SW.t0)} ms · pause ${Math.round(SW.tAt - SW.tDeep)} ms · push ${Math.round(now - SW.tTrans)} ms\nvs top ${dbgRaw > 0 ? '+' : ''}${Math.round(dbgRaw)} ms → graded ${Math.round(SW.off)} ms (${plan.tempoWord})`;
   hud.card(card);
@@ -320,6 +321,10 @@ function startShotCam() {
   camMode = 'cine';
 }
 /** tap during the flight: run the ball on to just before it lands and show the landing */
+// the flown path, for the Shot details sketch
+const shotPath: THREE.Vector3[] = [new THREE.Vector3()];
+let shotLand = -1;
+
 // ── wind: per session, 0–15 mph from a random direction; it shifts a little every few shots and gusts ±20%.
 // deg = where it blows TOWARD, clockwise from straight down the range (0 = helping, 180 = into you, 90 = left→right).
 // ?wind=mph,deg fixes it for testing. Real flights feel WIND (ball.ts); the planning sims don't, so players allow for it.
@@ -532,6 +537,8 @@ function frame(now: number) {
     const wasFlight = ball.phase === 'flight';
     ball.step(simDt);
     tracer.push(ball.pos);
+    if (shotPath[shotPath.length - 1].distanceToSquared(ball.pos) > 0.6) shotPath.push(ball.pos.clone());
+    if (shotLand < 0 && ball.phase !== 'flight') shotLand = shotPath.length - 1;
     if (wasFlight && ball.phase !== 'flight') {
       sound.land(ball.lastSurface === 'green' ? 0.6 : ball.lastSurface === 'rough' ? 0.9 : 0.2);
       hud.spinDone();
@@ -539,7 +546,17 @@ function frame(now: number) {
     }
     if (ball.phase === 'stopped') {
       state = 'result'; resultT = now; if (camMode !== 'cine') camMode = 'rest';
-      if (card) { Object.assign(card, { done: true, carry: ball.carry() / YD, total: ball.total() / YD, offline: ball.offline() / YD }); hud.card(card); }
+      if (card) {
+        // the flight as flown for the Shot details sketch: yards along / across the aim line, curve vs the start line
+        shotPath.push(ball.pos.clone());
+        const st = ball.start, ad = aim.dir, fx = Math.sin(ad), fz = -Math.cos(ad);
+        const path = shotPath.map(p => ({ f: ((p.x - st.x) * fx + (p.z - st.z) * fz) / YD, s: ((p.x - st.x) * -fz + (p.z - st.z) * fx) / YD, h: (p.y - st.y) / YD }));
+        const li = shotLand < 0 ? path.length - 1 : shotLand, early = path[Math.min(3, li)], ld = path[li];
+        const k = early.f > 0.5 ? early.s / early.f : 0;   // the start line from the first few yards
+        Object.assign(card, { done: true, carry: ball.carry() / YD, total: ball.total() / YD, offline: ball.offline() / YD,
+          path, land: li, aimYds: aim.distanceYds, curveYds: ld.s - k * ld.f, addSpin: { ...hud.spin }, lefty: golfer.lefty });
+        hud.card(card);
+      }
       const tot = ball.total() / YD, off = ball.offline() / YD;
       const near = range?.targets.reduce((b, t) => { const d = Math.hypot(t.pos.x - ball.pos.x, t.pos.z - ball.pos.z); return d < b.d ? { d, t } : b; }, { d: Infinity, t: null as any });
       const msg = near && near.t && near.d < near.t.radius ? `On the ${near.t.yards} green · ${(near.d / YD).toFixed(0)} yds from the pin` : `${tot.toFixed(0)} yds · ${Math.abs(off) < 1 ? 'online' : `${Math.abs(off).toFixed(0)} ${off < 0 ? 'left' : 'right'}`}`;

@@ -533,3 +533,10 @@ body.aiming .hud .tr { opacity: 1 !important; }
 body.aiming .hud .tr #lieSlot { visibility: hidden; }
 body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-origin: 100% 0; }
 @media (prefers-reduced-motion: reduce) { .wind-chip svg { animation: none; } }
+
+/* Shot details: the shot sketch */
+.card.simple .sc-shape { display: none; gap: 4px; padding-top: 6px; border-top: 2px dotted var(--h-rule); }
+.card.simple.more .sc-shape { display: grid; }
+.sc-shape svg { width: 100%; height: auto; display: block; }
+.sc-shape .sk-lab { font: 800 9px 'Nunito', sans-serif; fill: #13294b; }
+.card.simple .stats dd small { font: 800 10px/1 'Nunito', sans-serif; color: var(--red); }
