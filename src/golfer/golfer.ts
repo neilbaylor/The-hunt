@@ -235,7 +235,12 @@ export class Golfer {
       const fin = finishK();
       const f = Math.min(1, -phi / Math.abs(PHI_FINISH));
       const e = 1 - Math.pow(1 - f, 2);
-      for (const n of Object.keys(A) as (keyof Keys)[]) key[n] = I[n] + (fin[n] - I[n]) * e;
+      for (const n of Object.keys(A) as (keyof Keys)[]) {
+        // posture (spine and hip tilt, knee flex) holds through impact and only rises late in the follow-through
+        const late = n === 'chestTilt' || n === 'hipTilt' || n === 'drop' || n === 'chestSide';
+        const t = late ? smooth(0.32, 1.0, f) : e;
+        key[n] = I[n] + (fin[n] - I[n]) * t;
+      }
       hinge = -2.1 * st.hinge * smooth(0.05, 0.75, f);
       beta = 0.55 * smooth(0.1, 1, f);
     }

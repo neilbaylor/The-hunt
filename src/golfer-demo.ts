@@ -37,6 +37,7 @@ const poses: Record<string, any> = {
   impact: { phase: 'down', phi: 0 },
   through: { phase: 'follow', phi: PHI_FINISH * 0.3 },
   finish: { phase: 'follow', phi: PHI_FINISH },
+  t10: { phase: 'follow', phi: PHI_FINISH * 0.1 }, t20: { phase: 'follow', phi: PHI_FINISH * 0.2 }, t45: { phase: 'follow', phi: PHI_FINISH * 0.45 }, t60: { phase: 'follow', phi: PHI_FINISH * 0.6 },
 };
 golfer.body.setSmile(+(q.get('smile') ?? 0));
 if (q.has('novisor')) golfer.body.root.traverse(o => { if (o.name === 'visor') o.visible = false; });
