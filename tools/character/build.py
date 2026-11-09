@@ -464,12 +464,28 @@ if C.get('shirtWeightSmooth', 0):
         o = np.argsort(-Wm[vi])[:4]; ws = Wm[vi][o]; ws = ws / max(ws.sum(), 1e-9)
         shirt_sw[vi] = [(_bu[o[k]], float(ws[k])) for k in range(4)]
 
+# the body under the shirt is never seen: drop it from the skin (keeping a margin inside every opening), so it
+# can't poke through the fabric in big poses, now that the shirt's weights are smoother than the body's
+under_shirt = np.zeros(NV, bool)
+if C.get('hideUnderShirt'):
+    from scipy.sparse import coo_matrix as _coo
+    from scipy.sparse.csgraph import dijkstra as _dij
+    _ids = np.nonzero(shirt)[0]; _pi = {vi: k for k, vi in enumerate(_ids)}
+    _r, _c, _d = [], [], []
+    for vi in _ids:
+        for n in NB[vi]:
+            if shirt[n]: _r.append(_pi[vi]); _c.append(_pi[n]); _d.append(float(np.linalg.norm(V[vi] - V[n])))
+    _G = _coo((_d, (_r, _c)), shape=(len(_ids), len(_ids))).tocsr()
+    _bd = [_pi[vi] for vi in _ids if any(not shirt[n] for n in NB[vi])]
+    _dist = _dij(_G, indices=_bd, min_only=True)
+    under_shirt[_ids[_dist > C['hideUnderShirt']]] = True
+
 meshes = {}
 # the feet are hidden inside the shoes: drop them from the skin so they never poke through
 feet_hidden = np.zeros(NV, bool)
 for vi in body_idx:
     if V[vi, 1] < min(ankle_y.values()) + C.get('footHide', 0.03) and wsum(vi, ['foot_l', 'foot_r', 'ball_l', 'ball_r', 'calf_l', 'calf_r']) > 0.5: feet_hidden[vi] = True
-meshes['skin'] = build_mesh(body_faces, V, keep=~feet_hidden)
+meshes['skin'] = build_mesh(body_faces, V, keep=~feet_hidden & ~under_shirt)
 meshes['shirt'] = build_mesh(body_faces, Vshirt, normals=N, keep=shirt, extra_offset=shirt_off)
 meshes['pants'] = build_mesh(body_faces, Vpants, normals=N, keep=pants, extra_offset=pants_off)
 meshes['glove'] = build_mesh(body_faces, V, normals=N, keep=glove, normal_out=0.0012)

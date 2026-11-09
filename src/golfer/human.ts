@@ -138,7 +138,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const eyeL = M.eyeballs.l.c, eyeR = M.eyeballs.r.c;
   const gen = genOn ? buildGenHead(data.head!, M.bones, skeleton, root, new THREE.Vector3(...(M.eye as [number, number, number])), Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1], eyeL[2] - eyeR[2]), M.visor.center[1] - 0.012, p.look.eyes) : null;
   if (gen) { hideAboveSeam(skinMat, gen.seam); skinMat.color.copy(gen.tint); meshes.push(gen.mesh); }
-  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
     // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
     // the Malbon script 'm' (vector, traced from the brand artwork) as white embroidery: a soft thread shadow,
@@ -463,7 +463,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     if (t > 0.74) { const k = (t - 0.74) / 0.26; return Math.pow(Math.max(0, 1 - Math.pow(k, 2.3)), 1 / 2.3) * (1 - 0.18 * k); }  // long rounded toe
     return widthK(t);
   };
-  const hRel = smooth([[0, 0.058], [0.1, 0.057], [0.27, 0.047], [0.42, 0.06], [0.5, 0.074], [0.6, 0.064], [0.7, 0.049], [0.8, 0.036], [0.88, 0.028], [0.94, 0.02], [0.98, 0.012], [1, 0.004]]);
+  const hRel = smooth([[0, 0.06], [0.08, 0.058], [0.28, 0.041], [0.42, 0.058], [0.5, 0.074], [0.6, 0.064], [0.7, 0.049], [0.8, 0.036], [0.88, 0.028], [0.94, 0.02], [0.98, 0.012], [1, 0.004]]);
   // cross-section fullness: square-shouldered round the heel and quarters, a rounder, lower crown down the vamp to the toe
   const crown = (t: number) => { const k = Math.min(1, Math.max(0, (t - 0.55) / 0.3)); return 0.8 + 0.5 * k * k * (3 - 2 * k); };
   const spring = (t: number) => (t > 0.68 ? ((t - 0.68) / 0.32) ** 2 * 0.022 : 0);
@@ -485,7 +485,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const d0 = shoeDims(M.feet.l);
   const shoeTex = canvasTex(1024, 2048, g => {
     const W = 1024, H = 2048, X = (u: number) => u * W, Yv = (v: number) => (1 - v) * H;
-    g.fillStyle = '#eeede8'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#e4e3de'; g.fillRect(0, 0, W, H);
     // pebbled leather: small soft grains, each a light top and a darker edge (also drives the bump map)
     for (let i = 0; i < 90000; i++) { const x = rand() * W, y = rand() * H, r = 2 + rand() * 2.5; g.fillStyle = 'rgba(0,0,0,.055)'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.5)'; g.beginPath(); g.arc(x - r * 0.25, y - r * 0.25, r * 0.6, 0, 7); g.fill(); }
     // and a faint, fine grain and a soft sheen variation
@@ -506,7 +506,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       let acc = 0;
       for (let i = 1; i < c.length; i++) {
         const [x0, y0] = c[i - 1], [x1, y1] = c[i], L = Math.hypot(x1 - x0, y1 - y0);
-        while (acc <= L) { const f = acc / L, x = x0 + (x1 - x0) * f, y = y0 + (y1 - y0) * f; g.fillStyle = 'rgba(48,44,40,.9)'; g.beginPath(); g.moveTo(x, y - r * 1.15); g.lineTo(x + r, y); g.lineTo(x, y + r * 1.15); g.lineTo(x - r, y); g.closePath(); g.fill(); acc += step; }
+        while (acc <= L) { const f = acc / L, x = x0 + (x1 - x0) * f, y = y0 + (y1 - y0) * f; g.fillStyle = '#3a3632'; g.beginPath(); g.moveTo(x, y - r * 1.15); g.lineTo(x + r, y); g.lineTo(x, y + r * 1.15); g.lineTo(x - r, y); g.closePath(); g.fill(); acc += step; }
         acc -= L;
       }
     };
@@ -518,7 +518,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       line(c, 'rgba(55,50,44,.85)', 4);
       line(offset(c, side * 10), 'rgba(85,78,70,.75)', 3, [9, 6]);
       line(offset(c, side * 44), 'rgba(85,78,70,.6)', 3, [9, 6]);
-      if (punch) { holes(offset(c, side * 22), 20, 7.5); if (fancy) holes(offset(c, side * 35), 14, 4); }
+      if (punch) { holes(offset(c, side * 23), 24, 9); if (fancy) holes(offset(c, side * 38), 16, 5); }
     };
     for (const m of [1, -1]) {
       const U = (u: number) => (m > 0 ? u : 1 - u);
@@ -542,7 +542,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     g.fillStyle = '#b9b3a6'; g.fillRect(X(0.21), Yv(0.47), 22, 26); g.fillStyle = 'rgba(255,255,255,.5)'; g.fillRect(X(0.21) + 3, Yv(0.47) + 3, 16, 4);
   }, true, 1);
   shoeTex.wrapS = shoeTex.wrapT = THREE.ClampToEdgeWrapping; shoeTex.repeat.set(1, 1); shoeTex.anisotropy = 8;
-  const upperMat = new THREE.MeshPhysicalMaterial({ map: shoeTex, bumpMap: shoeTex, bumpScale: 0.6, roughness: 0.4, clearcoat: 0.45, clearcoatRoughness: 0.3, side: THREE.DoubleSide });
+  const upperMat = new THREE.MeshPhysicalMaterial({ map: shoeTex, bumpMap: shoeTex, bumpScale: 0.8, roughness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.35, side: THREE.DoubleSide });
   // stacked leather sole: a strip texture round the sole edge (u = along the edge, v = bottom → top)
   const soleTex = canvasTex(2048, 64, g => {
     g.fillStyle = '#8b5a34'; g.fillRect(0, 0, 2048, 64);

@@ -337,6 +337,7 @@
   "footHide": 0.012,
   "armpitEase": 0.006,
   "shirtWeightSmooth": 14,
+  "hideUnderShirt": 0.04,
   "hangFrom": 0.1,
   "sleeveEase": 0.009,
   "pantsGap": 0.006,
