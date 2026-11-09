@@ -629,10 +629,10 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const widthK = smooth([[0.12, 0.7], [0.24, 0.72], [0.4, 0.66], [0.56, 0.86], [0.7, 1.0], [0.76, 1.0]]);
   const plan = (t: number) => {                                          // half-width (relative) of the last in plan
     if (t < 0.12) return 0.7 * Math.sqrt(Math.max(0, 1 - ((0.12 - t) / 0.12) ** 2));          // rounded heel
-    if (t > 0.74) { const k = (t - 0.74) / 0.26; return Math.pow(Math.max(0, 1 - Math.pow(k, 2.3)), 1 / 2.3) * (1 - 0.18 * k); }  // long rounded toe
+    if (t > 0.74) { const k = (t - 0.74) / 0.26; return Math.pow(Math.max(0, 1 - Math.pow(k, 2.1)), 1 / 2.1) * (1 - 0.3 * k); }  // long, sleek rounded toe
     return widthK(t);
   };
-  const hRel = smooth([[0, 0.06], [0.08, 0.058], [0.28, 0.041], [0.42, 0.058], [0.5, 0.074], [0.6, 0.064], [0.7, 0.049], [0.8, 0.036], [0.88, 0.028], [0.94, 0.02], [0.98, 0.012], [1, 0.004]]);
+  const hRel = smooth([[0, 0.06], [0.08, 0.058], [0.28, 0.041], [0.42, 0.058], [0.5, 0.074], [0.6, 0.064], [0.7, 0.049], [0.8, 0.034], [0.88, 0.025], [0.94, 0.017], [0.98, 0.009], [1, 0.003]]);
   // cross-section fullness: square-shouldered round the heel and quarters, a rounder, lower crown down the vamp to the toe
   const crown = (t: number) => { const k = Math.min(1, Math.max(0, (t - 0.55) / 0.3)); return 0.8 + 0.5 * k * k * (3 - 2 * k); };
   const spring = (t: number) => (t > 0.68 ? ((t - 0.68) / 0.32) ** 2 * 0.022 : 0);
@@ -714,7 +714,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const upperMat = new THREE.MeshPhysicalMaterial({ map: shoeTex, bumpMap: shoeTex, bumpScale: 0.8, roughness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.35, side: THREE.DoubleSide });
   // stacked leather sole: a strip texture round the sole edge (u = along the edge, v = bottom → top)
   const soleTex = canvasTex(2048, 64, g => {
-    g.fillStyle = '#8b5a34'; g.fillRect(0, 0, 2048, 64);
+    g.fillStyle = '#a0703f'; g.fillRect(0, 0, 2048, 64);   // tan stacked leather
     for (let y = 8; y < 56; y += 3 + Math.floor(rand() * 3)) { g.fillStyle = rand() < 0.5 ? 'rgba(60,32,14,.35)' : 'rgba(200,150,100,.25)'; g.fillRect(0, y, 2048, 1 + rand() * 1.5); }
     for (let i = 0; i < 3000; i++) { g.fillStyle = 'rgba(40,20,8,.12)'; g.fillRect(rand() * 2048, 8 + rand() * 48, 6 + rand() * 30, 1); }
     g.fillStyle = '#2e2018'; g.fillRect(0, 0, 2048, 9);          // the welt (top of the sole), dark brown
@@ -836,7 +836,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const UVx = (x: number) => (x - minX) / (maxX - minX), UVz = (z: number) => (z - minZ) / (maxZ - minZ);
       const botTex = botTexShared ??= canvasTex(256, 768, g => {
         const W = 256, H = 768, X = (x: number) => UVx(x) * W, Y = (z: number) => (1 - UVz(z)) * H;
-        g.fillStyle = '#7f5434'; g.fillRect(0, 0, W, H);
+        g.fillStyle = '#93653c'; g.fillRect(0, 0, W, H);
         for (let i = 0; i < 2500; i++) { g.fillStyle = rand() < 0.5 ? 'rgba(60,34,16,.10)' : 'rgba(200,150,100,.08)'; g.fillRect(rand() * W, rand() * H, 2 + rand() * 6, 1 + rand()); }
         // heel block (darker, stacked leather/rubber top-lift) and its breast line
         const hb = Y(zAt(0.255));
