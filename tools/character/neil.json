@@ -1,361 +1,375 @@
 {
-  "name": "Neil",
-  "handed": "left",
-  "heightM": 1.905,
-  "macro": {
-    "age": 0.6,
-    "muscle": 0.66,
-    "weight": 0.62,
-    "height": 1.0,
-    "proportions": 0.8
-  },
-  "details": {
-    "chin/chin-prominent-incr": 0.3,
-    "chin/chin-width-incr": 0.45,
-    "nose/nose-hump-incr": 0.1,
-    "mouth/mouth-upperlip-volume-decr": 0.35,
-    "mouth/mouth-lowerlip-volume-decr": 0.1,
-    "ears/l-ear-wing-incr": 0.8,
-    "ears/r-ear-wing-incr": 0.8,
-    "cheek/l-cheek-volume-incr": 0.35,
-    "cheek/r-cheek-volume-incr": 0.35,
-    "head/head-fat-incr": 0.25,
-    "ears/l-ear-scale-incr": 0.45,
-    "ears/r-ear-scale-incr": 0.45,
-    "ears/l-ear-flap-incr": 0.4,
-    "ears/r-ear-flap-incr": 0.4,
-    "mouth/mouth-angles-up": 0.7,
-    "head/head-scale-horiz-incr": 0.3,
-    "cheek/l-cheek-bones-incr": 0.35,
-    "cheek/r-cheek-bones-incr": 0.35,
-    "eyes/l-eye-scale-incr": 0.3,
-    "eyes/r-eye-scale-incr": 0.3,
-    "mouth/mouth-scale-horiz-incr": 0.3
-  },
-  "expressions": {
-    "smile": {
-      "expression/units/caucasian/mouth-corner-puller": 1.25,
-      "expression/units/caucasian/mouth-parling": 1.0,
-      "expression/units/caucasian/mouth-upward-retraction": 0.55,
-      "expression/units/caucasian/mouth-open": 0.18,
-      "expression/units/caucasian/eye-left-slit": 0.35,
-      "expression/units/caucasian/eye-right-slit": 0.35
-    }
-  },
-  "face": {
-    "views": [
-      {
-        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/8716142c-image.jpg",
-        "eyeR": [
-          876,
-          1186
-        ],
-        "eyeL": [
-          1186,
-          1184
-        ],
-        "nose": [
-          1024,
-          1400
-        ],
-        "mouth": [
-          1024,
-          1620
-        ],
-        "chin": [
-          1024,
-          1890
-        ],
-        "skinSample": [
-          920,
-          920,
-          1120,
-          1000
-        ],
-        "weight": 1.0
-      },
-      {
-        "photo": "/home/user/the-hunt/tools/character/data/portrait.jpg",
-        "eyeR": [
-          326,
-          225
-        ],
-        "eyeL": [
-          437,
-          236
-        ],
-        "nose": [
-          424,
-          323
-        ],
-        "mouth": [
-          388,
-          373
-        ],
-        "chin": [
-          374,
-          476
-        ],
-        "skinSample": [
-          330,
-          130,
-          430,
-          170
-        ],
-        "weight": 1.6,
-        "excludeMouth": true
-      },
-      {
-        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/ee55797f-image.jpg",
-        "eyeR": [
-          680,
-          1110
-        ],
-        "eyeL": [
-          936,
-          1116
-        ],
-        "nose": [
-          860,
-          1310
-        ],
-        "mouth": [
-          820,
-          1480
-        ],
-        "chin": [
-          800,
-          1760
-        ],
-        "skinSample": [
-          560,
-          860,
-          800,
-          940
-        ],
-        "weight": 0.9,
-        "mirrorToo": true,
-        "mirrorWeight": 0.3
-      },
-      {
-        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/09b0fb75-image.png",
-        "eyeR": [
-          255,
-          288
-        ],
-        "eyeL": [
-          380,
-          280
-        ],
-        "nose": [
-          320,
-          340
-        ],
-        "mouth": [
-          320,
-          440
-        ],
-        "chin": [
-          318,
-          540
-        ],
-        "skinSample": [
-          230,
-          180,
-          330,
-          230
-        ],
-        "weight": 0.75,
-        "excludeMouth": true
-      },
-      {
-        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/af3e5a78-image.png",
-        "eyeR": [
-          468,
-          995
-        ],
-        "eyeL": [
-          615,
-          1015
-        ],
-        "nose": [
-          595,
-          1125
-        ],
-        "mouth": [
-          548,
-          1195
-        ],
-        "chin": [
-          533,
-          1344
-        ],
-        "skinSample": [
-          420,
-          1040,
-          470,
-          1100
-        ],
-        "weight": 0.8,
-        "excludeMouth": true
-      },
-      {
-        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/618c8746-image.png",
-        "eyeR": [
-          77,
-          260
-        ],
-        "eyeL": [
-          184,
-          244
-        ],
-        "nose": [
-          113,
-          326
-        ],
-        "mouth": [
-          126,
-          378
-        ],
-        "chin": [
-          132,
-          483
-        ],
-        "skinSample": [
-          95,
-          160,
-          175,
-          200
-        ],
-        "weight": 0.7,
-        "excludeMouth": true,
-        "excludeLeftEye": true
-      }
-    ],
-    "faceHalfWidth": 0.07,
-    "foreheadTop": 0.075
-  },
-  "eyes": [
-    80,
-    92,
-    98
-  ],
-  "hair": {
-    "front": 0.62,
-    "temple": 0.74,
-    "side": 0.38,
-    "color": [
-      44,
-      35,
-      29
-    ],
-    "volume": 0.016,
-    "keys": [
-      [
-        0,
-        0.24
-      ],
-      [
-        0.35,
-        0.27
-      ],
-      [
-        0.62,
-        0.36
-      ],
-      [
-        0.85,
-        0.1
-      ],
-      [
-        1.1,
-        -0.35
-      ],
-      [
-        1.25,
-        -0.42
-      ],
-      [
-        1.42,
-        -0.2
-      ],
-      [
-        1.62,
-        -0.2
-      ],
-      [
-        1.9,
-        -0.7
-      ],
-      [
-        2.4,
-        -0.95
-      ],
-      [
-        3.1416,
-        -1.0
-      ]
-    ]
-  },
-  "visorAboveEyes": 0.074,
-  "clothes": {
-    "beltAbovePelvis": 0.025,
-    "sleeve": 0.56,
-    "shirtGap": 0.006,
-    "shirtLoose": 0.016,
-    "hang": 0.85,
-    "hangFrom": 0.1,
-    "sleeveEase": 0.009,
-    "pantsGap": 0.006,
-    "pantsLoose": 0.014,
-    "shoeGap": 0.007,
-    "thighR": 0.108,
-    "kneeR": 0.086,
-    "hemR": 0.08,
-    "shorts": true,
-    "shortsAboveKnee": 0.075,
-    "shortsHemR": 0.094,
-    "socks": 0.045,
-    "untucked": true,
-    "untuckedDrop": 0.1
-  },
-  "faceShape": {
-    "photos": [
-      {
-        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/8716142c-image.jpg",
-        "weight": 1.0
-      },
-      {
-        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/ee55797f-image.jpg",
-        "weight": 0.7
-      },
-      {
-        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/efc78715-image.jpg",
-        "weight": 0.5
-      },
-      {
-        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/f9637097-image.jpg",
-        "weight": 0.4
-      },
-      {
-        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/7e466d56-image.jpg",
-        "weight": 0.8
-      }
-    ],
-    "depth": 0.25,
-    "strength": 0.85,
-    "maxMove": 0.012,
-    "dirs": [
-      "head",
-      "forehead",
-      "eyebrows",
-      "eyes",
-      "nose",
-      "mouth",
-      "chin",
-      "cheek"
-    ],
-    "ridge": 0.004,
-    "maxWeight": 0.8
+ "name": "Neil",
+ "handed": "left",
+ "heightM": 1.905,
+ "macro": {
+  "age": 0.6,
+  "muscle": 0.66,
+  "weight": 0.62,
+  "height": 1.0,
+  "proportions": 0.8
+ },
+ "details": {
+  "chin/chin-prominent-incr": 0.3,
+  "chin/chin-width-incr": 0.45,
+  "nose/nose-hump-incr": 0.1,
+  "mouth/mouth-upperlip-volume-decr": 0.35,
+  "mouth/mouth-lowerlip-volume-decr": 0.1,
+  "ears/l-ear-wing-incr": 0.8,
+  "ears/r-ear-wing-incr": 0.8,
+  "cheek/l-cheek-volume-incr": 0.35,
+  "cheek/r-cheek-volume-incr": 0.35,
+  "head/head-fat-incr": 0.25,
+  "ears/l-ear-scale-incr": 0.45,
+  "ears/r-ear-scale-incr": 0.45,
+  "ears/l-ear-flap-incr": 0.4,
+  "ears/r-ear-flap-incr": 0.4,
+  "mouth/mouth-angles-up": 0.7,
+  "head/head-scale-horiz-incr": 0.3,
+  "cheek/l-cheek-bones-incr": 0.35,
+  "cheek/r-cheek-bones-incr": 0.35,
+  "eyes/l-eye-scale-incr": 0.3,
+  "eyes/r-eye-scale-incr": 0.3,
+  "mouth/mouth-scale-horiz-incr": 0.3
+ },
+ "expressions": {
+  "smile": {
+   "expression/units/caucasian/mouth-corner-puller": 1.25,
+   "expression/units/caucasian/mouth-parling": 1.0,
+   "expression/units/caucasian/mouth-upward-retraction": 0.55,
+   "expression/units/caucasian/mouth-open": 0.18,
+   "expression/units/caucasian/eye-left-slit": 0.35,
+   "expression/units/caucasian/eye-right-slit": 0.35
   }
+ },
+ "face": {
+  "views": [
+   {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/8716142c-image.jpg",
+    "eyeR": [
+     876,
+     1186
+    ],
+    "eyeL": [
+     1186,
+     1184
+    ],
+    "nose": [
+     1024,
+     1400
+    ],
+    "mouth": [
+     1024,
+     1620
+    ],
+    "chin": [
+     1024,
+     1890
+    ],
+    "skinSample": [
+     920,
+     920,
+     1120,
+     1000
+    ],
+    "weight": 1.0
+   },
+   {
+    "photo": "/home/user/the-hunt/tools/character/data/portrait.jpg",
+    "eyeR": [
+     326,
+     225
+    ],
+    "eyeL": [
+     437,
+     236
+    ],
+    "nose": [
+     424,
+     323
+    ],
+    "mouth": [
+     388,
+     373
+    ],
+    "chin": [
+     374,
+     476
+    ],
+    "skinSample": [
+     330,
+     130,
+     430,
+     170
+    ],
+    "weight": 1.6,
+    "excludeMouth": true
+   },
+   {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/ee55797f-image.jpg",
+    "eyeR": [
+     680,
+     1110
+    ],
+    "eyeL": [
+     936,
+     1116
+    ],
+    "nose": [
+     860,
+     1310
+    ],
+    "mouth": [
+     820,
+     1480
+    ],
+    "chin": [
+     800,
+     1760
+    ],
+    "skinSample": [
+     560,
+     860,
+     800,
+     940
+    ],
+    "weight": 0.9,
+    "mirrorToo": true,
+    "mirrorWeight": 0.3
+   },
+   {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/09b0fb75-image.png",
+    "eyeR": [
+     255,
+     288
+    ],
+    "eyeL": [
+     380,
+     280
+    ],
+    "nose": [
+     320,
+     340
+    ],
+    "mouth": [
+     320,
+     440
+    ],
+    "chin": [
+     318,
+     540
+    ],
+    "skinSample": [
+     230,
+     180,
+     330,
+     230
+    ],
+    "weight": 0.75,
+    "excludeMouth": true
+   },
+   {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/af3e5a78-image.png",
+    "eyeR": [
+     468,
+     995
+    ],
+    "eyeL": [
+     615,
+     1015
+    ],
+    "nose": [
+     595,
+     1125
+    ],
+    "mouth": [
+     548,
+     1195
+    ],
+    "chin": [
+     533,
+     1344
+    ],
+    "skinSample": [
+     420,
+     1040,
+     470,
+     1100
+    ],
+    "weight": 0.8,
+    "excludeMouth": true
+   },
+   {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/618c8746-image.png",
+    "eyeR": [
+     77,
+     260
+    ],
+    "eyeL": [
+     184,
+     244
+    ],
+    "nose": [
+     113,
+     326
+    ],
+    "mouth": [
+     126,
+     378
+    ],
+    "chin": [
+     132,
+     483
+    ],
+    "skinSample": [
+     95,
+     160,
+     175,
+     200
+    ],
+    "weight": 0.7,
+    "excludeMouth": true,
+    "excludeLeftEye": true
+   }
+  ],
+  "faceHalfWidth": 0.07,
+  "foreheadTop": 0.075,
+  "painted": {
+   "blur": 0.012,
+   "photoMix": 0.75,
+   "browDrop": 0.0,
+   "browWidth": 0.0032,
+   "browDark": 0.85,
+   "lash": 0.7,
+   "socket": 0.5,
+   "lip": 0.45,
+   "stubble": 0.22,
+   "blush": 0.35
+  }
+ },
+ "eyes": [
+  80,
+  92,
+  98
+ ],
+ "hair": {
+  "front": 0.62,
+  "temple": 0.74,
+  "side": 0.38,
+  "color": [
+   44,
+   35,
+   29
+  ],
+  "volume": 0.016,
+  "keys": [
+   [
+    0,
+    0.24
+   ],
+   [
+    0.35,
+    0.27
+   ],
+   [
+    0.62,
+    0.36
+   ],
+   [
+    0.85,
+    0.1
+   ],
+   [
+    1.1,
+    -0.35
+   ],
+   [
+    1.25,
+    -0.42
+   ],
+   [
+    1.42,
+    -0.2
+   ],
+   [
+    1.62,
+    -0.2
+   ],
+   [
+    1.9,
+    -0.7
+   ],
+   [
+    2.4,
+    -0.95
+   ],
+   [
+    3.1416,
+    -1.0
+   ]
+  ]
+ },
+ "visorAboveEyes": 0.074,
+ "clothes": {
+  "beltAbovePelvis": 0.025,
+  "sleeve": 0.56,
+  "shirtGap": 0.006,
+  "shirtLoose": 0.016,
+  "hang": 0.8,
+  "hangMax": 0.016,
+  "hemFlare": 0.25,
+  "hangFrom": 0.1,
+  "sleeveEase": 0.009,
+  "pantsGap": 0.006,
+  "pantsLoose": 0.014,
+  "shoeGap": 0.007,
+  "thighR": 0.108,
+  "kneeR": 0.086,
+  "hemR": 0.08,
+  "shorts": true,
+  "shortsAboveKnee": 0.075,
+  "shortsHemR": 0.094,
+  "socks": 0.045,
+  "untucked": true,
+  "untuckedDrop": 0.1
+ },
+ "faceShape": {
+  "photos": [
+   {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/8716142c-image.jpg",
+    "weight": 1.0
+   },
+   {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/ee55797f-image.jpg",
+    "weight": 0.7
+   },
+   {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/efc78715-image.jpg",
+    "weight": 0.5
+   },
+   {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/f9637097-image.jpg",
+    "weight": 0.4
+   },
+   {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/7e466d56-image.jpg",
+    "weight": 0.8
+   }
+  ],
+  "depth": 0.25,
+  "strength": 0.85,
+  "maxMove": 0.012,
+  "dirs": [
+   "head",
+   "forehead",
+   "eyebrows",
+   "eyes",
+   "nose",
+   "mouth",
+   "chin",
+   "cheek"
+  ],
+  "ridge": 0.004,
+  "maxWeight": 0.8
+ }
 }

@@ -311,7 +311,7 @@ for vi in body_idx:
             tuck = min(1.0, max(0.0, (y - (belt_y - 0.04)) / 0.08))  # tucked in: hugs the body at the waistband
             if C.get('untucked'):
                 tuck = 1.0
-                if y < pelvis_y + 0.2: loose = 1.0 + 0.6 * min(1.0, (pelvis_y + 0.2 - y) / 0.15)  # hangs straight and boxy below the waist
+                if y < pelvis_y + 0.2: loose = 1.0 + C.get('hemFlare', 0.6) * min(1.0, (pelvis_y + 0.2 - y) / 0.15)  # hangs straight and boxy below the waist
             shirt_off[vi] = C['shirtGap'] * (0.5 + 0.5 * tuck) + C['shirtLoose'] * loose * tuck
     # trousers: belt line down to just above the ankle
     hem_y = (joint[BONES.index('calf_l')][1] + C['shortsAboveKnee']) if C.get('shorts') else min(ankle_y.values()) - 0.012
@@ -389,7 +389,7 @@ if C.get('hang', 0) > 0:
             j = np.searchsorted(-ys, -yy[i], side='right') - 1
             rh = cm[max(j, 0)]
             w = min(1.0, (chest_y - yy[i]) / 0.1); w = w * w * (3 - 2 * w) * C['hang']
-            delta[tors[i]] = w * max(0.0, rh - rr[i])
+            delta[tors[i]] = min(C.get('hangMax', 0.02), w * max(0.0, rh - rr[i]))
     delta, _ = smooth_field(delta, shirt, 8)
     for i, vi in enumerate(tors):
         if delta[vi] <= 0: continue
@@ -723,6 +723,7 @@ def value_noise(p, freq, seed=0):
 
 # ── the photos: several views of the face, each with its own head turn, blended by which sees a point best ──
 F = P.get('face')
+PAINT = (F or {}).get('painted')   # clean painted face: photos give soft tone only, features are drawn
 views = []
 if F:
     mouth_d = np.linalg.norm(load_target(f'{D}/targets/expression/units/caucasian/mouth-parling.target.gz'), axis=1)
@@ -779,7 +780,7 @@ if F:
             # a photo can be told to skip the subject's left eye (odd shape in that shot); mirrored photos land on the mesh's other side
             skipEye = None
             if vdef.get('excludeLeftEye'): skipEye = cube('joint-r-eye') if flip else cube('joint-l-eye')
-            views.append({'skipEye': skipEye, 'noMouth': vdef.get('excludeMouth', False), 'warp': warp, 'img': np.asarray(img).astype(np.float32) / 255.0, 'yaw': yaw, 'pitch': pitch, 'aff': aff,
+            views.append({'skipEye': skipEye, 'noMouth': vdef.get('excludeMouth', False), 'warp': warp, 'img': np.asarray(img.filter(ImageFilter.GaussianBlur(PAINT['blur'] * img.width)) if PAINT else img).astype(np.float32) / 255.0, 'yaw': yaw, 'pitch': pitch, 'aff': aff,
                           'weight': vdef.get('weight', 1.0) * (vdef.get('mirrorWeight', 0.6) if mirror else 1.0), 'skin': sk})
             samples.append(sk)
     skin_rgb = np.mean([v['skin'] for v in views[:1]], axis=0)  # the main (first) photo sets the tone
@@ -788,6 +789,82 @@ if F:
     print('skin', (skin_rgb * 255).round())
 else:
     skin_rgb = np.array([0.86, 0.66, 0.56])
+
+
+# ── painted face features, drawn from the mesh's own landmarks (MediaPipe indices on the base mesh) ──
+BROW = {'r': [46, 53, 52, 65, 55, 107, 66, 105, 63, 70], 'l': [276, 283, 282, 295, 285, 336, 296, 334, 293, 300]}
+BROW_PATH = {'r': [70, 63, 105, 66, 107], 'l': [300, 293, 334, 296, 336]}
+LIP_UP = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291]
+LIP_LO = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291]
+LID_UP = {'r': [33, 246, 161, 160, 159, 158, 157, 173, 133], 'l': [263, 466, 388, 387, 386, 385, 384, 398, 362]}
+def seg_dist(p, pts):
+    """distance from each p to a 3D polyline, and the arc parameter (0..1) of the closest point"""
+    best = np.full(len(p), 9.0); tpar = np.zeros(len(p)); L = np.r_[0, np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))]
+    for i in range(len(pts) - 1):
+        a, b = pts[i], pts[i + 1]; ab = b - a
+        t = np.clip(((p - a) @ ab) / max(ab @ ab, 1e-12), 0, 1)
+        dd = np.linalg.norm(p - (a + t[:, None] * ab), axis=1)
+        m = dd < best; best[m] = dd[m]; tpar[m] = (L[i] + t[m] * (L[i + 1] - L[i])) / L[-1]
+    return best, tpar
+def lmp(i):
+    return V[lm_idx[i]] if lm_idx is not None and lm_idx[i] >= 0 else None
+def paint_face(p, n, base):
+    if lm_idx is None: return base
+    out = base.copy(); C = PAINT
+    hcol = np.array(P['hair']['color']) / 255.0
+    near = np.linalg.norm(p - hc, axis=1) < 0.16
+    if not near.any(): return out
+    q = p[near]; o = out[near]
+    # eyebrows: tapered strokes along the brow line, a little grainy, darker and fuller at the inner end
+    for k in 'rl':
+        path = np.array([lmp(i) for i in BROW_PATH[k] if lmp(i) is not None])
+        if len(path) < 3: continue
+        path = path + np.array([0, C['browDrop'], 0.0015])
+        dd, t = seg_dist(q, path)
+        inner = t if k == 'r' else t   # path runs outer → inner
+        width = C['browWidth'] * (0.55 + 0.6 * inner) * (1 - 0.35 * np.clip((0.15 - inner) / 0.15, 0, 1))
+        grain = 0.75 + 0.5 * value_noise(q * np.array([1, 6, 1]), 900, 7)
+        a = np.clip(1 - dd / width, 0, 1) ** 0.8 * grain * C['browDark']
+        o = o * (1 - a[:, None]) + (hcol * 0.85) * a[:, None]
+    # upper lash line and a soft lid crease / socket shadow
+    for k in 'rl':
+        lid = np.array([lmp(i) for i in LID_UP[k] if lmp(i) is not None])
+        if len(lid) < 4: continue
+        dd, t = seg_dist(q, lid + np.array([0, 0.0008, 0.001]))
+        a = np.clip(1 - dd / 0.0022, 0, 1) * (0.4 + 0.6 * np.sin(np.pi * t)) * C['lash']
+        o = o * (1 - a[:, None]) + np.array([0.16, 0.11, 0.09]) * a[:, None]
+        dd2, _ = seg_dist(q, lid + np.array([0, 0.0065, -0.002]))
+        a2 = np.exp(-(dd2 / 0.0045) ** 2) * C['socket']
+        o *= (1 - a2[:, None] * np.array([0.22, 0.28, 0.24]))
+    # lips: a soft rose tint inside the lip outline, slightly darker at the parting line
+    up = np.array([lmp(i) for i in LIP_UP if lmp(i) is not None]); lo = np.array([lmp(i) for i in LIP_LO if lmp(i) is not None])
+    if len(up) > 5 and len(lo) > 5:
+        mid = (up + lo) / 2
+        dm, tm = seg_dist(q, mid)
+        sep = np.linalg.norm(up - lo, axis=1) * 0.5
+        arc = np.r_[0, np.cumsum(np.linalg.norm(np.diff(mid, axis=0), axis=1))]; arc /= arc[-1]
+        thick = np.interp(tm, arc, sep) + 0.0006          # local half-height of the lips
+        inlip = np.clip(1 - (dm - thick) / 0.0012, 0, 1) * (np.abs(q[:, 2] - mid[:, 2].mean()) < 0.03)
+        o = o * (1 - inlip[:, None] * C['lip']) + (o * np.array([0.95, 0.62, 0.60])) * (inlip[:, None] * C['lip'])
+        part = np.exp(-(dm / 0.0012) ** 2) * 0.3
+        o *= 1 - part[:, None]
+    # stubble: a faint cool shadow on the jaw, chin and upper lip
+    mo = mouth_c; ch = V[chin_vi]
+    jaw = (q[:, 1] < mo[1] + 0.022) & (q[:, 2] > hc[2] - 0.03)
+    below_cheek = np.clip((mo[1] + 0.025 - q[:, 1]) / 0.025, 0, 1) * np.clip((q[:, 1] - (ch[1] - 0.04)) / 0.03, 0, 1)
+    lipzone = np.exp(-((np.linalg.norm((q - mo) * [1.0, 1.6, 1.0], axis=1) - 0.0) / 0.035) ** 2)
+    st = below_cheek * jaw * C['stubble'] * (0.7 + 0.6 * value_noise(q, 700, 9)) * (1 - 0.6 * np.exp(-(np.linalg.norm((q - mo) * [1.0, 2.5, 1.0], axis=1) / 0.018) ** 2))
+    st = np.maximum(st, lipzone * 0 )
+    o = o * (1 - st[:, None]) + (o * np.array([0.72, 0.70, 0.72])) * st[:, None]
+    # warmth on the cheeks, nose and ears (outdoorsy)
+    for sx in (-1, 1):
+        cc = hc + np.array([sx * 0.045, -0.035, 0.07])
+        a = np.exp(-(np.linalg.norm(q - cc, axis=1) / 0.025) ** 2) * C['blush']
+        o = o * (1 - a[:, None]) + (o * np.array([1.04, 0.86, 0.84])) * a[:, None]
+    nt = V[nose_vi]; a = np.exp(-(np.linalg.norm(q - nt, axis=1) / 0.014) ** 2) * C['blush'] * 0.8
+    o = o * (1 - a[:, None]) + (o * np.array([1.04, 0.88, 0.86])) * a[:, None]
+    out[near] = o
+    return out
 
 SMILE_BAKE = False
 def skin_fn(p, n):
@@ -828,10 +905,13 @@ def skin_fn(p, n):
                 w *= (mouthzone * 3.0 + (1 - mouthzone)) if v['noMouth'] else (1 - mouthzone)
             elif v['noMouth']:  # neutral texture: a smiling photo gives cheeks, temples and jaw, not its mouth
                 w *= 1 - mouthzone
+            if PAINT: w *= 1 - np.clip(mouthzone * 1.4, 0, 1)   # painted mode: lips are drawn, not photographed
             acc += col * w[:, None]; wsum += w
         cov = np.clip(wsum / 0.35, 0, 1)[:, None]
         ph = acc / np.maximum(wsum, 1e-6)[:, None]
+        if PAINT: cov = cov * PAINT['photoMix']
         base = base * (1 - cov) + ph * cov
+        if PAINT: base = paint_face(p, n, base)
     # painted short hair under the hair shell (soft hairline)
     hp = P['hair']
     hcol = np.array(hp['color']) / 255.0

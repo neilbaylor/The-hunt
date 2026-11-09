@@ -231,7 +231,7 @@ export class AimController {
   private shapePoint(t: number, out: THREE.Vector3) {
     const b = this.o.ballPos(), T = this.targetPos(), D = b.distanceTo(T);
     const perp = new THREE.Vector3(-Math.cos(aim.dir), 0, -Math.sin(aim.dir)).negate(); // + = right of the aim line
-    const ctrl = b.clone().lerp(T, 0.5).addScaledVector(perp, -aim.curve * D * 0.26);
+    const ctrl = b.clone().lerp(T, 0.5).addScaledVector(perp, -aim.curve * D * 0.10);
     out.set(0, 0, 0).addScaledVector(b, (1 - t) * (1 - t)).addScaledVector(ctrl, 2 * t * (1 - t)).addScaledVector(T, t * t);
     out.y = this.ground(out.x, out.z) + 0.06;
     return out;
@@ -296,8 +296,8 @@ export class AimController {
       const T = this.targetPos(), D = Math.max(1, b.distanceTo(T));
       const right = new THREE.Vector3(Math.cos(aim.dir), 0, Math.sin(aim.dir));
       const off = w.clone().sub(b.clone().lerp(T, 0.5)).dot(right);           // + = to the right of the line
-      // the bezier midpoint sits at -curve * D * 0.13 to the side: dragging left bends the ball right
-      aim.curve = clamp(-off / (D * 0.13), -1, 1);
+      // the bezier midpoint sits at -curve * D * 0.05 to the side (matches the simulated bow): dragging left bends the ball right
+      aim.curve = clamp(-off / (D * 0.05), -1, 1);
       if (Math.abs(aim.curve) < 0.06) aim.curve = 0;
       this.changed();
     }

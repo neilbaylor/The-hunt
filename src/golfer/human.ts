@@ -143,7 +143,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const cz = M.collar.reduce((a, c) => Math.max(a, c[2]), -9) - 0.01;
     applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.07, M.collar.reduce((a, c) => Math.max(a, c[1]), -9) - 0.115, cz) : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.06 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
   }
-  add('shirt', shirtMat);
+  const shirtMesh = add('shirt', shirtMat);
   const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.82, sheen: 0.3, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.6), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   applyFabric(pantsMat, 'chino', fu);
   add('pants', pantsMat);
@@ -259,42 +259,109 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     eye: new THREE.Vector3(...(M.eye as [number, number, number])),
   };
 
-  // polo collar: a stand-up band that folds over, open at the front, riding on the chest
+  // polo collar: one continuous piece of shirt fabric round the neck (no seam at the back). A stand rises off
+  // the neckline, rolls softly over and falls as a leaf onto the shoulders, ending in two points that lie on the
+  // collarbones either side of the placket. The leaf is laid onto the shirt surface so it never cuts into it.
   const chestBi = M.bones.indexOf('spine_02'), pelvisBi = M.bones.indexOf('pelvis');
   {
-    const ring = M.collar.map(a => new THREE.Vector3(a[0], a[1], a[2]));
-    const c = ring.reduce((a, b) => a.add(b), new THREE.Vector3()).multiplyScalar(1 / ring.length);
-    // profile across the collar: (outward, up) from the neckline, stand then fold
-    const prof: [number, number][] = [[-0.003, -0.004], [0.0, 0.026], [0.004, 0.033], [0.012, 0.03], [0.026, 0.012], [0.034, 0.0]];
-    const pos: number[] = [], idx: number[] = [];
-    const n = ring.length, rows = prof.length;
-    const sorted = ring.map(p => ({ p, a: Math.atan2(p.x - c.x, p.z - c.z) })).sort((a, b) => a.a - b.a);
-    const open = 0.32; // radians either side of the front left open (placket)
-    const pts = sorted.filter(o => Math.abs(o.a) > open);
-    // order from the left of the opening round the back to the right
-    pts.sort((a, b) => ((a.a + 2 * Math.PI) % (2 * Math.PI)) - ((b.a + 2 * Math.PI) % (2 * Math.PI)));
-    for (const { p, a } of pts) {
-      const out = new THREE.Vector3(Math.sin(a), 0, Math.cos(a));
-      const front = Math.max(0, Math.cos(a)); // collar points spread and drop at the front
-      for (const [o, u] of prof) pos.push(p.x + out.x * (o + 0.006 * front), p.y + u - 0.012 * front * (u > 0.02 ? 0 : 1), p.z + out.z * (o + 0.006 * front));
+    // the shirt surface near the neck (bind space), for laying things onto it
+    const sp = shirtMesh!.geometry.getAttribute('position') as THREE.BufferAttribute, sn = shirtMesh!.geometry.getAttribute('normal') as THREE.BufferAttribute;
+    const ring0 = M.collar.map(a => new THREE.Vector3(a[0], a[1], a[2]));
+    const c = ring0.reduce((a, b) => a.add(b), new THREE.Vector3()).multiplyScalar(1 / ring0.length);
+    const loY = Math.min(...ring0.map(q => q.y)) - 0.16;
+    const cand: number[] = [];
+    for (let i = 0; i < sp.count; i++) if (sp.getY(i) > loY && Math.hypot(sp.getX(i) - c.x, sp.getZ(i) - c.z) < 0.24) cand.push(i);
+    const near = (p: THREE.Vector3) => {   // smoothed nearest surface point + normal (6 nearest, inverse-distance weighted)
+      const best: [number, number][] = [];
+      for (const i of cand) {
+        const d = (sp.getX(i) - p.x) ** 2 + (sp.getY(i) - p.y) ** 2 + (sp.getZ(i) - p.z) ** 2;
+        if (best.length < 6 || d < best[5][0]) { best.push([d, i]); best.sort((x, y) => x[0] - y[0]); if (best.length > 6) best.pop(); }
+      }
+      const q = new THREE.Vector3(), n = new THREE.Vector3(); let ws = 0;
+      for (const [d, i] of best) { const w = 1 / (Math.sqrt(d) + 0.002); ws += w; q.x += sp.getX(i) * w; q.y += sp.getY(i) * w; q.z += sp.getZ(i) * w; n.x += sn.getX(i) * w; n.y += sn.getY(i) * w; n.z += sn.getZ(i) * w; }
+      return { q: q.multiplyScalar(1 / ws), n: n.normalize() };
+    };
+    // the neckline as a smooth closed curve: a low-order Fourier fit of radius and height against angle round the neck
+    const sam = ring0.map(q => ({ a: Math.atan2(q.x - c.x, q.z - c.z), r: Math.hypot(q.x - c.x, q.z - c.z), y: q.y })).sort((x, y) => x.a - y.a);
+    const fit = (key: 'r' | 'y', NH = 3) => {
+      const co: [number, number][] = [];
+      for (let k = 0; k <= NH; k++) {
+        let ca = 0, sa = 0;
+        sam.forEach((o, i) => { const a0 = sam[(i - 1 + sam.length) % sam.length].a, a1 = sam[(i + 1) % sam.length].a; const da = (((a1 - a0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / 2; ca += o[key] * Math.cos(k * o.a) * da; sa += o[key] * Math.sin(k * o.a) * da; });
+        co.push([ca / (k ? Math.PI : 2 * Math.PI), sa / Math.PI]);
+      }
+      return (a: number) => co.reduce((s, [ca, sa], k) => s + ca * Math.cos(k * a) + (k ? sa * Math.sin(k * a) : 0), 0);
+    };
+    const R = fit('r'), Y = fit('y');
+    const neck = (a: number, dr = 0, dy = 0) => new THREE.Vector3(c.x + Math.sin(a) * (R(a) + dr), Y(a) + dy, c.z + Math.cos(a) * (R(a) + dr));
+    const open = Math.asin(Math.min(0.9, 0.0165 / R(0)));      // the opening is the placket's width
+    const COLS = 120, pos: number[] = [], idx: number[] = [];
+    let rows = 0;
+    for (let i = 0; i <= COLS; i++) {
+      const s = i / COLS, a = open + s * (2 * Math.PI - 2 * open);       // a = 0 at the front, PI at the back
+      const sg = Math.sin(a) >= 0 ? 1 : -1;
+      const end = Math.max(0, 1 - Math.min(s, 1 - s) / 0.16);             // 1 at the collar points, 0 away from them
+      const fr = Math.max(0, Math.cos(a));
+      const standH = 0.025 - 0.007 * fr, rr = 0.0032;
+      const leafH = 0.04 + 0.024 * end * end + 0.006 * fr, leafOut = 0.012 + 0.008 * fr;
+      // cross-section (out, up) from the neck seam: stand, the soft roll over the top, the leaf, a turned edge
+      const prof: [number, number, number][] = [];   // [out, up, u along the leaf for the point's sweep]
+      prof.push([-0.0025, -0.004, 0], [-0.0028, standH * 0.5, 0], [-0.0025, standH - 0.002, 0]);
+      const cx = -0.0025 + rr;
+      for (let k = 1; k <= 5; k++) { const ph = Math.PI - (k / 6) * Math.PI; prof.push([cx + rr * Math.cos(ph), standH - 0.002 + rr * Math.sin(ph), 0]); }
+      const L0 = cx + rr;
+      for (let k = 0; k <= 8; k++) { const u = k / 8; prof.push([L0 + leafOut * Math.sin(u * Math.PI / 2), standH - 0.002 - leafH * Math.pow(u, 1.15), u]); }
+      const last = prof[prof.length - 1];
+      prof.push([last[0] - 0.0012, last[1] - 0.0016, 1], [last[0] - 0.0032, last[1] - 0.0011, 1]);
+      rows = prof.length;
+      for (const [o, up, u] of prof) {
+        // towards the points the leaf sweeps forward past the neckline end, so the front edge slants down to a point
+        const aa = a - sg * 0.2 * end * u * u;
+        const q = neck(aa, o, up);
+        pos.push(q.x, q.y, q.z);
+      }
     }
-    for (let i = 0; i < pts.length - 1; i++) for (let r = 0; r < rows - 1; r++) { const a = i * rows + r, b = a + rows; idx.push(a, b, a + 1, a + 1, b, b + 1); }
-    void n;
+    // lay the leaf on the shirt: anything inside the fabric (+3 mm) is pushed out along the surface normal
+    const P = (i: number, r: number) => new THREE.Vector3(pos[(i * rows + r) * 3], pos[(i * rows + r) * 3 + 1], pos[(i * rows + r) * 3 + 2]);
+    const setP = (i: number, r: number, v: THREE.Vector3) => { pos[(i * rows + r) * 3] = v.x; pos[(i * rows + r) * 3 + 1] = v.y; pos[(i * rows + r) * 3 + 2] = v.z; };
+    const lift = (v: THREE.Vector3, gap: number) => { const { q, n } = near(v); const d = v.clone().sub(q).dot(n); if (d < gap) v.addScaledVector(n, gap - d); return v; };
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i <= COLS; i++) for (let r = 9; r < rows; r++) setP(i, r, lift(P(i, r), r >= rows - 2 ? 0.0022 : 0.0035));
+      // relax along the collar so the laid leaf stays smooth
+      const cp = pos.slice();
+      for (let i = 1; i < COLS; i++) for (let r = 9; r < rows; r++) for (let k = 0; k < 3; k++) {
+        const j = (i * rows + r) * 3 + k; pos[j] = 0.5 * cp[j] + 0.25 * (cp[j - rows * 3] + cp[j + rows * 3]);
+      }
+    }
+    for (let i = 0; i < COLS; i++) for (let r = 0; r < rows - 1; r++) { const a = i * rows + r, b = a + rows; idx.push(a, b, a + 1, a + 1, b, b + 1); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
     g.translate(-J[chestBi].x, -J[chestBi].y, -J[chestBi].z);
-    const col = new THREE.Mesh(g, shirtMat.clone()); (col.material as THREE.MeshPhysicalMaterial).side = THREE.DoubleSide;
+    const collarMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.84, sheen: 0.35, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide });
+    const col = new THREE.Mesh(g, collarMat);
     col.castShadow = col.receiveShadow = true; bones[chestBi].add(col); meshes.push(col);
-    // placket: a short strip with two buttons
-    const front = sorted.reduce((b, o) => (Math.abs(o.a) < Math.abs(b.a) ? o : b)).p;
-    // placket: a raised, stitched strip, 2 white four-hole buttons
-    const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.35)'; g.setLineDash([6, 5]); g.lineWidth = 2; g.strokeRect(6, 4, 52, 244); }, true, 1);
+    // placket: a stitched strip laid on the shirt from the neckline down, with two white four-hole buttons
+    const top = neck(0);
+    const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.28)'; g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(5, -10, 54, 258); g.beginPath(); g.moveTo(32, -10); g.lineTo(32, 250); g.stroke(); }, true, 1);
     plkTex.wrapS = plkTex.wrapT = THREE.ClampToEdgeWrapping; plkTex.repeat.set(1, 1);
-    const plkMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, map: plkTex, roughness: 0.72, sheen: 0.9, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.45), side: THREE.DoubleSide });
-    const plk = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.115, 0.003), plkMat);
-    plk.position.set(front.x, front.y - 0.06, front.z + 0.005).sub(J[chestBi]); plk.rotation.x = -0.14; bones[chestBi].add(plk);
+    const plkMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, map: plkTex, roughness: 0.84, sheen: 0.35, sheenColor: collarMat.sheenColor, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const pg = new THREE.PlaneGeometry(0.033, 0.12, 4, 16);
+    const pa = pg.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < pa.count; i++) {
+      const v = new THREE.Vector3(top.x + pa.getX(i), top.y - 0.06 + pa.getY(i), top.z + 0.02);
+      const { q, n } = near(v); v.sub(n.clone().multiplyScalar(v.clone().sub(q).dot(n) - 0.0012));   // onto the surface, 1.2 mm proud
+      pa.setXYZ(i, v.x, v.y, v.z);
+    }
+    pg.computeVertexNormals(); pg.translate(-J[chestBi].x, -J[chestBi].y, -J[chestBi].z);
+    bones[chestBi].add(new THREE.Mesh(pg, plkMat));
     const btnTex = canvasTex(64, 64, g => { g.fillStyle = '#f4f2ec'; g.beginPath(); g.arc(32, 32, 30, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 3; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.stroke(); g.fillStyle = 'rgba(0,0,0,.45)'; for (const [x, y] of [[26, 26], [38, 26], [26, 38], [38, 38]]) { g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill(); } }, true, 1);
     btnTex.wrapS = btnTex.wrapT = THREE.ClampToEdgeWrapping; btnTex.repeat.set(1, 1);
-    for (const dy of [-0.03, -0.085]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.0058, 0.0058, 0.0025, 20), [new THREE.MeshStandardMaterial({ color: '#e8e5dc', roughness: 0.35 }), new THREE.MeshStandardMaterial({ map: btnTex, roughness: 0.3 }), new THREE.MeshStandardMaterial({ map: btnTex, roughness: 0.3 })]); b.rotation.x = Math.PI / 2 - 0.14; b.position.set(front.x, front.y + dy, front.z + 0.0085).sub(J[chestBi]); bones[chestBi].add(b); }
+    const rimMat = new THREE.MeshStandardMaterial({ color: '#e8e5dc', roughness: 0.35 }), faceMat = new THREE.MeshStandardMaterial({ map: btnTex, roughness: 0.3 });
+    for (const dy of [-0.032, -0.088]) {
+      const { q, n } = near(new THREE.Vector3(top.x, top.y + dy, top.z + 0.02));
+      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.0056, 0.0056, 0.0024, 20), [rimMat, faceMat, faceMat]);
+      b.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
+      b.position.copy(q).addScaledVector(n, 0.0028).sub(J[chestBi]); bones[chestBi].add(b);
+    }
   }
   // belt: a leather band round the waist with a buckle, on the pelvis
   {
@@ -313,115 +380,227 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     buckle.position.set(B.cx, B.y, B.cz + B.rz + 0.02).sub(J[pelvisBi]); bones[pelvisBi].add(buckle);
     if (O.untucked) buckle.visible = false;
   }
-  // shoes: modern spikeless golf shoes sized to the feet (on the foot bones): rubber sole, leather upper,
-  // laces, toe perforations and an accent stripe, all from one UV-mapped texture
-  // classic white wingtip golf shoes (pebble leather, brogue punching), stacked brown sole, spikes
-  const shoeTex = canvasTex(1024, 512, g => {
-    // u: round the shoe (0 = outer side at the sole → over the top → 1 = inner side), v: heel (0) → toe (1)
-    const W = 1024, H = 512;
-    g.fillStyle = '#f2f1ec'; g.fillRect(0, 0, W, H);
-    // pebble grain
-    for (let i = 0; i < 26000; i++) { const x = rand() * W, y = rand() * H, r = 1.2 + rand() * 2.2; g.fillStyle = rand() < 0.5 ? 'rgba(0,0,0,.035)' : 'rgba(255,255,255,.5)'; g.beginPath(); g.ellipse(x, y, r, r * 0.8, rand() * 3, 0, 7); g.fill(); }
-    const vy = (v: number) => (1 - v) * H; // v → canvas y (texture flipY)
-    // seams with brogue rows beside them: a curve as a list of (u, v) points
-    const seam = (pts: [number, number][], holes = true, big = false) => {
-      g.strokeStyle = 'rgba(70,66,60,.6)'; g.lineWidth = 3; g.beginPath();
-      pts.forEach(([u, v], i) => (i ? g.lineTo(u * W, vy(v)) : g.moveTo(u * W, vy(v)))); g.stroke();
-      // stitching
-      g.strokeStyle = 'rgba(90,86,80,.35)'; g.setLineDash([5, 5]); g.lineWidth = 1.2; g.beginPath();
-      pts.forEach(([u, v], i) => (i ? g.lineTo(u * W, vy(v) + 7) : g.moveTo(u * W, vy(v) + 7))); g.stroke(); g.setLineDash([]);
-      if (!holes) return;
-      // punched holes along the seam
-      for (let k = 0; k < pts.length - 1; k++) {
-        const [u0, v0] = pts[k], [u1, v1] = pts[k + 1]; const len = Math.hypot((u1 - u0) * W, (vy(v1) - vy(v0)));
-        for (let t = 0; t < len; t += big ? 13 : 10) {
-          const x = u0 * W + (u1 - u0) * W * t / len, y = vy(v0) + (vy(v1) - vy(v0)) * t / len;
-          g.fillStyle = 'rgba(40,36,32,.85)'; g.beginPath(); g.arc(x, y - 9, big ? 3.6 : 2.6, 0, 7); g.fill();
-        }
+  // shoes: classic white longwing golf shoes (FootJoy Premiere style). A sleek last with an elongated, rounded
+  // toe and toe spring, a low-cut collar round the ankle, a lace panel and tongue; smooth white leather with a
+  // wingtip toe cap, long wings back to the heel, brogue punching and stitching; a stacked brown sole with a welt.
+  // Upper UVs: u = a / PI round the shoe (0 = outer side at the sole, 0.5 = over the top, 1 = inner side), v = heel → toe.
+  const smooth = (keys: [number, number][]) => (t: number) => {          // monotone-ish smooth curve through keys
+    if (t <= keys[0][0]) return keys[0][1];
+    for (let i = 0; i < keys.length - 1; i++) { const [t0, y0] = keys[i], [t1, y1] = keys[i + 1]; if (t <= t1) { const f = (t - t0) / (t1 - t0); return y0 + (y1 - y0) * f * f * (3 - 2 * f); } }
+    return keys[keys.length - 1][1];
+  };
+  const widthK = smooth([[0.12, 0.7], [0.24, 0.72], [0.4, 0.66], [0.56, 0.86], [0.7, 1.0], [0.76, 1.0]]);
+  const plan = (t: number) => {                                          // half-width (relative) of the last in plan
+    if (t < 0.12) return 0.7 * Math.sqrt(Math.max(0, 1 - ((0.12 - t) / 0.12) ** 2));          // rounded heel
+    if (t > 0.74) { const k = (t - 0.74) / 0.26; return Math.pow(Math.max(0, 1 - Math.pow(k, 2.3)), 1 / 2.3) * (1 - 0.18 * k); }  // long rounded toe
+    return widthK(t);
+  };
+  const hRel = smooth([[0, 0.063], [0.1, 0.062], [0.27, 0.052], [0.42, 0.06], [0.5, 0.072], [0.6, 0.064], [0.7, 0.051], [0.8, 0.04], [0.88, 0.032], [0.94, 0.023], [0.98, 0.013], [1, 0.005]]);
+  const spring = (t: number) => (t > 0.68 ? ((t - 0.68) / 0.32) ** 2 * 0.022 : 0);
+  const SOLE_TOP = 0.021;
+  const T0 = 0.045, T1 = 0.5;                                            // the ankle opening runs from T0 back... to T1 (the throat)
+  const xOpen = (t: number, W: number) => { const k = (t - (T0 + T1) / 2) / ((T1 - T0) / 2); return Math.abs(k) >= 1 ? 0 : Math.min(0.9 * W, 0.036 * Math.sqrt(1 - k * k)); };
+  const shoeDims = (f: { heelZ: number; toeZ: number; halfW: number }) => ({ len: f.toeZ - f.heelZ + 0.028, z0: f.heelZ - 0.012, hw: f.halfW + 0.012 });
+  // one half of a cross-section: angle range and the arch height for that half
+  const half = (t: number, W: number, outer: boolean) => {
+    const xo = xOpen(t, W);
+    const aEnd = xo > 0 ? Math.acos(Math.min(1, xo / Math.max(W, 1e-5))) : Math.PI / 2;
+    const top = hRel(t) / Math.pow(Math.max(Math.sin(aEnd), 1e-3), 0.8);
+    return { aEnd: outer ? aEnd : Math.PI - aEnd, top };
+  };
+  const NT = 46, HJ = 14;
+  const tAt = (k: number) => 0.5 - 0.5 * Math.cos(Math.PI * k / NT);   // denser at heel and toe
+  // the topline (edge of the ankle opening) in u, for drawing its stitching
+  const d0 = shoeDims(M.feet.l);
+  const shoeTex = canvasTex(1024, 2048, g => {
+    const W = 1024, H = 2048, X = (u: number) => u * W, Yv = (v: number) => (1 - v) * H;
+    g.fillStyle = '#eeede8'; g.fillRect(0, 0, W, H);
+    // smooth calf leather: a faint, fine grain and a soft sheen variation
+    for (let i = 0; i < 60000; i++) { const x = rand() * W, y = rand() * H; g.fillStyle = rand() < 0.5 ? 'rgba(0,0,0,.018)' : 'rgba(255,255,255,.35)'; g.fillRect(x, y, 1 + rand() * 2, 1 + rand() * 1.5); }
+    for (let i = 0; i < 400; i++) { const x = rand() * W, y = rand() * H, r = 20 + rand() * 60; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(0,0,0,.012)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); }
+    const curve = (pts: [number, number][], n = 120) => {                // Catmull-Rom through (u, v) points → canvas points
+      const out: [number, number][] = [];
+      for (let i = 0; i < pts.length - 1; i++) for (let k = 0; k < n / (pts.length - 1); k++) {
+        const f = k / (n / (pts.length - 1)), p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+        const cr = (a: number, b: number, c: number, d: number) => 0.5 * (2 * b + (-a + c) * f + (2 * a - 5 * b + 4 * c - d) * f * f + (-a + 3 * b - 3 * c + d) * f * f * f);
+        out.push([X(cr(p0[0], p1[0], p2[0], p3[0])), Yv(cr(p0[1], p1[1], p2[1], p3[1]))]);
+      }
+      const l = pts[pts.length - 1]; out.push([X(l[0]), Yv(l[1])]); return out;
+    };
+    const offset = (c: [number, number][], d: number) => c.map(([x, y], i) => { const a = c[Math.max(0, i - 1)], b = c[Math.min(c.length - 1, i + 1)]; let nx = -(b[1] - a[1]), ny = b[0] - a[0]; const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l; return [x + nx * d, y + ny * d] as [number, number]; });
+    const line = (c: [number, number][], style: string, w: number, dash: number[] = []) => { g.strokeStyle = style; g.lineWidth = w; g.setLineDash(dash); g.beginPath(); c.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke(); g.setLineDash([]); };
+    const holes = (c: [number, number][], step: number, r: number) => {
+      let acc = 0;
+      for (let i = 1; i < c.length; i++) {
+        const [x0, y0] = c[i - 1], [x1, y1] = c[i], L = Math.hypot(x1 - x0, y1 - y0);
+        while (acc <= L) { const f = acc / L, x = x0 + (x1 - x0) * f, y = y0 + (y1 - y0) * f; g.fillStyle = 'rgba(48,44,40,.9)'; g.beginPath(); g.moveTo(x, y - r * 1.15); g.lineTo(x + r, y); g.lineTo(x, y + r * 1.15); g.lineTo(x - r, y); g.closePath(); g.fill(); acc += step; }
+        acc -= L;
       }
     };
-    // wingtip: a W-shaped seam across the toe, with wings sweeping back along both sides
-    const wing: [number, number][] = [];
-    for (let i = 0; i <= 40; i++) { const u = i / 40; const v = 0.66 + 0.12 * Math.abs(Math.cos(u * Math.PI)) - 0.06 * Math.exp(-Math.pow((u - 0.5) / 0.08, 2)); wing.push([u, v]); }
-    seam(wing, true, true);
-    for (const side of [0, 1]) { // wings back along the sides
-      const pts: [number, number][] = []; for (let i = 0; i <= 20; i++) { const t = i / 20; pts.push([side ? 1 - (0.12 + 0.06 * t) : 0.12 + 0.06 * t, 0.66 - 0.5 * t]); }
-      seam(pts, true);
+    // a seam: overlapping edge (soft shadow line), stitching beside it, and a row of brogue holes (punched with a
+    // finer row beside the big one where `fancy`). side = which side of the edge the overlapping piece lies
+    const seam = (pts: [number, number][], side = 1, punch = true, fancy = false) => {
+      const c = curve(pts);
+      line(offset(c, -side * 3), 'rgba(0,0,0,.16)', 7);
+      line(c, 'rgba(60,54,48,.75)', 2.5);
+      line(offset(c, side * 8), 'rgba(90,84,76,.7)', 2, [7, 5]);
+      line(offset(c, side * 37), 'rgba(90,84,76,.55)', 2, [7, 5]);
+      if (punch) { holes(offset(c, side * 17), 15, 4.6); if (fancy) holes(offset(c, side * 27), 10, 2.4); }
+    };
+    for (const m of [1, -1]) {
+      const U = (u: number) => (m > 0 ? u : 1 - u);
+      // toe cap: from the top centre it swings forward and out, then down the side to the wing tip
+      seam([[0.5, 0.715], [U(0.42), 0.745], [U(0.33), 0.77], [U(0.24), 0.765], [U(0.17), 0.73], [U(0.12), 0.69]], m, true, true);
+      // the long wing: from the wing tip right back along the side, low, to the heel
+      seam([[U(0.12), 0.69], [U(0.11), 0.6], [U(0.115), 0.45], [U(0.125), 0.28], [U(0.14), 0.12], [U(0.15), 0.0]], -m, true, true);
+      // upper edge of the wing: from the wing tip up and back, then along under the collar to the heel
+      seam([[U(0.12), 0.69], [U(0.18), 0.63], [U(0.24), 0.55], [U(0.26), 0.42], [U(0.27), 0.26], [U(0.27), 0.1], [U(0.27), 0.0]], m, true, false);
+      // lace panel (eyestay): its outline round the throat, and five eyelets
+      seam([[U(0.33), 0.47], [U(0.36), 0.56], [U(0.4), 0.64], [U(0.45), 0.685], [0.5, 0.69]], -m, true, false);
+      for (let i = 0; i < 5; i++) { const v = 0.515 + i * 0.037, u = U(0.435 - i * 0.004); g.fillStyle = 'rgba(40,36,32,.9)'; g.beginPath(); g.arc(X(u), Yv(v), 5, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 2; g.beginPath(); g.arc(X(u), Yv(v), 8, 0, 7); g.stroke(); }
+      // stitching along the collar (topline)
+      const tl: [number, number][] = [];
+      for (let k = 0; k <= 40; k++) { const t = T0 + (T1 - T0) * (k / 40), Wt = plan(t) * d0.hw, xo = xOpen(t, Wt); const a = xo > 0 ? Math.acos(Math.min(1, xo / Wt)) : Math.PI / 2; tl.push([U(a / Math.PI - 0.022), t]); }
+      line(curve(tl, 80), 'rgba(110,104,96,.55)', 1.6, [6, 5]);
     }
-    // quarter (heel panel) seam and eyestay (lace panel) outline
-    seam([[0.08, 0.22], [0.2, 0.3], [0.34, 0.4], [0.4, 0.5]], true); seam([[0.92, 0.22], [0.8, 0.3], [0.66, 0.4], [0.6, 0.5]], true);
-    seam([[0.4, 0.5], [0.43, 0.38], [0.5, 0.33], [0.57, 0.38], [0.6, 0.5]], false);
-    // heel counter
-    seam([[0.0, 0.12], [0.15, 0.17], [0.85, 0.17], [1.0, 0.12]], true);
-    // small gold badge on the outer side panel
-    g.fillStyle = '#c9a35a'; g.fillRect(0.2 * W, vy(0.4), 18, 16); g.fillStyle = '#6d5326'; g.font = 'bold 12px Arial'; g.fillText('FJ', 0.2 * W + 2, vy(0.4) + 13);
+    // heel counter: a curved seam round the back, and a back-stay strip up the centre of the heel
+    seam([[0.15, 0.0], [0.2, 0.05], [0.3, 0.1], [0.4, 0.12], [0.5, 0.125], [0.6, 0.12], [0.7, 0.1], [0.8, 0.05], [0.85, 0.0]], 1, false);
+    // a small plain metal badge on the outer side
+    g.fillStyle = '#b9b3a6'; g.fillRect(X(0.21), Yv(0.47), 22, 26); g.fillStyle = 'rgba(255,255,255,.5)'; g.fillRect(X(0.21) + 3, Yv(0.47) + 3, 16, 4);
   }, true, 1);
-  shoeTex.wrapS = shoeTex.wrapT = THREE.ClampToEdgeWrapping; shoeTex.repeat.set(1, 1);
-  const upperMat = new THREE.MeshPhysicalMaterial({ map: shoeTex, roughness: 0.38, clearcoat: 0.6, clearcoatRoughness: 0.22, sheen: 0.15 });
-  // stacked leather-look sole: brown with fine horizontal layers, a dark welt line on top
-  const soleMat = new THREE.MeshStandardMaterial({ color: '#8a5a36', roughness: 0.6 });
-  soleMat.onBeforeCompile = sh => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvY = position.y;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vY;')
-      .replace('#include <map_fragment>', `#include <map_fragment>
-        float layer = 0.5 + 0.5 * sin(vY * 2600.0);
-        diffuseColor.rgb *= 0.82 + 0.25 * layer;
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.08, 0.06), smoothstep(0.0345, 0.0375, vY));`);
-  };
-  soleMat.customProgramCacheKey = () => 'stacked-sole';
+  shoeTex.wrapS = shoeTex.wrapT = THREE.ClampToEdgeWrapping; shoeTex.repeat.set(1, 1); shoeTex.anisotropy = 8;
+  const upperMat = new THREE.MeshPhysicalMaterial({ map: shoeTex, bumpMap: shoeTex, bumpScale: 0.6, roughness: 0.4, clearcoat: 0.45, clearcoatRoughness: 0.3, side: THREE.DoubleSide });
+  // stacked leather sole: a strip texture round the sole edge (u = along the edge, v = bottom → top)
+  const soleTex = canvasTex(2048, 64, g => {
+    g.fillStyle = '#8b5a34'; g.fillRect(0, 0, 2048, 64);
+    for (let y = 8; y < 56; y += 3 + Math.floor(rand() * 3)) { g.fillStyle = rand() < 0.5 ? 'rgba(60,32,14,.35)' : 'rgba(200,150,100,.25)'; g.fillRect(0, y, 2048, 1 + rand() * 1.5); }
+    for (let i = 0; i < 3000; i++) { g.fillStyle = 'rgba(40,20,8,.12)'; g.fillRect(rand() * 2048, 8 + rand() * 48, 6 + rand() * 30, 1); }
+    g.fillStyle = '#2e2018'; g.fillRect(0, 0, 2048, 9);          // the welt (top of the sole), dark brown
+    g.strokeStyle = 'rgba(210,190,160,.7)'; g.setLineDash([7, 5]); g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, 5); g.lineTo(2048, 5); g.stroke(); g.setLineDash([]);
+    g.fillStyle = '#231a14'; g.fillRect(0, 58, 2048, 6);          // dark outsole edge
+  }, true, 1);
+  soleTex.wrapS = THREE.RepeatWrapping; soleTex.wrapT = THREE.ClampToEdgeWrapping; soleTex.repeat.set(1, 1);
+  const soleMat = new THREE.MeshStandardMaterial({ map: soleTex, roughness: 0.55 });
+  const weltMat = new THREE.MeshStandardMaterial({ color: '#2e2018', roughness: 0.6 });
   const outsoleMat = new THREE.MeshStandardMaterial({ color: '#2a2420', roughness: 0.9 });
   const laceMat = new THREE.MeshStandardMaterial({ color: '#f4f3ef', roughness: 0.75 });
+  const liningMat = new THREE.MeshStandardMaterial({ color: '#f2f1ec', roughness: 0.95, side: THREE.DoubleSide });
+  const spikeMat = new THREE.MeshStandardMaterial({ color: '#2b2622', roughness: 0.6, metalness: 0.2 });
   for (const sfx of ['l', 'r'] as const) {
     const f = M.feet[sfx], fb = M.bones.indexOf(`foot_${sfx}`);
-    const len = f.toeZ - f.heelZ + 0.026, hw = f.halfW + 0.014, z0 = f.heelZ - 0.016;
+    const { len, z0, hw } = shoeDims(f);
+    const so = Math.sign(f.x) || 1;                                  // +x is the outside of this foot
+    const xc = (t: number) => f.x - so * 0.005 * t * t;              // the toe points a touch inwards
+    const wOut = (t: number) => plan(t) * hw, wIn = (t: number) => plan(t) * hw * 0.96;
+    const zAt = (t: number) => z0 + t * len;
+    const base = (t: number) => SOLE_TOP + spring(t);
     const grp = new THREE.Group();
-    // sole: a flat slab following the outline, slight toe spring
-    const outline = (t: number) => { // half width of the sole along the foot
-      const w = t < 0.15 ? 0.62 + 0.38 * Math.sin((t / 0.15) * Math.PI / 2) : t < 0.7 ? 1.0 - 0.06 * Math.sin(((t - 0.15) / 0.55) * Math.PI) : 1.0 - 0.15 * ((t - 0.7) / 0.3) ** 1.5;
-      return hw * w * (t > 0.92 ? Math.sqrt(Math.max(0, 1 - ((t - 0.92) / 0.085) ** 2)) * 0.9 + 0.1 : 1);
-    };
-    const spring = (t: number) => (t > 0.8 ? ((t - 0.8) / 0.2) ** 2 * 0.012 : 0);
-    {
-      const shape = new THREE.Shape(); const N = 40;
-      for (let i = 0; i <= N; i++) { const t = i / N; const z = z0 + t * len; if (i === 0) shape.moveTo(-outline(t), z); else shape.lineTo(-outline(t), z); }
-      for (let i = N; i >= 0; i--) { const t = i / N; shape.lineTo(outline(t), z0 + t * len); }
-      const sole = new THREE.ExtrudeGeometry(shape, { depth: 0.017, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 2, curveSegments: 4 });
-      sole.rotateX(Math.PI / 2); sole.translate(f.x, 0.02, 0);
-      const pa = sole.getAttribute('position') as THREE.BufferAttribute;
-      for (let i = 0; i < pa.count; i++) { const t = (pa.getZ(i) - z0) / len; pa.setY(i, pa.getY(i) + spring(t)); }
-      sole.computeVertexNormals();
-      const m = new THREE.Mesh(sole, [soleMat, soleMat]); grp.add(m);
-      const out = new THREE.Mesh(sole.clone().scale(1, 0.18, 1), outsoleMat); out.position.y = -0.0045 * 0; grp.add(out);
-      // spikes: a few soft cleats under the forefoot and heel
-      const spikeMat = new THREE.MeshStandardMaterial({ color: '#3b3226', roughness: 0.6, metalness: 0.2 });
-      for (const [t, xo] of [[0.12, -0.5], [0.12, 0.5], [0.24, 0], [0.55, -0.6], [0.55, 0.6], [0.68, -0.2], [0.68, 0.45], [0.8, -0.45], [0.8, 0.35], [0.9, 0]] as [number, number][]) {
-        const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.005, 0.005, 8), spikeMat);
-        sp.position.set(f.x + xo * outline(t) * 0.7, 0.0005, z0 + t * len); grp.add(sp);
+    // ── upper: two halves (outer, inner) lofted heel → toe, meeting over the top except at the ankle opening
+    const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    const edgeL: number[] = [], edgeR: number[] = [];
+    for (const outer of [true, false]) {
+      for (let k = 0; k <= NT; k++) {
+        const t = tAt(k), W = outer ? wOut(t) : wIn(t), hs = half(t, W, outer);
+        for (let j = 0; j <= HJ; j++) {
+          const a = outer ? (j / HJ) * hs.aEnd : Math.PI - (j / HJ) * (Math.PI - hs.aEnd);
+          const c = Math.cos(a), sn = Math.max(0, Math.sin(a));
+          const bulge = 1 + 0.06 * Math.sin(Math.min(1, sn * 1.6) * Math.PI);   // the leather swells a little above the welt
+          pos.push(xc(t) + so * W * c * bulge, base(t) + hs.top * Math.pow(sn, 0.8), zAt(t));
+          uv.push(a / Math.PI, t);
+        }
+        (outer ? edgeL : edgeR).push(pos.length / 3 - 1);
       }
     }
-    // upper: lofted rings, heel to toe
-    const prof: [number, number][] = [[0, 0.068], [0.05, 0.088], [0.16, 0.097], [0.3, 0.102], [0.44, 0.097], [0.58, 0.086], [0.7, 0.074], [0.8, 0.066], [0.88, 0.058], [0.95, 0.048], [0.99, 0.036], [1.0, 0.03]];
-    const seg = 24, pos: number[] = [], uv: number[] = [], idx: number[] = [];
-    prof.forEach(([t, top]) => {
-      const z = z0 + 0.004 + t * (len - 0.008), w = outline(t) * 0.97, base = 0.019 + spring(t);
-      for (let j = 0; j <= seg; j++) {
-        const a = Math.PI * (j / seg); // 0 = outer side at the sole, PI = inner side
-        const sx = -Math.cos(a), sy = Math.sin(a);
-        // a rounded arch: full width low down, narrowing over the top of the foot
-        pos.push(f.x + sx * w * (sfx === 'l' ? 1 : -1) * (1 - 0.16 * sy * sy), base + sy * (top - base), z);
-        uv.push(j / seg, t);
-      }
-    });
-    for (let r = 0; r < prof.length - 1; r++) for (let j = 0; j < seg; j++) { const a = r * (seg + 1) + j, b = a + seg + 1; idx.push(a, b, a + 1, a + 1, b, b + 1); }
-    // close the toe
-    { const ci = pos.length / 3, r = prof.length - 1; pos.push(f.x, 0.03 + spring(1), z0 + len - 0.002); uv.push(0.5, 1); for (let j = 0; j < seg; j++) { const a = r * (seg + 1) + j; idx.push(a, ci, a + 1); } }
+    const R1 = HJ + 1, HALF = (NT + 1) * R1;
+    for (const h0 of [0, HALF]) for (let k = 0; k < NT; k++) for (let j = 0; j < HJ; j++) {
+      const a = h0 + k * R1 + j, b = a + R1;
+      if ((h0 === 0) === (so > 0)) idx.push(a, a + 1, b, a + 1, b + 1, b); else idx.push(a, b, a + 1, a + 1, b, b + 1);   // outward-facing
+    }
     const upper = new THREE.BufferGeometry(); upper.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); upper.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); upper.setIndex(idx); upper.computeVertexNormals();
-    const um = new THREE.Mesh(upper, upperMat); (um.material as THREE.Material).side = THREE.DoubleSide; grp.add(um);
-    // laces: five short bars across the instep
+    { // the two halves meet over the top: share their normals there so there's no crease
+      const nrm = upper.getAttribute('normal') as THREE.BufferAttribute;
+      for (let k = 0; k <= NT; k++) { const i = edgeL[k], j = edgeR[k]; if (xOpen(tAt(k), wOut(tAt(k))) > 0) continue; const n = new THREE.Vector3(nrm.getX(i) + nrm.getX(j), nrm.getY(i) + nrm.getY(j), nrm.getZ(i) + nrm.getZ(j)).normalize(); nrm.setXYZ(i, n.x, n.y, n.z); nrm.setXYZ(j, n.x, n.y, n.z); }
+    }
+    grp.add(new THREE.Mesh(upper, upperMat));
+    // the sock inside the opening (so you never look into an empty shoe)
+    {
+      const lp: number[] = [], li: number[] = []; let n = 0;
+      for (let k = 0; k <= NT; k++) { const t = tAt(k); if (t < T0 - 0.02 || t > T1 + 0.02) continue; const i = edgeL[k] * 3, j = edgeR[k] * 3; lp.push(pos[i], pos[i + 1] - 0.005, pos[i + 2], pos[j], pos[j + 1] - 0.005, pos[j + 2]); n++; }
+      for (let k = 0; k < n - 1; k++) { const a = k * 2; li.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+      const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); lg.setIndex(li); lg.computeVertexNormals();
+      grp.add(new THREE.Mesh(lg, liningMat));
+    }
+    // a padded collar: a soft roll round the edge of the opening
+    {
+      const pts: THREE.Vector3[] = [];
+      const ks = [...Array(NT + 1).keys()].filter(k => tAt(k) >= T0 - 0.01 && tAt(k) <= T1 + 0.01);
+      for (const k of ks) pts.push(new THREE.Vector3(pos[edgeL[k] * 3], pos[edgeL[k] * 3 + 1] - 0.001, pos[edgeL[k] * 3 + 2]));
+      for (const k of ks.slice().reverse()) pts.push(new THREE.Vector3(pos[edgeR[k] * 3], pos[edgeR[k] * 3 + 1] - 0.001, pos[edgeR[k] * 3 + 2]));
+      grp.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 120, 0.0026, 8, true), new THREE.MeshStandardMaterial({ color: '#f1f0eb', roughness: 0.55 })));
+    }
+    // tongue: rises out of the throat and leans back against the shin
+    {
+      const tp: number[] = [], ti: number[] = [], tu: number[] = [], RW = 6;
+      const tz = zAt(T1 - 0.01), ty = base(T1) + hRel(T1) - 0.004;
+      for (let r = 0; r <= RW; r++) for (let i = 0; i <= 6; i++) {
+        const v = r / RW, x = (i / 6 - 0.5) * 0.034 * (1 - 0.25 * v);
+        tp.push(xc(T1) + x, ty + v * 0.02 - Math.abs(x) * 0.25, tz - v * 0.016 - v * v * 0.004 + (1 - Math.cos((i / 6 - 0.5) * Math.PI)) * 0.003);
+        tu.push(0.5, 0.5);
+      }
+      for (let r = 0; r < RW; r++) for (let i = 0; i < 6; i++) { const a = r * 7 + i, b = a + 7; ti.push(a, a + 1, b, a + 1, b + 1, b); }
+      const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(tp, 3)); tg.setIndex(ti); tg.computeVertexNormals();
+      grp.add(new THREE.Mesh(tg, new THREE.MeshPhysicalMaterial({ color: '#f3f2ee', roughness: 0.45, clearcoat: 0.3, side: THREE.DoubleSide })));
+    }
+    // laces: five white cross laces arched over the lace panel, from eyelet to eyelet
     for (let i = 0; i < 5; i++) {
-      const t = 0.4 + i * 0.065, top = 0.098 - i * 0.008 + 0.012, z = z0 + t * len;
-      const lace = new THREE.Mesh(new THREE.CapsuleGeometry(0.0022, 0.03 - i * 0.002, 2, 6), laceMat);
-      lace.rotation.z = Math.PI / 2; lace.rotation.y = (i % 2 ? 0.25 : -0.25); lace.position.set(f.x, top, z); grp.add(lace);
+      const t = 0.515 + i * 0.037, W = wOut(t), hs = half(t, W, true), pts: THREE.Vector3[] = [];
+      const ua = 0.435 - i * 0.004;
+      for (let k = 0; k <= 8; k++) {
+        const a = Math.PI * (ua + (1 - 2 * ua) * (k / 8)), c = Math.cos(a), sn = Math.sin(a);
+        pts.push(new THREE.Vector3(xc(t) + so * W * c * 1.0, base(t) + hs.top * Math.pow(sn, 0.8) + 0.0025, zAt(t) + (k / 8 - 0.5) * 0.006 * (i % 2 ? 1 : -1)));
+      }
+      grp.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.0018, 6), laceMat));
+    }
+    // ── sole: the plan outline pushed out 4 mm for the welt, an edge wall (stacked leather), top and bottom caps
+    {
+      const ring: THREE.Vector2[] = [], ts: number[] = [];
+      const N = 60;
+      for (let k = 0; k <= N; k++) { const t = 0.5 - 0.5 * Math.cos(Math.PI * k / N); ring.push(new THREE.Vector2(xc(t) + so * wOut(t), zAt(t))); ts.push(t); }
+      for (let k = N - 1; k >= 1; k--) { const t = 0.5 - 0.5 * Math.cos(Math.PI * k / N); ring.push(new THREE.Vector2(xc(t) - so * wIn(t), zAt(t))); ts.push(t); }
+      // offset outwards along the outline normal
+      const cen = ring.reduce((a, b) => a.clone().add(b), new THREE.Vector2()).multiplyScalar(1 / ring.length);
+      const out = ring.map((p, i) => {
+        const a = ring[(i - 1 + ring.length) % ring.length], b = ring[(i + 1) % ring.length];
+        const n = new THREE.Vector2(b.y - a.y, -(b.x - a.x)).normalize();
+        if (n.dot(p.clone().sub(cen)) < 0) n.negate();
+        return p.clone().addScaledVector(n, 0.0045);
+      });
+      const yTop = (t: number) => base(t) + 0.001, yBot = (t: number) => 0.004 + spring(t) * 0.9;
+      const wp: number[] = [], wu: number[] = [], wi: number[] = [];
+      let per = 0;
+      for (let i = 0; i <= out.length; i++) {
+        const p = out[i % out.length], t = ts[i % out.length];
+        if (i) per += p.distanceTo(out[(i - 1) % out.length]);
+        wp.push(p.x, yBot(t), p.y, p.x, yTop(t), p.y); wu.push(per * 6, 0, per * 6, 1);
+      }
+      for (let i = 0; i < out.length; i++) { const a = i * 2; wi.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      const wall = new THREE.BufferGeometry(); wall.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3)); wall.setAttribute('uv', new THREE.Float32BufferAttribute(wu, 2)); wall.setIndex(wi); wall.computeVertexNormals();
+      grp.add(new THREE.Mesh(wall, new THREE.MeshStandardMaterial({ map: soleTex, roughness: 0.55, side: THREE.DoubleSide })));
+      const tris = THREE.ShapeUtils.triangulateShape(out, []);
+      const cap = (y: (t: number) => number, mat: THREE.Material, flip: boolean) => {
+        const cp: number[] = []; out.forEach((p, i) => cp.push(p.x, y(ts[i]), p.y));
+        const ci: number[] = []; tris.forEach(([a, b, c]) => (flip ? ci.push(a, c, b) : ci.push(a, b, c)));
+        const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3)); cg.setIndex(ci); cg.computeVertexNormals();
+        grp.add(new THREE.Mesh(cg, mat));
+      };
+      cap(yTop, new THREE.MeshStandardMaterial({ color: '#2e2018', roughness: 0.6, side: THREE.DoubleSide }), false);
+      cap(yBot, new THREE.MeshStandardMaterial({ color: '#2a2420', roughness: 0.9, side: THREE.DoubleSide }), true);
+      void soleMat; void weltMat; void outsoleMat;
+      // soft spikes under the heel and forefoot
+      for (const [t, xo] of [[0.1, -0.45], [0.1, 0.45], [0.2, 0], [0.56, -0.55], [0.56, 0.55], [0.68, -0.15], [0.68, 0.5], [0.8, -0.4], [0.8, 0.35], [0.9, 0]] as [number, number][]) {
+        const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.005, 0.004, 10), spikeMat);
+        sp.position.set(xc(t) + xo * wOut(t) * 0.75, 0.002 + spring(t) * 0.9, zAt(t)); grp.add(sp);
+      }
     }
     grp.traverse(o => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     grp.position.sub(J[fb]);
