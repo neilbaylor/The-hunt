@@ -387,21 +387,60 @@ export function createStyler(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// Game finish: "hand-drawn realism", dialled to a hint: realistic first. An EffectComposer pass on the linear HDR
-// scene right after the RenderPass, while the scene depth is still intact (later passes write over it):
-//   - a faint ~1 px warm-brown ink line on silhouettes only (depth jumps), near subjects only, fading out by ~30 m
-//   - a barely visible hatch hint in the deepest cast shadows (scales with intensity squared)
-//   - a tiny warm lift in the highlights and a light static paper grain
-//   - the golfer's face kept clean: a screen-space mask around the head (setFace)
-// One intensity (uniform `strength`, ?ink=0..1, default 0.3) scales all of it. Analysis uses a cheap tone-mapped proxy.
+// Game finish: subtle "hand-drawn realism". Its job is a band-aid that also looks cool: make the realism gaps
+// forgivable (plastic skin, likeness, stiff hands, CG cloth folds, low-poly trees) without looking cartoony.
+// One EffectComposer pass on the linear HDR scene right after the RenderPass (the scene depth is still intact there),
+// driven by a preset of parameters:
+//   painterly (default) · gouache · inkwash · pencil · graphic · dream · none     (?style=..., ?style=real = no pass)
+// Building blocks: an edge-preserving Kuwahara (3x3 med, 5x5 high; smaller and lighter on the face so eyes, brows and
+// mouth stay readable), specular roll-off, soft value bands, matte/chalky lift, warm shadows, a brush texture only in
+// large flat areas, watercolour wash, pencil grain in the shadows, a faint warm silhouette line (depth jumps, near
+// subjects), rim light, golden glow, paper grain and edge darkening. ?ink=0..1 and ?paint=0..1 override the preset.
+// window.__handStyle(name) switches every live pass (option boards render all presets on one frozen frame).
+// Analysis (luma, bands) uses a cheap tone-mapped proxy of the HDR colour; the changes apply to the HDR colour.
 
 export type HandTier = 'med' | 'high';
+export type HandStyle = 'painterly' | 'gouache' | 'inkwash' | 'pencil' | 'graphic' | 'dream' | 'none';
+
+interface HandParams {
+  paint: number; sp: number; brush: number; bands: number; steps: number; shadowBands: number; sheen: number; matte: number;
+  warmShadow: number; warmHi: number; sat: number; wash: number; edge: number; pencil: number; hatch: number;
+  ink: number; inkW: number; inkFar: number; rim: number; glow: number; grain: number;
+}
+const ZERO: HandParams = { paint: 0, sp: 1, brush: 0, bands: 0, steps: 6, shadowBands: 0, sheen: 0, matte: 0, warmShadow: 0, warmHi: 0, sat: 1,
+  wash: 0, edge: 0, pencil: 0, hatch: 0, ink: 0, inkW: 1, inkFar: 30, rim: 0, glow: 0, grain: 0 };
+export const HAND_STYLES: Record<HandStyle, { label: string; desc: string; p: HandParams }> = {
+  painterly: { label: 'Painterly light', desc: 'Edge-preserving paint smoothing, soft brush texture in flat areas, a faint silhouette line.',
+    p: { ...ZERO, paint: 1, brush: 1, bands: 0.22, sheen: 1, warmHi: 0.3, ink: 0.3, hatch: 0.09, grain: 0.3 } },
+  gouache: { label: 'Gouache', desc: 'Flatter value bands, a matte chalky finish, warm shadows, no lines; illustrated golf poster.',
+    p: { ...ZERO, paint: 1, sp: 1.6, brush: 0.7, bands: 0.55, steps: 5, sheen: 1, matte: 1, warmShadow: 1, warmHi: 0.4, sat: 0.94, grain: 0.45 } },
+  inkwash: { label: 'Ink + wash', desc: 'A faint warm ink silhouette over a soft watercolour wash, paper edges darkening.',
+    p: { ...ZERO, paint: 0.45, ink: 0.35, inkW: 1.1, inkFar: 45, wash: 1, edge: 1, warmHi: 0.3, sat: 0.9, grain: 0.4 } },
+  pencil: { label: 'Coloured-pencil whisper', desc: 'Style 9 at about a quarter: pencil grain only in the shadows, a light contour.',
+    p: { ...ZERO, paint: 0.5, pencil: 1, ink: 0.25, warmHi: 0.2, sat: 0.9, grain: 0.3 } },
+  graphic: { label: 'Graphic realism', desc: 'Crisp silhouettes, slightly posterised shadows and a bold rim light; sporty broadcast illustration.',
+    p: { ...ZERO, paint: 0.7, shadowBands: 0.6, steps: 4, sheen: 0.5, ink: 0.6, inkW: 1.25, inkFar: 45, rim: 1, sat: 1.08, warmHi: 0.3, grain: 0.15 } },
+  dream: { label: 'Soft-focus painterly', desc: 'Dreamy golden-hour paint: soft glow on the lights, warm haze, gentle strokes.',
+    p: { ...ZERO, paint: 0.85, sp: 1.4, brush: 0.5, bands: 0.15, sheen: 0.8, matte: 0.35, warmHi: 1, glow: 1, sat: 1.05, ink: 0.12, grain: 0.25 } },
+  none: { label: 'Realistic (finish off)', desc: 'The plain render.', p: { ...ZERO } },
+};
+
+const QS_ = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+const num01 = (k: string) => { const v = QS_.get(k); return v !== null && isFinite(+v) ? THREE.MathUtils.clamp(+v, 0, 1) : null; };
+/** the preset named by ?style= (painterly when absent or unknown) */
+export const HAND_STYLE: HandStyle = ((s) => (s && s in HAND_STYLES ? s as HandStyle : 'painterly'))(QS_.get('style'));
+const INK_Q = num01('ink'), PAINT_Q = num01('paint');
 
 const HAND_FRAG = /* glsl */`
 #include <packing>
-uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform vec2 res; uniform float px, cNear, cFar, exposure, aspect, strength;
+uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform vec2 res; uniform float px, cNear, cFar, exposure, aspect;
 uniform vec4 face; // uv.xy, radius (in screen heights), view depth (0 = none)
+uniform float uPaint, uSp, uBrush, uBands, uSteps, uShadowBands, uSheen, uMatte, uWarmShadow, uWarmHi, uSat, uWash, uEdge;
+uniform float uPencil, uHatch, uInk, uInkW, uInkFar, uRim, uGlow, uGrain;
 varying vec2 vUv;
+#ifndef KR
+#define KR 1
+#endif
 float viewZ(vec2 uv) { float d = texture2D(tDepth, uv).x; return d >= 0.99999 ? 6000.0 : -perspectiveDepthToViewZ(d, cNear, cFar); }
 vec3 disp(vec3 c) { c *= exposure; c = c / (1.0 + c); return sqrt(c); } // proxy for the display image
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -410,52 +449,124 @@ float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32)
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
 void main() {
-  // strength (?ink, default 0.3) scales everything; at the default it reads as realistic with a hint of illustration
-  float I = strength;
   vec2 uv = vUv; vec2 p = uv * res / px;
   vec3 c = texture2D(tDiffuse, uv).rgb;
   float z = viewZ(uv);
-  float L = luma(disp(c));
   vec2 fd = (uv - face.xy) * vec2(aspect, 1.0);
   float fm = face.w > 0.0 ? (1.0 - smoothstep(face.z * 0.7, face.z, length(fd))) * (1.0 - smoothstep(0.35, 0.8, abs(z - face.w))) : 0.0;
+  float near0 = 1.0 - smoothstep(10.0, 40.0, z);
+  float flat0 = 0.0, vari = 0.0;
+  vec3 blurC = c;
 
-  // a tiny warm lift in the highlights
-  c *= mix(vec3(1.0), vec3(1.06, 1.0, 0.9), smoothstep(0.62, 0.95, L) * I);
+  // ── edge-preserving paint (Kuwahara): flattens fine noise, plastic skin and blotchy cloth shading, keeps edges
+  if (uPaint > 0.0 && z < 2000.0) {
+    float sp = uSp * (z < 12.0 ? 1.25 : 1.0) * px * mix(1.0, 0.6, fm);
+    vec2 k = sp / res; vec3 m0 = vec3(0.0), m1 = vec3(0.0), m2 = vec3(0.0), m3 = vec3(0.0); float q0 = 0.0, q1 = 0.0, q2 = 0.0, q3 = 0.0;
+    for (int j = -KR; j <= KR; j++) for (int i = -KR; i <= KR; i++) {
+      vec3 t = texture2D(tDiffuse, uv + vec2(float(i), float(j)) * k).rgb; float l = luma(disp(t)), l2 = l * l;
+      if (i <= 0 && j <= 0) { m0 += t; q0 += l2; } if (i >= 0 && j <= 0) { m1 += t; q1 += l2; }
+      if (i <= 0 && j >= 0) { m2 += t; q2 += l2; } if (i >= 0 && j >= 0) { m3 += t; q3 += l2; }
+    }
+    float n = float((KR + 1) * (KR + 1));
+    m0 /= n; m1 /= n; m2 /= n; m3 /= n;
+    float a0 = luma(disp(m0)), a1 = luma(disp(m1)), a2 = luma(disp(m2)), a3 = luma(disp(m3));
+    float s0 = q0 / n - a0 * a0, s1 = q1 / n - a1 * a1, s2 = q2 / n - a2 * a2, s3 = q3 / n - a3 * a3;
+    vec3 kc = m0; float b = s0; if (s1 < b) { b = s1; kc = m1; } if (s2 < b) { b = s2; kc = m2; } if (s3 < b) { b = s3; kc = m3; }
+    c = mix(c, kc, uPaint * mix(0.55, 0.85, near0) * mix(1.0, 0.45, fm));
+    blurC = (m0 + m1 + m2 + m3) * 0.25;
+    flat0 = 1.0 - smoothstep(0.0004, 0.004, b);
+    vari = max(max(s0, s1), max(s2, s3));
+  }
 
-  // hatching: a faint hint only in the deepest cast shadows (scales with I squared: barely there at the default)
-  float hz = 1.0 - smoothstep(15.0, 60.0, z);
-  if (hz > 0.0 && L < 0.35) {
+  // ── golden glow (dream): a wide soft blur of the lights added back
+  if (uGlow > 0.0) {
+    vec2 r = 7.0 * px / res; vec3 g = vec3(0.0);
+    for (int i = 0; i < 8; i++) { float a = float(i) * 0.785398 + 0.39; g += texture2D(tDiffuse, uv + vec2(cos(a), sin(a)) * r).rgb; }
+    g /= 8.0;
+    float gl = luma(disp(g));
+    c = mix(c, g, 0.22 * uGlow * (1.0 - 0.7 * fm));
+    c += g * vec3(1.0, 0.86, 0.66) * smoothstep(0.55, 0.9, gl) * 0.35 * uGlow;
+  }
+
+  float L = luma(disp(c));
+  // specular roll-off on near subjects (the plastic "CG" sheen)
+  c *= mix(1.0, 0.9, smoothstep(0.7, 0.95, L) * near0 * uSheen);
+  L = luma(disp(c));
+  // soft value bands everywhere (bands) or only in the shadows (shadowBands)
+  float Lq = (floor(L * uSteps) + smoothstep(0.25, 0.75, fract(L * uSteps))) / uSteps;
+  float bk = (uBands + uShadowBands * (1.0 - smoothstep(0.3, 0.55, L))) * (1.0 - 0.6 * fm);
+  c *= pow(max(mix(L, Lq, bk), 1e-3) / max(L, 1e-3), 2.0);
+  L = luma(disp(c));
+  // matte / chalky: lower contrast, lifted warm blacks
+  c = mix(c, c * 0.86 + vec3(0.014, 0.011, 0.008), uMatte);
+  // warm shadows, warm highlights, saturation
+  c *= mix(vec3(1.0), vec3(1.1, 0.98, 0.84), (1.0 - smoothstep(0.15, 0.5, L)) * uWarmShadow);
+  c *= mix(vec3(1.0), vec3(1.06, 1.0, 0.9), smoothstep(0.62, 0.95, L) * uWarmHi);
+  float lc = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c = max(mix(vec3(lc), c, uSat), 0.0);
+
+  // ── watercolour wash: transparent lift toward the paper, uneven pigment, pigment pooling at tone edges
+  if (uWash > 0.0) {
+    float pig = 0.6 * vnoise(p * 0.03 + 3.1) + 0.4 * vnoise(p * 0.09);
+    c = mix(c, vec3(0.92, 0.88, 0.8), 0.1 * uWash * (1.0 - 0.6 * near0) * (1.0 - fm));
+    c *= 1.0 + (pig - 0.5) * 0.18 * uWash * (1.0 - fm);
+    c *= 1.0 - 0.22 * uWash * smoothstep(0.002, 0.02, vari) * (1.0 - fm);
+  }
+  // ── brush texture only in large flat areas (turf, sky, shirt panels)
+  if (uBrush > 0.0) {
+    vec2 bq = vec2(dot(p, vec2(0.8, -0.6)), dot(p, vec2(0.6, 0.8)));
+    float stroke = vnoise(bq * vec2(0.05, 0.45)) * 0.7 + vnoise(bq * vec2(0.02, 0.18)) * 0.3;
+    c *= 1.0 + (stroke - 0.5) * 0.09 * uBrush * flat0 * (1.0 - fm);
+  }
+  // ── coloured-pencil grain, only in the shadows
+  if (uPencil > 0.0) {
+    vec2 dir = vec2(0.82, -0.57); vec2 q = vec2(dot(p, dir), dot(p, vec2(-dir.y, dir.x)));
+    float g = vnoise(q * vec2(0.14, 2.4)) * 0.55 + vnoise(q * vec2(0.05, 0.9)) * 0.45;
+    float sh = 1.0 - smoothstep(0.18, 0.55, L);
+    c *= 1.0 - (g - 0.35) * 0.45 * uPencil * sh * (1.0 - 0.5 * fm);
+  }
+  // ── hatch hint in the deepest cast shadows
+  if (uHatch > 0.0 && L < 0.35 && z < 60.0) {
     vec2 r = 14.0 * px / res;
     float loc = (Ld(uv + vec2(r.x, 0.0)) + Ld(uv - vec2(r.x, 0.0)) + Ld(uv + vec2(0.0, r.y)) + Ld(uv - vec2(0.0, r.y))) * 0.25;
     float deep = (1.0 - smoothstep(0.45, 0.65, L / max(loc, 0.03))) * (1.0 - smoothstep(0.15, 0.35, L));
     float h = 1.0 - smoothstep(0.12, 0.34, abs(fract(dot(p, vec2(0.6, -0.8)) / 3.0 + 0.3 * vnoise(p * 0.045)) - 0.5) * 2.0);
-    c *= 1.0 - 0.6 * I * I * h * deep * hz * (1.0 - fm);
+    c *= 1.0 - 0.6 * uHatch * h * deep * (1.0 - smoothstep(15.0, 60.0, z)) * (1.0 - fm);
   }
-
-  // ink: silhouettes only (relative depth jumps), about 1 px, faint, near subjects only
-  float near = 1.0 - smoothstep(6.0, 30.0, z);
-  if (near > 0.0) {
-    vec2 o = px * (0.9 + 0.3 * near) / res;
+  // ── rim light on the near side of silhouettes (graphic)
+  if (uRim > 0.0 && z < 40.0) {
+    vec2 o = 3.0 * px / res;
+    float M = max(max(viewZ(uv + vec2(o.x, 0.0)), viewZ(uv - vec2(o.x, 0.0))), max(viewZ(uv + vec2(0.0, o.y)), viewZ(uv - vec2(0.0, o.y))));
+    float rim = smoothstep(0.15, 0.4, (M - z) / max(z, 0.3)) * (1.0 - smoothstep(12.0, 40.0, z));
+    c += (c * 0.45 + vec3(0.05, 0.04, 0.025)) * rim * uRim;
+  }
+  // ── a faint warm silhouette line (depth jumps), near subjects only
+  float nearI = 1.0 - smoothstep(uInkFar * 0.2, uInkFar, z);
+  if (uInk > 0.0 && nearI > 0.0) {
+    vec2 o = uInkW * px * (0.9 + 0.3 * nearI) / res;
     float m = min(min(viewZ(uv + vec2(o.x, 0.0)), viewZ(uv - vec2(o.x, 0.0))), min(viewZ(uv + vec2(0.0, o.y)), viewZ(uv - vec2(0.0, o.y))));
     float jump = (z - m) / max(m, 0.3);
     float sil = smoothstep(0.1, 0.28, jump) * max(smoothstep(8.0, 5.0, m), smoothstep(0.5, 0.9, jump));
-    float ink = sil * near * (0.8 + 0.2 * vnoise(p * 0.4)) * mix(1.0, 0.5, fm);
-    c = mix(c, vec3(0.03, 0.016, 0.01), clamp(ink * I, 0.0, 1.0));
+    float ink = sil * nearI * (0.8 + 0.2 * vnoise(p * 0.4)) * mix(1.0, 0.5, fm);
+    c = mix(c, vec3(0.03, 0.016, 0.01), clamp(ink * uInk, 0.0, 1.0));
   }
-
-  // paper grain: static (no shimmer), strongest in the mid tones
+  // ── paper grain (static, mid tones) and paper edge darkening
   float g = 0.65 * vnoise(p * 0.75) + 0.35 * hash(floor(p));
-  c *= 1.0 + (g - 0.5) * 0.17 * I * (0.4 + 0.6 * (1.0 - abs(L - 0.55) * 1.6)) * (1.0 - 0.7 * fm);
+  c *= 1.0 + (g - 0.5) * 0.17 * uGrain * (0.4 + 0.6 * (1.0 - abs(L - 0.55) * 1.6)) * (1.0 - 0.7 * fm);
+  if (uEdge > 0.0) {
+    float d = length((uv - 0.5) * vec2(aspect, 1.0)) + 0.06 * (vnoise(p * 0.02) - 0.5);
+    c *= mix(vec3(1.0), vec3(0.82, 0.76, 0.68), smoothstep(0.32, 0.7, d) * uEdge);
+  }
   gl_FragColor = vec4(c, texture2D(tDiffuse, uv).a);
 }`;
 
-/** composer pass: reads the scene target's colour + depth and writes the hand-drawn image back into it (via a private
+const LIVE = new Set<HandDrawnPass>();
+let current: HandStyle = HAND_STYLE;
+if (typeof window !== 'undefined') (window as unknown as { __handStyle: (s: HandStyle) => void }).__handStyle = (s: HandStyle) => { current = s; for (const p of LIVE) p.setStyle(s); };
+
+/** composer pass: reads the scene target's colour + depth and writes the finished image back into it (via a private
  *  colour target, so nothing samples a depth texture that is also bound for writing). It does not swap, so later
  *  passes (depth of field) still find the scene depth on the read buffer. */
-/** default intensity of the game finish; ?ink=0..1 tunes it (0.3 ≈ realistic with a hint of illustration) */
-const inkQ = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('ink') : null;
-export const HAND_INK = inkQ !== null && isFinite(+inkQ) ? THREE.MathUtils.clamp(+inkQ, 0, 1) : 0.3;
-
 export class HandDrawnPass extends Pass {
   readonly mat: THREE.ShaderMaterial;
   private quad: FullScreenQuad;
@@ -471,23 +582,30 @@ export class HandDrawnPass extends Pass {
   constructor(private camera: THREE.PerspectiveCamera, tier: HandTier, private getExposure: () => number) {
     super();
     this.needsSwap = false;
+    const uniforms: Record<string, THREE.IUniform> = {
+      tDiffuse: { value: null }, tDepth: { value: null }, res: { value: new THREE.Vector2(1, 1) }, px: { value: 1 },
+      cNear: { value: 0.1 }, cFar: { value: 1000 }, exposure: { value: 1 }, aspect: { value: 1 },
+      face: { value: new THREE.Vector4(0, 0, 0, 0) },
+    };
+    for (const k of Object.keys(ZERO)) uniforms['u' + k[0].toUpperCase() + k.slice(1)] = { value: 0 };
     this.mat = new THREE.ShaderMaterial({
-      defines: tier === 'high' ? { HIGH: 1 } : {},
-      uniforms: {
-        tDiffuse: { value: null }, tDepth: { value: null }, res: { value: new THREE.Vector2(1, 1) }, px: { value: 1 },
-        cNear: { value: 0.1 }, cFar: { value: 1000 }, exposure: { value: 1 }, aspect: { value: 1 }, strength: { value: HAND_INK },
-        face: { value: new THREE.Vector4(0, 0, 0, 0) },
-      },
+      defines: { KR: tier === 'high' ? 2 : 1 }, uniforms,
       vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
       fragmentShader: HAND_FRAG, depthTest: false, depthWrite: false,
     });
     this.quad = new FullScreenQuad(this.mat);
+    this.setStyle(current);
+    LIVE.add(this);
+  }
+  /** pick a preset (?ink / ?paint still override its line and paint amounts) */
+  setStyle(s: HandStyle) {
+    const P = { ...HAND_STYLES[s].p };
+    if (s !== 'none') { if (INK_Q !== null) P.ink = INK_Q; if (PAINT_Q !== null) P.paint = PAINT_Q; }
+    for (const [k, v] of Object.entries(P)) this.mat.uniforms['u' + k[0].toUpperCase() + k.slice(1)].value = v;
   }
   /** render size in device pixels and the pixel ratio (line widths and grain scale with it) */
   setSize(w: number, h: number, pr = 1) { this.rt.setSize(w, h); this.mat.uniforms.res.value.set(w, h); this.mat.uniforms.px.value = pr; this.mat.uniforms.aspect.value = w / h; }
   /** the golfer's head (world position, radius in metres) to keep the face clean; null for none */
-  /** overall intensity 0..1 (default HAND_INK) */
-  setIntensity(k: number) { this.mat.uniforms.strength.value = THREE.MathUtils.clamp(k, 0, 1); }
   setFace(pos: THREE.Vector3 | null, radius = 0.14) { this.faceWorld = pos ? (this.faceWorld ?? new THREE.Vector3()).copy(pos) : null; this.faceR = radius; }
   render(renderer: THREE.WebGLRenderer, _writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget) {
     const u = this.mat.uniforms, cam = this.camera;
@@ -499,7 +617,6 @@ export class HandDrawnPass extends Pass {
       const vz = -this.v.copy(this.faceWorld).applyMatrix4(cam.matrixWorldInverse).z;
       if (vz > cam.near) {
         this.v.copy(this.faceWorld).project(cam);
-        // radius in screen heights: r / (depth * tan(fov/2)) * 0.5
         const rh = this.faceR / (vz * Math.tan(THREE.MathUtils.degToRad(cam.getEffectiveFOV()) / 2)) * 0.5;
         f.set(this.v.x * 0.5 + 0.5, this.v.y * 0.5 + 0.5, rh, vz);
       }
@@ -512,5 +629,5 @@ export class HandDrawnPass extends Pass {
     this.copy.render(renderer);
     renderer.autoClear = ac;
   }
-  dispose() { this.mat.dispose(); this.quad.dispose(); this.rt.dispose(); this.copy.material.dispose(); this.copy.dispose(); }
+  dispose() { LIVE.delete(this); this.mat.dispose(); this.quad.dispose(); this.rt.dispose(); this.copy.material.dispose(); this.copy.dispose(); }
 }
