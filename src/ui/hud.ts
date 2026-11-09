@@ -347,10 +347,10 @@ export class Hud {
     const where = L.side ? (L.side < 0 ? 'starts left' : 'starts right') : 'flat';
     const short: Record<string, string> = { 'Tee box': 'Tee', 'Fairway': 'Fairway', 'First cut': 'Cut', 'Rough': 'Rough', 'Fairway bunker': 'Sand' };
     const qc = q === 'good' ? 'good' : q === 'bad' ? 'bad' : 'warn';
-    this.q('#lieSlot').innerHTML = this.skin === 'f' && !this.lieOpen
+    this.q('#lieSlot').innerHTML = this.skin === 'f' && false   // the user prefers the full card: the pill is kept but unused
       ? `<button type="button" class="hud-panel lie-pill" data-act="lie" aria-label="Lie: ${L.name}, ${word}${L.slope ? `, ${L.slope} degree slope` : ''}. Tap for details"><i class="dot ${qc}" aria-hidden="true"></i><b>${short[L.name] ?? L.name}</b>${L.slope ? `<small>${L.slope}° ${L.side < 0 ? '↖' : '↗'}</small>` : ''}</button>`
       : this.skin === 'f'
-      ? `<button type="button" class="hud-panel lie-card lie-w${this.lieOpen ? '' : ' mini'}" data-act="lie" aria-label="Lie: ${L.name}, ${word}, ${L.pct} percent distance, ${L.slope} degree slope, ball ${where}. Tap for another sample lie">
+      ? `<button type="button" class="hud-panel lie-card lie-w" data-act="lie" aria-label="Lie: ${L.name}, ${word}, ${L.pct} percent distance, ${L.slope} degree slope, ball ${where}. Tap for another sample lie">
         ${lieScene(L.slope, L.side, kind)}
         <span class="lie-txt"><span class="lie-name${L.name.length > 10 ? ' long' : ''}">${L.name}</span><span class="lie-q ${q}">${word} · ${L.pct}%</span>
         <span class="lie-slope"><b>${L.slope}°</b><small>${where}</small></span></span></button>`
@@ -464,9 +464,7 @@ export class Hud {
     if (act === 'mode') { cp.hidden = true; mp.hidden = !mp.hidden; mp.innerHTML = this.modeList(); }
     if (act === 'lie') {
       this.closePops();
-      if (this.lieOpen) { this.lie = (this.lie + 1) % LIES.length; this.render(); this.onLie(this.lie); }   // open: tap for another sample lie
-      else { this.lieOpen = true; this.render(); }
-      clearTimeout(this.lieT); this.lieT = window.setTimeout(() => { this.lieOpen = false; this.render(); }, 4000);
+      this.lie = (this.lie + 1) % LIES.length; this.render(); this.onLie(this.lie);   // tap for another sample lie
     }
     if (act === 'skin') { a.classList.remove('wiggle'); void a.offsetWidth; a.classList.add('wiggle'); }
     if (act === 'card-open') { if (this.cardMode === 'open') this.setCard('hidden'); else { this.setCard('open'); this.later(9000, () => this.setCard('hidden')); } }
