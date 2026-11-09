@@ -462,6 +462,8 @@ export class Golfer {
       // along the grip with a gentle fixed curl.
       const g = this.club.group, axisP = this.club.butt.clone().applyQuaternion(qc).add(g.position), axisD = this.club.shaftDir.clone().applyQuaternion(qc).normalize();
       const fromAxis = (pt: THREE.Vector3) => { const d = pt.clone().sub(axisP); return d.addScaledVector(axisD, -d.dot(axisD)).length(); };
+      const b1 = new THREE.Vector3(1, 0, 0).addScaledVector(axisD, -axisD.x).normalize(), b2 = new THREE.Vector3().crossVectors(axisD, b1);
+      const angleOf = (pt: THREE.Vector3) => { const d = pt.clone().sub(axisP); return Math.atan2(d.dot(b2), d.dot(b1)); };
       // the mesh's own wrist: its forearm joint plus the hand bone's offset (the mesh forearm can differ from the rig's)
       const handP = this.rig.P[fore].clone().add(bones[E.hand[s]].position.clone().applyQuaternion(Q[fore]));
       (this as any).__handGap = (this as any).__handGap ?? {}; (this as any).__handGap[s] = handP.distanceTo(this.rig.wristPos[s]);
@@ -477,8 +479,11 @@ export class Golfer {
           let qPrev = qh.clone();
           chain.forEach((b, si) => {
             const d = P.clone().sub(axisP), along = d.dot(axisD);
-            const radial = d.clone().addScaledVector(axisD, -along).normalize();
-            const target = axisP.clone().addScaledVector(axisD, along - (0.022 + 0.01 * si)).addScaledVector(radial, s === 'L' ? rFinger - 0.002 : rFinger);
+            const rv = d.clone().addScaledVector(axisD, -along), rl = rv.length(), radial = rv.normalize();
+            // aim the segment's end onto the grip surface: as far down the grip as its length allows
+            const rT = s === 'L' ? rFinger - 0.002 : rFinger, len = segs[si].length();
+            const down = Math.sqrt(Math.max(0, len * len - (rl - rT) * (rl - rT)));
+            const target = axisP.clone().addScaledVector(axisD, along - down).addScaledVector(radial, rT);
             const segW = segs[si].clone().applyQuaternion(qPrev).normalize();
             const q = new THREE.Quaternion().setFromUnitVectors(segW, target.sub(P).normalize()).multiply(qPrev);
             local(b, parentQ, q); parentQ = q; qPrev = q;
@@ -496,11 +501,18 @@ export class Golfer {
         const side = Math.sign(new THREE.Vector3().crossVectors(E.palm[s], E.handDir[s]).dot(across));
         const qSpread = new THREE.Quaternion().setFromAxisAngle(E.palm[s], -side * [0, 0.1, 0, 0.06, 0.12][fi]);
         const qhs = qh.clone().multiply(qSpread);
+        // which way round the grip these fingers wrap: the way the hand points from its knuckles
+        const handDirW = E.handDir[s].clone().applyQuaternion(qh), radP = P.clone().sub(axisP).addScaledVector(axisD, -P.clone().sub(axisP).dot(axisD));
+        const wrapSign = Math.sign(new THREE.Vector3().crossVectors(radP, handDirW).dot(axisD)) || 1;
         chain.forEach((b, si) => {
           let best = 0, bestErr = Infinity;
+          const angP = angleOf(P);
           for (let d = -0.6; d <= 1.8; d += 0.03) {
             const q = qhs.clone().multiply(qr.setFromAxisAngle(axis, acc + d));
-            const err = Math.abs(fromAxis(P.clone().add(segs[si].clone().applyQuaternion(q))) - rFinger);
+            const end = P.clone().add(segs[si].clone().applyQuaternion(q));
+            // each segment must carry on round the grip the way the fingers wrap (never fold back)
+            let adv = (angleOf(end) - angP) * wrapSign; adv = Math.atan2(Math.sin(adv), Math.cos(adv));
+            const r = fromAxis(end), err = Math.max(0, rFinger - r) * 3 + Math.max(0, r - rFinger) + (adv < 0.08 ? 0.05 + (0.08 - adv) * 0.1 : 0); // sinking in is worse than a gap
             if (err < bestErr - 1e-5) { bestErr = err; best = d; }
           }
           acc += best;
