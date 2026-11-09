@@ -105,7 +105,11 @@ export class ShotCam {
     const s = smoother((this.t - this.t0Phase) / C.land);
     const f = b.phase === 'flight' ? this.followPose(ctx, new THREE.Vector3(), new THREE.Vector3()) : null;
     const fromPos = f ? f.pos : this.from.pos, fromLook = f ? f.look : this.from.look;
-    o.pos.copy(fromPos).lerp(this.landPos!, s);
+    // swing out sideways first, then along: a quadratic path that never runs the camera past the ball
+    const lat = new THREE.Vector3(-this.targetDir.z, 0, this.targetDir.x);
+    const ctrl = fromPos.clone().addScaledVector(lat, this.landPos!.clone().sub(fromPos).dot(lat)); ctrl.y = Math.max(fromPos.y, this.landPos!.y);
+    const u = 1 - s;
+    o.pos.copy(fromPos).multiplyScalar(u * u).addScaledVector(ctrl, 2 * u * s).addScaledVector(this.landPos!, s * s);
     // keep the ball AND where it's coming down in shot during the hand-off; once it's down, just the ball
     // the ball stays the subject (eye just ahead of it, towards where it comes down); the camera's move brings the landing area in
     const lookNow = (b.phase === 'flight' ? b.pos.clone().lerp(this.landLook, 0.2) : b.pos.clone()).addScaledVector(Y, 0.3);
