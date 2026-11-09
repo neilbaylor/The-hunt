@@ -85,12 +85,12 @@ export const NEIL: GolferProfile = {
     topColor: '#d6d3cc',
     topTrim: '#1c4739',
     emblem: '#b3262e',
-    pants: '#c8b38a',     // khaki shorts
+    pants: '#c9ad7c',     // warm sand khaki chino shorts
     shoes: '#f3f2ee',     // white wingtips (classic tour shoe)
     shoeTrim: '#e6e5e0',
     glove: '#f6f5f1',
     chestLogo: 'malbon-m',
-    untucked: true,
+    untucked: false,   // tucked in, with a belt
     headwear: { kind: 'visor', color: '#f3efe4', under: '#24382b', logo: 'pizza-hut' },
   },
   head: 'generated',

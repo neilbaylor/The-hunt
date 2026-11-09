@@ -66,6 +66,30 @@ const BODY: Record<FabricKind, string> = {
     float welt = (1.0 - smoothstep(0.0012, 0.0028, abs(pk.y))) * (1.0 - smoothstep(0.055, 0.058, abs(pk.x))) * back;
     h -= 0.0015 * welt;
     col *= 1.0 - 0.25 * welt;
+    float front = 1.0 - back;
+    float wy = vB.y - uBeltY;                                   // height relative to the waist (belt line)
+    // fly: a seam down the centre front with the J-stitch curving in at the bottom, flat and clean
+    float flyLen = 0.15;
+    float jx = 0.032 * (1.0 - smoothstep(-flyLen + 0.035, -flyLen, wy));   // the J: straight, then curving to the centre
+    float onFly = step(-flyLen - 0.005, wy) * step(wy, -0.02) * front;
+    float jst = (1.0 - smoothstep(0.0007, 0.0016, abs(vB.x - jx))) * onFly * step(0.5, fract(wy * 160.0));
+    float flyEdge = (1.0 - smoothstep(0.0, 0.0018, abs(vB.x))) * step(-flyLen, wy) * step(wy, 0.0) * front;
+    h -= 0.0006 * flyEdge;
+    col *= 1.0 - 0.18 * flyEdge - 0.25 * jst;
+    // slanted side pockets: diagonal seams from the waistband out and down to the side seam
+    vec2 pa0 = vec2(0.105, -0.01), pa1 = vec2(0.17, -0.135), pq = vec2(abs(vB.x), wy);
+    float tq = clamp(dot(pq - pa0, pa1 - pa0) / dot(pa1 - pa0, pa1 - pa0), 0.0, 1.0);
+    float pd = length(pq - (pa0 + (pa1 - pa0) * tq));
+    float pocket = (1.0 - smoothstep(0.0008, 0.0022, pd)) * front;
+    float pst = (1.0 - smoothstep(0.0006, 0.0014, abs(pd - 0.006))) * front * step(0.5, fract((vB.y + abs(vB.x)) * 150.0));
+    h -= 0.0012 * pocket;
+    col *= 1.0 - 0.22 * pocket - 0.15 * pst;
+    // centre-back seam
+    float cb = (1.0 - smoothstep(0.0, 0.0018, abs(vB.x))) * back * step(wy, 0.0) * step(-0.24, wy);
+    h -= 0.0006 * cb; col *= 1.0 - 0.15 * cb;
+    // soft drag folds from the crotch on the front
+    float drag = front * smoothstep(-0.13, -0.2, wy) * (1.0 - smoothstep(-0.28, -0.34, wy)) * (1.0 - smoothstep(0.03, 0.09, abs(vB.x)));
+    h += 0.0007 * drag * sin((abs(vB.x) * 1.4 + wy) * 90.0);
     col *= 1.0 - 0.07 * sg; stitch += 0.0;
     col *= 0.95 + 0.1 * fbm3(vB * 45.0);
     // a touch of grass and dust at the hem

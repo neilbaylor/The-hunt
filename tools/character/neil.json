@@ -368,7 +368,9 @@
   "shortsAboveKnee": 0.04,
   "shortsHemR": 0.094,
   "socks": 0.045,
-  "untucked": true,
+  "untucked": false,
+  "tuckDepth": 0.015,
+  "blouse": 0.012,
   "untuckedDrop": 0.07
  },
  "faceShape": {

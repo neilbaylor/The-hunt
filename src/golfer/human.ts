@@ -251,7 +251,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   weldNormals(shirtMesh);
   const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.82, sheen: 0.3, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.6), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   applyFabric(pantsMat, 'chino', fu);
-  weldNormals(add('pants', pantsMat));
+  const pantsMesh = add('pants', pantsMat); weldNormals(pantsMesh);
   const glove = new THREE.MeshPhysicalMaterial({ color: O.glove, roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color('#ffffff'), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   applyFabric(glove, 'glove', fu);
   add('glove', glove);
@@ -364,19 +364,13 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     eye: new THREE.Vector3(...(M.eye as [number, number, number])),
   };
 
-  // polo collar: one continuous piece of shirt fabric round the neck (no seam at the back). A stand rises off
-  // the neckline, rolls softly over and falls as a leaf onto the shoulders, ending in two points that lie on the
-  // collarbones either side of the placket. The leaf is laid onto the shirt surface so it never cuts into it.
-  const pelvisBi = M.bones.indexOf('pelvis');
-  {
-    // the shirt surface near the neck (bind space), for laying things onto it
-    const sp = shirtMesh!.geometry.getAttribute('position') as THREE.BufferAttribute, sn = shirtMesh!.geometry.getAttribute('normal') as THREE.BufferAttribute;
-    const ring0 = M.collar.map(a => new THREE.Vector3(a[0], a[1], a[2]));
-    const c = ring0.reduce((a, b) => a.add(b), new THREE.Vector3()).multiplyScalar(1 / ring0.length);
-    const loY = Math.min(...ring0.map(q => q.y)) - 0.16;
-    const inside = new THREE.Vector3(c.x, c.y - 0.16, c.z - 0.02);
+  // Lay small parts onto a skinned shell and skin them like it. `surfaceOf` indexes the shell's bind-space
+  // vertices in a region; `near` gives the smoothed nearest surface point + outward normal; `skinned` turns a
+  // bind-space geometry into a SkinnedMesh with the weights of the nearest shell vertices (minus `exclude` bones).
+  const surfaceOf = (sm: THREE.SkinnedMesh, keep: (x: number, y: number, z: number) => boolean, inside: (q: THREE.Vector3) => THREE.Vector3, exclude = new Set<number>()) => {
+    const sp = sm.geometry.getAttribute('position') as THREE.BufferAttribute, sn = sm.geometry.getAttribute('normal') as THREE.BufferAttribute;
     const cand: number[] = [];
-    for (let i = 0; i < sp.count; i++) if (sp.getY(i) > loY && Math.hypot(sp.getX(i) - c.x, sp.getZ(i) - c.z) < 0.24) cand.push(i);
+    for (let i = 0; i < sp.count; i++) if (keep(sp.getX(i), sp.getY(i), sp.getZ(i))) cand.push(i);
     const nearest6 = (p: THREE.Vector3) => {
       const best: [number, number][] = [];
       for (const i of cand) {
@@ -385,15 +379,12 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       }
       return best;
     };
-    // collar, placket and buttons are skinned like the shirt under them (weights of the nearest shirt
-    // vertices), so they move with the fabric through the swing instead of riding rigidly on one bone
-    const ssi = shirtMesh!.geometry.getAttribute('skinIndex') as THREE.BufferAttribute, ssw = shirtMesh!.geometry.getAttribute('skinWeight') as THREE.BufferAttribute;
-    const armBone = new Set(M.bones.map((n, i) => (/upperarm|lowerarm|hand/.test(n) ? i : -1)).filter(i => i >= 0));   // the collar never follows the arms
+    const ssi = sm.geometry.getAttribute('skinIndex') as THREE.BufferAttribute, ssw = sm.geometry.getAttribute('skinWeight') as THREE.BufferAttribute;
     const skinned = (geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[]) => {
       const pa = geo.getAttribute('position') as THREE.BufferAttribute, si = new Uint16Array(pa.count * 4), sw = new Float32Array(pa.count * 4), v = new THREE.Vector3();
       for (let k = 0; k < pa.count; k++) {
         v.fromBufferAttribute(pa, k); const acc = new Map<number, number>();
-        for (const [d, i] of nearest6(v)) { const w = 1 / (Math.sqrt(d) + 0.002); for (let c = 0; c < 4; c++) { const b = ssi.getComponent(i, c), ww = ssw.getComponent(i, c) * w; if (ww > 0 && !armBone.has(b)) acc.set(b, (acc.get(b) ?? 0) + ww); } }
+        for (const [d, i] of nearest6(v)) { const w = 1 / (Math.sqrt(d) + 0.002); for (let c = 0; c < 4; c++) { const b = ssi.getComponent(i, c), ww = ssw.getComponent(i, c) * w; if (ww > 0 && !exclude.has(b)) acc.set(b, (acc.get(b) ?? 0) + ww); } }
         const top4 = [...acc].sort((a, b) => b[1] - a[1]).slice(0, 4), tot = top4.reduce((s, x) => s + x[1], 0) || 1;
         top4.forEach(([b, w], c) => { si[k * 4 + c] = b; sw[k * 4 + c] = w / tot; });
       }
@@ -406,10 +397,23 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const q = new THREE.Vector3(), n = new THREE.Vector3(); let ws = 0;
       for (const [d, i] of best) { const w = 1 / (Math.sqrt(d) + 0.002); ws += w; q.x += sp.getX(i) * w; q.y += sp.getY(i) * w; q.z += sp.getZ(i) * w; n.x += sn.getX(i) * w; n.y += sn.getY(i) * w; n.z += sn.getZ(i) * w; }
       q.multiplyScalar(1 / ws); n.normalize();
-      // make sure the normal points out of the body (away from a point inside the chest below the neck)
-      if (n.dot(q.clone().sub(inside)) < 0) n.negate();
+      if (n.dot(q.clone().sub(inside(q))) < 0) n.negate();   // the normal points out of the body
       return { q, n };
     };
+    return { near, skinned, nearest6 };
+  };
+  // polo collar: one continuous piece of shirt fabric round the neck (no seam at the back). A stand rises off
+  // the neckline, rolls softly over and falls as a leaf onto the shoulders, ending in two points that lie on the
+  // collarbones either side of the placket. The leaf is laid onto the shirt surface so it never cuts into it.
+  {
+    // the shirt surface near the neck (bind space), for laying things onto it
+    const ring0 = M.collar.map(a => new THREE.Vector3(a[0], a[1], a[2]));
+    const c = ring0.reduce((a, b) => a.add(b), new THREE.Vector3()).multiplyScalar(1 / ring0.length);
+    const loY = Math.min(...ring0.map(q => q.y)) - 0.16;
+    const inside = new THREE.Vector3(c.x, c.y - 0.16, c.z - 0.02);
+    const armBone = new Set(M.bones.map((n, i) => (/upperarm|lowerarm|hand/.test(n) ? i : -1)).filter(i => i >= 0));   // the collar never follows the arms
+    // collar, placket and buttons are skinned like the shirt under them, so they move with the fabric through the swing
+    const { near, skinned } = surfaceOf(shirtMesh!, (x, y, z) => y > loY && Math.hypot(x - c.x, z - c.z) < 0.24, () => inside, armBone);
     // the neckline as a smooth closed curve: a low-order Fourier fit of radius and height against angle round the neck
     const sam = ring0.map(q => ({ a: Math.atan2(q.x - c.x, q.z - c.z), r: Math.hypot(q.x - c.x, q.z - c.z), y: q.y })).sort((x, y) => x.a - y.a);
     const fit = (key: 'r' | 'y', NH = 3) => {
@@ -498,22 +502,93 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const cm = skinned(baked.geometry, bitsMat); cm.name = 'collar'; cm.castShadow = false;
     bits.forEach(b => b.geometry.dispose());
   }
-  // belt: a leather band round the waist with a buckle, on the pelvis
-  {
-    const B = M.belt, seg = 64, h = 0.034, pos: number[] = [], idx: number[] = [];
-    for (let i = 0; i <= seg; i++) {
-      const a = (i / seg) * Math.PI * 2, x = B.cx + Math.sin(a) * (B.rx + 0.017), z = B.cz + Math.cos(a) * (B.rz + 0.017);
-      pos.push(x, B.y - h / 2, z, x, B.y + h / 2, z);
+  // belt (tucked-in shirt): a 3.5 cm mid-brown pebbled leather belt laid on the shorts' waistband and skinned
+  // like it: stitched edges, a square brushed-silver buckle with a single prong at the front, the tip through a
+  // leather keeper with three punched holes showing; khaki belt loops either side of the fly, at the sides and
+  // either side of the centre back; the back pockets' buttons. One skinned mesh, one atlas: one draw call.
+  if (!O.untucked && pantsMesh) {
+    const B = M.belt, H = 0.035, SEG = 128;
+    const axis = (q: THREE.Vector3) => new THREE.Vector3(B.cx, q.y, B.cz);
+    const { near, skinned } = surfaceOf(pantsMesh, (_x, y) => Math.abs(y - B.y) < 0.09, axis);
+    const brown = '#74412a';
+    const leatherCanvas = (holes: boolean) => canvasTex(holes ? 512 : 2048, 64, g => {
+      const W = holes ? 512 : 2048;
+      g.fillStyle = brown; g.fillRect(0, 0, W, 64);
+      for (let i = 0; i < W * 6; i++) { const x = rand() * W, y = rand() * 64, r = 0.8 + rand() * 1.4; g.fillStyle = rand() < 0.5 ? 'rgba(0,0,0,.10)' : 'rgba(255,220,190,.07)'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
+      g.fillStyle = 'rgba(40,18,8,.55)'; g.fillRect(0, 0, W, 3); g.fillRect(0, 61, W, 3);           // darker burnished edges
+      g.strokeStyle = 'rgba(205,170,130,.75)'; g.lineWidth = 1.6; g.setLineDash([6, 4]);
+      for (const y of [8, 56]) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+      g.setLineDash([]);
+      if (holes) for (let k = 0; k < 3; k++) { const x = 150 + k * 95; g.fillStyle = '#1c0f08'; g.beginPath(); g.ellipse(x, 32, 7, 7, 0, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.4)'; g.lineWidth = 2; g.beginPath(); g.arc(x, 32, 10, 0, 7); g.stroke(); }
+    }, true, 1);
+    const bandTex = leatherCanvas(false), tipTex = leatherCanvas(true);
+    // the belt's centre line: the waistband surface round the waist, smoothed, 2.5 mm proud
+    const ring: { p: THREE.Vector3; n: THREE.Vector3 }[] = [];
+    for (let i = 0; i < SEG; i++) {
+      const a = (i / SEG) * Math.PI * 2, guess = new THREE.Vector3(B.cx + Math.sin(a) * (B.rx + 0.03), B.y, B.cz + Math.cos(a) * (B.rz + 0.03));
+      const { q, n } = near(guess); n.y = 0; n.normalize();
+      ring.push({ p: new THREE.Vector3(q.x, B.y, q.z).addScaledVector(n, 0.0025), n });
     }
-    for (let i = 0; i < seg; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-    g.translate(-J[pelvisBi].x, -J[pelvisBi].y, -J[pelvisBi].z);
-    const leather = new THREE.MeshPhysicalMaterial({ color: (O as any).belt ?? '#2a1d14', roughness: 0.45, clearcoat: 0.3, side: THREE.DoubleSide });
-    const belt = new THREE.Mesh(g, leather); belt.castShadow = true; bones[pelvisBi].add(belt); meshes.push(belt);
-    if (O.untucked) belt.visible = false;
-    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.036, 0.006), new THREE.MeshStandardMaterial({ color: '#c9ccd1', metalness: 1, roughness: 0.25 }));
-    buckle.position.set(B.cx, B.y, B.cz + B.rz + 0.02).sub(J[pelvisBi]); bones[pelvisBi].add(buckle);
-    if (O.untucked) buckle.visible = false;
+    for (let pass = 0; pass < 3; pass++) { const r0 = ring.map(r => r.p.clone()); ring.forEach((r, i) => r.p.copy(r0[(i + SEG - 1) % SEG]).add(r0[(i + 1) % SEG]).multiplyScalar(0.25).addScaledVector(r0[i], 0.5)); }
+    const at = (a: number) => {   // interpolated point + outward normal round the belt at angle a (0 = front)
+      const t = ((((a / (Math.PI * 2)) % 1) + 1) % 1) * SEG, i = Math.floor(t) % SEG, f = t - Math.floor(t), j = (i + 1) % SEG;
+      return { p: ring[i].p.clone().lerp(ring[j].p, f), n: ring[i].n.clone().lerp(ring[j].n, f).normalize() };
+    };
+    const strip = (a0: number, a1: number, h: number, off: number, n: number, taperEnd = false) => {   // a band following the belt
+      const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+      for (let k = 0; k <= n; k++) {
+        const t = k / n, a = a0 + (a1 - a0) * t, { p, n: nn } = at(a);
+        const hh = taperEnd && t > 0.85 ? h * (1 - (t - 0.85) / 0.15 * 0.55) : h;   // the tip comes to a soft point
+        const q = p.clone().addScaledVector(nn, off);
+        pos.push(q.x, q.y - hh / 2, q.z, q.x, q.y + hh / 2, q.z); uv.push(t, 0, t, 1);
+      }
+      for (let k = 0; k < n; k++) { const b = k * 2; idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+      return g;
+    };
+    const mat = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(o);
+    const parts: THREE.Mesh[] = [];
+    const side = p.handed === 'left' ? -1 : 1;                         // the tip runs to the wearer's left
+    parts.push(new THREE.Mesh(strip(0, Math.PI * 2, H, 0, SEG), mat({ map: bandTex })));
+    // top edge of the leather (its thickness), seen from above
+    { const g = strip(0, Math.PI * 2, 0.0001, -0.0015, SEG); const pa = g.getAttribute('position') as THREE.BufferAttribute;
+      for (let k = 0; k < pa.count; k += 2) { const { n } = at((k / 2 / SEG) * Math.PI * 2); pa.setXYZ(k, pa.getX(k) - n.x * 0.0015, pa.getY(k) + H / 2, pa.getZ(k) - n.z * 0.0015); pa.setXYZ(k + 1, pa.getX(k + 1) + n.x * 0.0015, pa.getY(k + 1) + H / 2, pa.getZ(k + 1) + n.z * 0.0015); }
+      g.computeVertexNormals(); parts.push(new THREE.Mesh(g, mat({ color: '#4a2716' }))); }
+    // the tip: from the buckle over the belt, through the keeper, three holes showing
+    parts.push(new THREE.Mesh(strip(side * 0.02, side * 0.36, H * 0.98, 0.0028, 24, true), mat({ map: tipTex })));
+    // keeper loop just past the buckle
+    { const { p: kp, n: kn } = at(side * 0.15); const g = new THREE.BoxGeometry(0.011, H + 0.006, 0.0075);
+      g.applyMatrix4(new THREE.Matrix4().compose(kp.clone().addScaledVector(kn, 0.0035), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), kn), new THREE.Vector3(1, 1, 1)));
+      parts.push(new THREE.Mesh(g, mat({ color: '#673722' }))); }
+    // buckle: a square brushed-silver frame with a single prong
+    { const { p: bp, n: bn } = at(0); const fr = new THREE.Matrix4().compose(bp.clone().addScaledVector(bn, 0.0055), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), bn), new THREE.Vector3(1, 1, 1));
+      const bw = 0.046, bh = 0.044, t = 0.0045, silver = mat({ color: '#c3c6ca' });
+      for (const [x, y, w, h] of [[0, bh / 2 - t / 2, bw, t], [0, -bh / 2 + t / 2, bw, t], [-bw / 2 + t / 2, 0, t, bh], [bw / 2 - t / 2, 0, t, bh], [-0.004, 0, bw * 0.55, 0.0025]] as number[][]) {
+        const g = new THREE.BoxGeometry(w, h, 0.004); g.translate(x, y, 0); g.applyMatrix4(fr); parts.push(new THREE.Mesh(g, silver));
+      } }
+    // belt loops: khaki strips over the belt
+    const khaki = mat({ color: O.pants });
+    const r0 = Math.hypot(at(0).p.x - B.cx, at(0).p.z - B.cz);
+    for (const a of [Math.asin(Math.min(0.9, 0.07 / r0)), -Math.asin(Math.min(0.9, 0.07 / r0)), 1.62, -1.62, 2.72, -2.72]) {
+      const { p: lp, n: ln } = at(a), pos: number[] = [], idx: number[] = [];
+      const prof: [number, number][] = [[-H / 2 - 0.008, 0.0005], [-H / 2 - 0.001, 0.0045], [H / 2 + 0.001, 0.0045], [H / 2 + 0.006, 0.0005]];
+      const tang = new THREE.Vector3(0, 1, 0).cross(ln).normalize();
+      for (const [y, o] of prof) for (const s2 of [-1, 1]) { const q = lp.clone().addScaledVector(ln, o).addScaledVector(tang, s2 * 0.0055); pos.push(q.x, q.y + y, q.z); }
+      for (let k = 0; k < prof.length - 1; k++) { const b = k * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+      parts.push(new THREE.Mesh(g, khaki));
+    }
+    // back pocket buttons (the welts themselves are in the chino shader)
+    for (const sx of [-1, 1]) {
+      const { q, n } = near(new THREE.Vector3(B.cx + sx * 0.085, B.y - 0.088, B.cz - B.rz - 0.03));
+      const g = new THREE.CylinderGeometry(0.0045, 0.0045, 0.002, 12).applyMatrix4(new THREE.Matrix4().compose(q.clone().addScaledVector(n, 0.0015), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n), new THREE.Vector3(1, 1, 1)));
+      parts.push(new THREE.Mesh(g, mat({ color: '#9a7f55' })));
+    }
+    const baked = bakeAtlas(parts, 2048);
+    baked.texture.anisotropy = 8;
+    const beltMesh = skinned(baked.geometry, new THREE.MeshPhysicalMaterial({ map: baked.texture, bumpMap: baked.texture, bumpScale: 0.4, roughness: 0.5, clearcoat: 0.25, clearcoatRoughness: 0.4, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    beltMesh.name = 'belt'; beltMesh.castShadow = false;
+    parts.forEach(m => m.geometry.dispose());
   }
   // shoes: classic white longwing golf shoes (FootJoy Premiere style). A sleek last with an elongated, rounded
   // toe and toe spring, a low-cut collar round the ankle, a lace panel and tongue; smooth white leather with a

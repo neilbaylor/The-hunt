@@ -319,7 +319,7 @@ for vi in body_idx:
     feet = wsum(vi, ['foot_l', 'foot_r', 'ball_l', 'ball_r'])
     neckw = vw[vi].get(BONES.index('neck_01'), 0) + vw[vi].get(BONES.index('head'), 0)
     # shirt: torso and upper arms (short sleeves), from the belt up to the collar
-    shirt_lo = belt_y - (C.get('untuckedDrop', 0.0) if C.get('untucked') else 0.035)
+    shirt_lo = belt_y - (C.get('untuckedDrop', 0.0) if C.get('untucked') else C.get('tuckDepth', 0.035))
     if y > shirt_lo and neckw < 0.5 and y < neck_y + 0.01:
         sleeve_ok = True
         if arm_l > 0.5: sleeve_ok = along(vi, 'upperarm_l', 'lowerarm_l') < C['sleeve']
@@ -409,6 +409,7 @@ if C.get('hang', 0) > 0:
             j = np.searchsorted(-ys, -yy[i], side='right') - 1
             rh = cm[max(j, 0)]
             w = min(1.0, (chest_y - yy[i]) / 0.1); w = w * w * (3 - 2 * w) * C['hang']
+            if not C.get('untucked'): w *= float(np.clip((yy[i] - (belt_y + 0.03)) / 0.08, 0, 1))   # tucked: gathers in to the waist
             delta[tors[i]] = min(C.get('hangMax', 0.02), w * max(0.0, rh - rr[i]))
     delta, _ = smooth_field(delta, shirt, 8)
     for i, vi in enumerate(tors):
@@ -447,7 +448,7 @@ if C.get('hang', 0) > 0:
 
 # clean, straight hems: the mask's edge follows the body's triangles and comes out jagged, so move the
 # boundary vertices onto the hem lines (bottom: a level line; sleeves: square to the arm)
-_lo = belt_y - (C.get('untuckedDrop', 0.0) if C.get('untucked') else 0.035)
+_lo = belt_y - (C.get('untuckedDrop', 0.0) if C.get('untucked') else C.get('tuckDepth', 0.035))
 _bd = [vi for vi in np.nonzero(shirt)[0] if any(not shirt[n] for n in NB[vi])]
 for vi in _bd:
     arm = None
@@ -459,6 +460,28 @@ for vi in _bd:
         if abs(t - C['sleeve']) < 0.12: Vshirt[vi] = Vshirt[vi] - ax * (t - C['sleeve'])
     elif Vshirt[vi, 1] < _lo + 0.06:
         Vshirt[vi, 1] = _lo
+
+# tucked in: a soft blousing of fabric just above the belt (more at the back and sides, in a few soft vertical
+# folds where it gathers into the waistband); below the belt line it stays inside the shorts
+if not C.get('untucked'):
+    from scipy.spatial import cKDTree as _KDt
+    pid = np.nonzero(pants)[0]; Pp = Vpants[pid] + N[pid] * pants_off[pid][:, None]; kdp = _KDt(Pp)
+    _cz = float(np.median(Vshirt[np.nonzero(shirt)[0]][:, 2]))
+    for vi in np.nonzero(shirt)[0]:
+        if wsum(vi, ['upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r']) > 0.3: continue
+        y = Vshirt[vi, 1]; dy = y - (belt_y + C.get('blouseAt', 0.03))
+        if dy > 0.07: continue
+        th = math.atan2(Vshirt[vi, 0], Vshirt[vi, 2] - _cz); back = 0.5 - 0.5 * math.cos(th)
+        dv = np.array([Vshirt[vi, 0], 0.0, Vshirt[vi, 2] - _cz]); dv /= max(np.linalg.norm(dv), 1e-6)
+        fold = 0.65 + 0.35 * math.sin(th * 9 + 1.3 * math.sin(th * 3))
+        Vshirt[vi] += dv * C.get('blouse', 0.012) * math.exp(-(dy / 0.017) ** 2) * (0.7 + 0.6 * back) * fold
+        if y < belt_y + 0.01:   # under the waistband: keep it at least 4 mm inside the shorts
+            d, j = kdp.query(Vshirt[vi])
+            if d < 0.06:
+                pn = N[pid[j]].copy(); pn[1] = 0; ln = np.linalg.norm(pn)
+                if ln > 0.3:
+                    pn /= ln; gap = float(np.dot(Vshirt[vi] - Pp[j], pn))
+                    if gap > -0.004: Vshirt[vi] -= pn * (gap + 0.004)
 
 # the untucked shirt hangs over the shorts' waistband: keep it clear of the shorts everywhere they overlap
 if C.get('untucked'):
@@ -490,11 +513,13 @@ if C.get('shirtWeightSmooth', 0):
         for b, w in vw[vi].items(): Wm[vi, _bx[b]] = w
         Wm[vi] /= max(Wm[vi].sum(), 1e-9)
     _nbs = {vi: [n for n in NB[vi] if shirt[n]] for vi in _ids}
+    W0 = Wm.copy(); _pin = np.array([vi for vi in _ids if V[vi, 1] < belt_y + 0.05], dtype=int)
     for _ in range(C['shirtWeightSmooth']):
         W2 = Wm.copy()
         for vi in _ids:
             ns = _nbs[vi]
             if ns: W2[vi] = 0.5 * Wm[vi] + 0.5 * Wm[ns].mean(0)
+        if not C.get('untucked'): W2[_pin] = W0[_pin]   # tucked: the waist keeps the body's weights so it moves with the shorts
         Wm = W2
     for vi in _ids:
         o = np.argsort(-Wm[vi])[:4]; ws = Wm[vi][o]; ws = ws / max(ws.sum(), 1e-9)

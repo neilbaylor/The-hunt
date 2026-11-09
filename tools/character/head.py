@@ -350,9 +350,10 @@ def nose_m(p2):
     return {'nose length (bridge→base) / face height': np.linalg.norm(p2[168] - p2[2]) / FH, 'nose width (alae) / cheek width': np.linalg.norm(p2[98] - p2[327]) / BZ}
 nm_ref, nm_now = nose_m(lm_ref), nose_m(cam_fit(lm_f))
 for k in nm_ref:
-    if k not in ratio_table: ratio_table[k] = {'portrait': float(nm_ref[k]), 'before': float('nan'), 'after': float(nm_now[k])}
+    if k not in ratio_table: ratio_table[k] = {'portrait': float(nm_ref[k]), 'before': None, 'after': float(nm_now[k])}
 for k, v in ratio_table.items():
-    print(f"  {k:28s} portrait {v['portrait']:.3f}  ours before {v['before']:.3f} ({(v['before'] / v['portrait'] - 1) * 100:+.1f}%)  after {v['after']:.3f} ({(v['after'] / v['portrait'] - 1) * 100:+.1f}%)")
+    bt = f"{v['before']:.3f} ({(v['before'] / v['portrait'] - 1) * 100:+.1f}%)" if v['before'] is not None else '  -  '
+    print(f"  {k:28s} portrait {v['portrait']:.3f}  ours before {bt}  after {v['after']:.3f} ({(v['after'] / v['portrait'] - 1) * 100:+.1f}%)")
 print(f'hair: top {top_now - eyeYf:.3f} m above the eyes → {top_want - eyeYf:.3f} (above-band scale {kq:.2f})')
 res = np.linalg.norm(lm_f[upper] - lm_mh[upper], axis=1)
 ang = np.degrees(np.arctan2(R[2, 1], R[1, 1]))
@@ -767,7 +768,7 @@ strand = 0.55 + 0.7 * (0.55 * aniso(2600, 70) + 0.3 * aniso(900, 30) + 0.15 * sn
 hshade = strand * (0.55 + 0.45 * relief); hshade /= np.mean(hshade[hairy]) if hairy.any() else 1   # same level as the textured hair
 # where nothing paints it, the side of the head above the ears is hair too (else a skin stripe shows behind the ear)
 hair_fill = np.maximum(hair_amt, np.clip((cp[:, 1] - (eyeY + 0.0)) / 0.012, 0, 1) * np.clip((eye_lmh[2] - 0.03 - cp[:, 2]) / 0.02, 0, 1))
-fill = hair_fill[:, None] * hair_c * hshade[:, None] + (1 - hair_fill[:, None]) * neck_c * (0.92 + 0.08 * relief[:, None])
+fill = hair_fill[:, None] * hair_c * hshade[:, None] + (1 - hair_fill[:, None]) * neck_c * (0.8 + 0.1 * relief[:, None])   # unpainted skin (behind the jaw, the nape) a shade down: the unwrap's skin carries soft baked shading, a flat fill reads too light
 # soft hair edge at the nape
 out = col * conf[:, None] + fill * (1 - conf[:, None])
 # ── hair colour: his own dark brown, whatever the textures say (the unwrap's hair is lighter and redder) ──
