@@ -247,20 +247,20 @@
    "blush": 0.35
   },
   "unwrap": {
-   "photo": "/home/user/the-hunt/tools/character/data/face_unwrap.jpg",
+   "photo": "/home/user/the-hunt/tools/character/data/face_unwrap2.jpg",
    "ears": [
     [
-     65,
-     270
+     250,
+     480
     ],
     [
-     560,
-     265
+     1290,
+     480
     ]
    ],
    "smileK": 0.9,
    "smoothing": 0.5,
-   "maxAngle": 105
+   "maxAngle": 115
   }
  },
  "eyes": [
