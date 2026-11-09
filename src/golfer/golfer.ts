@@ -211,11 +211,11 @@ export class Golfer {
       const gl = this.club.gripLead, gr = this.club.gripTrail, sd = this.club.shaftDir.clone().normalize();
       void towardL; void towardR;
       const frame = (side: 'L' | 'R', grip: THREE.Vector3) => {
-        const beta = side === 'L' ? 0.5 : 0.25, alpha = side === 'L' ? 1.0 : 1.1;
+        const beta = side === 'L' ? 0.5 : 0.25, alpha = side === 'L' ? 0.8 : 0.85;
         const palm = (side === 'L' ? new THREE.Vector3(-Math.cos(beta), 0, Math.sin(beta)) : new THREE.Vector3(Math.cos(beta), 0, -Math.sin(beta)));
         palm.addScaledVector(sd, -palm.dot(sd)).normalize();
         const under = new THREE.Vector3().crossVectors(palm, sd).normalize();
-        if (under.z < 0) under.negate();                                    // toward the underside (ball side) of the grip
+        if (under.z > 0) under.negate();                                    // toward the golfer's side: the hand continues the forearm
         const dir = sd.clone().multiplyScalar(-Math.cos(alpha)).addScaledVector(under, Math.sin(alpha)).normalize();
         // place the hand by its knuckles: the middle knuckle sits on the grip surface on the palm side of the shaft
         // (finger base half-thickness out from the grip), and the wrist follows from the hand's own bind geometry
@@ -362,6 +362,17 @@ export class Golfer {
     const down = new THREE.Vector3(0, -1, 0);
     p.poleL.copy(this.pelvisBase).add(new THREE.Vector3(0.25, -0.6, 0.15)).addScaledVector(down, 0.2);
     p.poleR.copy(this.pelvisBase).add(new THREE.Vector3(-0.35, -0.5, 0.05));
+    // elbows that let the wrists stay natural: aim each elbow at the point the forearm would come from if it
+    // continued the hand's line on the grip (the hand's direction is fixed by the grip), so the wrist bends only a
+    // little. Mostly for the trail arm, half for the lead; the follow-through sets its own elbows below.
+    if (this.handFrame && s.phase !== 'follow') {
+      for (const [side, w] of [['L', 0.5], ['R', 0.9]] as const) {
+        const dirW = this.handFrame[side].dir.clone().applyQuaternion(qc);
+        const wrist = side === 'L' ? p.wristL : p.wristR;
+        const elbowIdeal = wrist.clone().addScaledVector(dirW, -this.rig.len.fore);
+        (side === 'L' ? p.poleL : p.poleR).lerp(elbowIdeal, w);
+      }
+    }
     if (s.phase === 'down') p.poleR.lerp(this.pelvisBase.clone().add(new THREE.Vector3(-0.15, -0.65, 0.4)), smooth(0.2, 0.6, 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi)));
     if (s.phase === 'follow') p.poleR.set(this.pelvisBase.x + 0.6, -0.4, this.pelvisBase.z + 0.6);
     // eyes: on the ball until well after impact, then down the target line
