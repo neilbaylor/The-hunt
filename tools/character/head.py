@@ -247,8 +247,17 @@ def cam_fit(L3):
         okp, rv, tv = cv2.solvePnP(L3[okr], lm_ref[okr], K, None, flags=cv2.SOLVEPNP_EPNP)
         rv, tv = cv2.solvePnPRefineLM(L3[okr], lm_ref[okr], K, None, rv, tv)
         pr = cv2.projectPoints(L3, rv, tv, K, None)[0][:, 0]; err = np.median(np.linalg.norm(pr[okr] - lm_ref[okr], axis=1))
-        if best is None or err < best[0]: best = (err, pr)
+        if best is None or err < best[0]: best = (err, pr, K, rv, tv)
     return best[1]
+def cam_full(L3):
+    best = None
+    for fm in (1.2, 1.6, 2.0, 2.6, 3.4):
+        K = np.array([[fm * Ww_, 0, Ww_ / 2], [0, fm * Ww_, Hh_ / 2], [0, 0, 1]])
+        okp, rv, tv = cv2.solvePnP(L3[okr], lm_ref[okr], K, None, flags=cv2.SOLVEPNP_EPNP)
+        rv, tv = cv2.solvePnPRefineLM(L3[okr], lm_ref[okr], K, None, rv, tv)
+        pr = cv2.projectPoints(L3, rv, tv, K, None)[0][:, 0]; err = np.median(np.linalg.norm(pr[okr] - lm_ref[okr], axis=1))
+        if best is None or err < best[0]: best = (err, pr, K, cv2.Rodrigues(rv)[0], tv[:, 0])
+    return best[1:]
 yN, yC, yZ = lm_f[2, 1], lm_f[152, 1], (lm_f[234, 1] + lm_f[454, 1]) / 2
 ear_zf = min(lm_f[234, 2], lm_f[454, 2])
 def sstep(a, b, x): t = np.clip((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t)
@@ -264,6 +273,9 @@ def reshape(P, q):
     # a slight hollow under the cheekbones, in front of the jaw muscle (the portrait's lean cheeks)
     hol = np.exp(-(((np.abs(x) - 0.042) / 0.016) ** 2 + ((y - (yZ - 0.03)) / 0.018) ** 2)) * front
     P[:, 0] -= np.sign(x) * 0.0025 * hol
+    # the portrait's smile pushes the cheek apples out; ease them back a little (2 mm forward, 1 mm sideways)
+    apple = np.exp(-(((np.abs(x) - 0.034) / 0.015) ** 2 + ((y - (yN - 0.012)) / 0.016) ** 2)) * front
+    P[:, 2] -= 0.002 * apple; P[:, 0] -= np.sign(x) * 0.001 * apple
     below = y < yN
     P[below, 1] = yN - (yN - y[below]) * lower
     return P
@@ -277,11 +289,58 @@ if A.reshape:
     fit = least_squares(resid, q0, bounds=([0.95, 0.88, 0.8, 0.75, 1.0], [0.98, 1.06, 1.06, 1.06, 1.08]), diff_step=1e-3)
     qf = fit.x
     FV = reshape(FV, qf); lm_f = reshape(lm_f, qf)
+    # ── then the outline: render our head with the portrait's camera and fit the far cheek/jaw contour to the
+    #    portrait's (a smooth width profile over the lower face), twice ──
+    hsv_r = cv2.cvtColor(ref_img, cv2.COLOR_RGB2HSV)
+    paper = ((ref_img.min(2) > 200) & (hsv_r[..., 1] < 45)).astype(np.uint8)
+    nl_, lab_ = cv2.connectedComponents(paper); el_ = set(lab_[0]) | set(lab_[-1]) | set(lab_[:, 0]) | set(lab_[:, -1]); el_.discard(0)
+    fg_ref = ~np.isin(lab_, list(el_))
+    r_top, r_bot = int(lm_ref[1, 1]), int(lm_ref[152, 1] - 8)
+    def outline(V3, L3):
+        _, K_, Rm_, tv_ = cam_full(L3)
+        c_ = (Rm_ @ V3.T).T + tv_; p2_ = np.c_[K_[0, 0] * c_[:, 0] / c_[:, 2] + K_[0, 2], K_[1, 1] * c_[:, 1] / c_[:, 2] + K_[1, 2]]
+        ids_ = raster(p2_, c_[:, 2], GF, Ww_, Hh_)
+        return ids_ >= 0, ids_, p2_, c_, K_, Rm_
+    sil_before = outline(FV, lm_f)[0]
+    for it_ in range(2):
+        m_, ids_, p2_, c_, K_, Rm_ = outline(FV, lm_f)
+        ys_, ss_ = [], []
+        for row in range(r_top, r_bot, 3):
+            xs_p = np.nonzero(fg_ref[row, int(lm_ref[1, 0]):])[0]; xs_o = np.nonzero(m_[row, int(lm_ref[1, 0]):])[0]
+            if not len(xs_p) or not len(xs_o): continue
+            xp, xo = xs_p.max() + int(lm_ref[1, 0]), xs_o.max() + int(lm_ref[1, 0])
+            t_ = ids_[row, xo]; v3 = FV[GF[t_]].mean(0); z3 = c_[GF[t_]].mean(0)[2]
+            dx_local = (xp - xo) * z3 / K_[0, 0] / max(abs(Rm_[0, 0]), 0.3)
+            if abs(v3[0]) < 0.02: continue
+            ys_.append(v3[1]); ss_.append(1 + np.clip(dx_local / abs(v3[0]), -0.08, 0.08))
+        if len(ys_) < 5: break
+        o_ = np.argsort(ys_); ys_, ss_ = np.array(ys_)[o_], np.array(ss_)[o_]
+        ss_ = np.convolve(np.pad(ss_, 3, mode='edge'), np.ones(7) / 7, mode='valid')
+        def prof(y): return np.interp(y, ys_, ss_, left=ss_[0], right=ss_[-1])
+        def outl(P):
+            P = P.copy(); fr_ = sstep(ear_zf - 0.03, ear_zf + 0.01, P[:, 2])
+            band_ = sstep(yC - 0.02, yC + 0.005, P[:, 1]) * sstep(yN + 0.03, yN, P[:, 1])
+            P[:, 0] *= 1 + (prof(P[:, 1]) - 1) * fr_ * band_
+            return P
+        FV = outl(FV); lm_f = outl(lm_f)
+        print(f'  outline fit {it_ + 1}: width profile {ss_.min():.3f}..{ss_.max():.3f} over {len(ys_)} rows')
+    sil_after = outline(FV, lm_f)[0]
+    if DBG:
+        ov_ = ref_img.astype(np.uint8).copy()
+        for msk, colr in ((sil_before, (230, 40, 40)), (sil_after, (40, 200, 60))):
+            cs_, _ = cv2.findContours(msk.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            cv2.drawContours(ov_, cs_, -1, colr, 2)
+        Image.fromarray(ov_).save(os.path.join(DBG, 'outline_overlay.png'))
     r1 = ratios(cam_fit(lm_f))
     print('face reshape: width %.3f, temples %.3f, jaw %.3f, chin %.3f, length below the nose %.3f' % tuple(qf))
 else:
     qf = None; r1 = r0
 ratio_table = {k: {'portrait': float(a), 'before': float(b), 'after': float(c)} for k, a, b, c in zip(RAT, r_ref, r0, r1)}
+def nose_m(p2):
+    FH = np.linalg.norm(p2[10] - p2[152]); BZ = np.linalg.norm(p2[234] - p2[454])
+    return {'nose length (bridge→base) / face height': np.linalg.norm(p2[168] - p2[2]) / FH, 'nose width (alae) / cheek width': np.linalg.norm(p2[98] - p2[327]) / BZ}
+nm_ref, nm_now = nose_m(lm_ref), nose_m(cam_fit(lm_f))
+for k in nm_ref: ratio_table[k] = {'portrait': float(nm_ref[k]), 'before': float('nan'), 'after': float(nm_now[k])}
 for k, v in ratio_table.items():
     print(f"  {k:28s} portrait {v['portrait']:.3f}  ours before {v['before']:.3f} ({(v['before'] / v['portrait'] - 1) * 100:+.1f}%)  after {v['after']:.3f} ({(v['after'] / v['portrait'] - 1) * 100:+.1f}%)")
 print(f'hair: top {top_now - eyeYf:.3f} m above the eyes → {top_want - eyeYf:.3f} (above-band scale {kq:.2f})')
