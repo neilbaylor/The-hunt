@@ -177,7 +177,8 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
           .replace('#include <begin_vertex>', `#include <begin_vertex>\nvMask = mask; vObj = position;
             float tus = sin(position.x * 91.0 + sin(position.z * 57.0) * 2.0) * sin(position.z * 83.0 + position.y * 40.0);
             // longer hair: layers reach further out and drift back and down, like swept-back medium-length hair
-            transformed += objectNormal * (${(0.0024 * L).toFixed(5)} + 0.005 * max(0.0, tus) * ${(L / 4).toFixed(2)}) * mask;
+            float topK = smoothstep(${(0).toFixed(2)}, 0.06, position.y - ${'1.80'});
+            transformed += objectNormal * (${(0.0012 * L).toFixed(5)} + ${(0.0016 * L).toFixed(5)} * topK + 0.004 * max(0.0, tus) * topK * ${(L / 4).toFixed(2)}) * mask;
             transformed.z -= ${(0.0018 * L).toFixed(5)} * mask; transformed.y -= ${(0.0009 * L).toFixed(5)} * mask * step(position.y, 1.78);`);
         sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vMask;\nvarying vec3 vObj;
 float hh(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }`)
