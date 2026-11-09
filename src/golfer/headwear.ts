@@ -36,7 +36,7 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   // measured radius of the head/hair round the band (64 angles from the back, a = -PI)
   const rAt = (a: number) => { if (!profile) return null; const t = ((a + Math.PI) / (2 * Math.PI)) * 64; const i = Math.floor(t) % 64, f = t - Math.floor(t); return profile[i] * (1 - f) + profile[(i + 1) % 64] * f; };
   const group = new THREE.Group(); group.name = 'visor';
-  const fabric = new THREE.MeshStandardMaterial({ map: logoTexture(h.logo, h.color), roughness: 0.85, side: THREE.DoubleSide });
+  const fabric = new THREE.MeshStandardMaterial({ map: logoTexture(profile ? null : h.logo, h.color), roughness: 0.85, side: THREE.DoubleSide });
   // band: an open ring, a bit taller at the front, tilted so the front sits lower on the forehead
   const seg = 96, height = 0.038, pos: number[] = [], uv: number[] = [], idx: number[] = [];
   for (let i = 0; i <= seg; i++) {
@@ -67,27 +67,34 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   else {
     // closed top edge: a lip from the band's top edge in to the hair, so you never see through the gap
     const lp: number[] = [], li: number[] = [];
+    // a rolled, bound top edge: the band's fabric turns over itself and tucks in against the hair
+    const RW = 5; // rows across the roll
     for (let i = 0; i <= seg; i++) {
       const x = pos[(i * 2 + 1) * 3], y = pos[(i * 2 + 1) * 3 + 1], z = pos[(i * 2 + 1) * 3 + 2];
       const a = -Math.PI + (i / seg) * Math.PI * 2, pr = rAt(a)!;
-      lp.push(x, y, z, Math.sin(a) * (pr - 0.008), y - 0.004, Math.cos(a) * (pr - 0.008) + zc);
+      const ox = Math.sin(a), oz = Math.cos(a), rOut = Math.hypot(x, z - zc);
+      for (let r = 0; r <= RW; r++) {
+        const t = r / RW, th = t * Math.PI;                    // half-round bead over the top
+        const rr = rOut - 0.0035 + 0.0035 * Math.cos(th) - t * Math.max(0, rOut - pr - 0.004) * 1.0;
+        lp.push(ox * rr, y + 0.0028 * Math.sin(th) - t * 0.003, oz * rr + zc);
+      }
     }
-    for (let i = 0; i < seg; i++) { const a = i * 2; li.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    for (let i = 0; i < seg; i++) for (let r = 0; r < RW; r++) { const a = i * (RW + 1) + r, b = a + RW + 1; li.push(a, b, a + 1, a + 1, b, b + 1); }
     const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); lg.setIndex(li); lg.computeVertexNormals();
-    group.add(new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: new THREE.Color(h.color).multiplyScalar(0.82), roughness: 0.9, side: THREE.DoubleSide })));
+    group.add(new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.85, side: THREE.DoubleSide })));
   }
   // brim: a curved, slightly drooping shell with a white top and dark underside
   const bs = 48, rows = 8, bp: number[] = [], bidx: number[] = [], under: number[] = [];
   for (let r = 0; r <= rows; r++) for (let i = 0; i <= bs; i++) {
     const a = -1.32 + (i / bs) * 2.64;
-    const L = 0.064 * Math.pow(Math.cos(a * 0.95), 0.8) * (r / rows);
+    const L = 0.056 * Math.pow(Math.cos(a * 0.95), 0.8) * (r / rows);
     const pr = rAt(a);
     const bx = pr !== null ? Math.sin(a) * (pr + 0.011) : Math.sin(a) * rx, bz = pr !== null ? Math.cos(a) * (pr + 0.011) + zc : Math.cos(a) * rz + zc;
     const dx = Math.sin(a), dz = Math.cos(a) * 1.15;
     const t = r / rows;
     const side = Math.abs(Math.sin(a));
     const yb = y0 - height * 0.42 - 0.006 * (0.5 + 0.5 * Math.cos(a));
-    bp.push(bx + dx * L * 0.55, yb - L * (0.06 + 0.45 * side) - 0.006 * t * t, bz + dz * L);
+    bp.push(bx + dx * L * 0.55, yb + L * (0.1 - 0.5 * side) - 0.004 * t * t, bz + dz * L);
     under.push(0);
   }
   for (let r = 0; r < rows; r++) for (let i = 0; i < bs; i++) { const a = r * (bs + 1) + i, b = a + 1, c = a + bs + 1, d = c + 1; bidx.push(a, c, b, b, c, d); }
@@ -101,6 +108,26 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   const edge: THREE.Vector3[] = [];
   for (let i = 0; i <= bs; i++) { const k = (rows * (bs + 1) + i) * 3; edge.push(new THREE.Vector3(bp[k], bp[k + 1] - 0.0012, bp[k + 2])); }
   group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(edge), 64, 0.0018, 6), new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.7 })));
+  if (h.logo === 'pizza-hut' && profile) {
+    const PW = 1024, PH = 512, pc = document.createElement('canvas'); pc.width = PW; pc.height = PH;
+    const pg = pc.getContext('2d')!;
+    const ptex = new THREE.CanvasTexture(pc); ptex.colorSpace = THREE.SRGBColorSpace; ptex.anisotropy = 16;
+    const img = new Image();
+    img.onload = () => { const hh = PH * 0.86, ww = hh * (img.width / img.height || 1.254); pg.clearRect(0, 0, PW, PH); pg.drawImage(img, PW / 2 - ww / 2, PH / 2 - hh / 2, ww, hh); ptex.needsUpdate = true; };
+    img.src = pizzaHutUrl;
+    const span = 0.5, ps = 24, pp: number[] = [], pu: number[] = [], pi: number[] = [];
+    const ph = height * 0.82;
+    for (let i = 0; i <= ps; i++) {
+      const a = -span + (i / ps) * span * 2, pr = rAt(a)! + 0.0114;
+      const yc = y0 - 0.006 * (0.5 + 0.5 * Math.cos(a));
+      pp.push(Math.sin(a) * pr, yc - ph / 2, Math.cos(a) * pr + zc, Math.sin(a) * pr * 0.985, yc + ph / 2, Math.cos(a) * pr * 0.985 + zc * 0.015 + zc * 0.985 - zc * 0.985);
+      const u = mirrored ? 1 - i / ps : i / ps; pu.push(u, 0, u, 1);
+    }
+    for (let i = 0; i < ps; i++) { const a = i * 2; pi.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    const pgeo = new THREE.BufferGeometry(); pgeo.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3)); pgeo.setAttribute('uv', new THREE.Float32BufferAttribute(pu, 2)); pgeo.setIndex(pi); pgeo.computeVertexNormals();
+    const patch = new THREE.Mesh(pgeo, new THREE.MeshStandardMaterial({ map: ptex, transparent: true, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide }));
+    patch.name = 'visor-logo'; group.add(patch);
+  }
   group.traverse(o => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   return group;
 }

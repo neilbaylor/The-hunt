@@ -529,6 +529,13 @@ def hair_mask(p):
             e = e0 + (e1 - e0) * t
             break
     return el - e, el
+
+def crown_thin(d):
+    # a small thinning spot at the crown (scalp shows through)
+    cdir = np.array([0.0, math.sin(1.2), -math.cos(1.2)])
+    dn = d / np.maximum(np.linalg.norm(d, axis=-1, keepdims=True), 1e-9)
+    ang = np.arccos(np.clip(dn @ cdir, -1, 1))
+    return np.clip((ang - 0.12) / 0.14, 0, 1)  # 0 at the centre of the spot, 1 outside
 def hair_mask_v(p):
     d = p - hcr
     a = np.abs(np.arctan2(d[:, 0], d[:, 2])); el = np.arctan2(d[:, 1], np.hypot(d[:, 0], d[:, 2]))
@@ -540,6 +547,7 @@ hm = np.zeros(NV); hthick = np.zeros(NV)
 for vi in head_v:
     m_, el = hair_mask(V[vi])
     mm = min(1, max(0, (m_ + 0.06) / 0.16))
+    mm *= 0.3 + 0.7 * float(crown_thin(V[vi] - hcr))
     hm[vi] = mm
     top = min(1, max(0, (el - 0.25) / 0.9))
     hthick[vi] = (0.0025 + P['hair']['volume'] * (0.4 + 0.6 * top)) * (mm ** 0.5) + 0.0008
@@ -771,6 +779,7 @@ def skin_fn(p, n):
     hcol = np.array(hp['color']) / 255.0
     mm = hair_mask_v(p)
     hw = np.clip((mm + 0.03) / 0.06, 0, 1)[:, None] * (np.linalg.norm(p - hcr, axis=1) < 0.16)[:, None]
+    hw = hw * (0.45 + 0.55 * crown_thin(p - hcr))[:, None]
     base = base * (1 - 0.92 * hw) + hcol * 0.92 * hw
     return np.clip(base, 0, 1)
 
