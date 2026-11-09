@@ -513,9 +513,9 @@ function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
   const head = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(head);
   const piv = golfer.ballWorld(new THREE.Vector3()).add(new THREE.Vector3(0.5 * side, 0, 0));
   const th = (golfer.lefty ? Math.PI : 0) + 0.32 * side + 0.06 * Math.sin(now / 1000 * 0.25);   // in front of him, a little round
-  pos.set(piv.x + Math.cos(th) * 3.0, 0, piv.z + Math.sin(th) * 3.0);
+  pos.set(piv.x + Math.cos(th) * 3.8, 0, piv.z + Math.sin(th) * 3.8);
   pos.y = Math.max(1.38 + Math.sin(now / 1000 * 0.18) * 0.04, (range?.heightAt(pos.x, pos.z) ?? 0) + 1.2);
-  look.set(piv.x * 0.9 + head.x * 0.1, 0.72, piv.z);   // low aim: he stands in the upper-middle, clear of the name card
+  look.set(piv.x * 0.9 + head.x * 0.1, 0.62, piv.z);   // pulled back a little, aimed low: head under the title, feet above the name card
 }
 function startPlay() {
   if (state !== 'intro' || camMode !== 'intro') return;
