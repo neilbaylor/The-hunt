@@ -743,7 +743,7 @@ def leg_angles(m):
     for sfx in 'lr':
         hip = joint[BONES.index(f'thigh_{sfx}')]; ank = joint[BONES.index(f'foot_{sfx}')]
         ax = ank - hip; L2 = float(ax @ ax); side = 1 if sfx == 'l' else -1
-        onleg = (np.sign(P_[:, 0]) == side) & (P_[:, 1] < hip[1] - 0.05)
+        onleg = (np.sign(P_[:, 0]) == side)   # the whole side (no cut-off: a hard edge in the fields draws a line)
         t = np.clip(((P_ - hip) @ ax) / L2, 0, 1); c = hip + t[:, None] * ax
         d = P_ - c
         a = np.degrees(np.arctan2(d[:, 0] * side, d[:, 2]))  # + = toward the outside
@@ -768,6 +768,7 @@ th, rr, tt = leg_angles(m)
 seamd = np.where(np.isnan(th), 9.0, np.radians(np.abs(np.abs(np.nan_to_num(th)) - 90)) * rr)
 crease = np.where(np.isnan(th), 9.0, np.radians(np.minimum(np.abs(np.nan_to_num(th)), 180 - np.abs(np.nan_to_num(th)))) * rr)
 crease = np.where(np.nan_to_num(th) * 0 + (np.abs(np.nan_to_num(th)) > 90), crease + 0.02, crease)  # back crease softer
+crease = crease + np.clip(P_[:, 1] - (joint[BONES.index('thigh_l')][1] - 0.08), 0, None) * 0.4   # the pressed crease fades out up into the seat/fly
 m['cloth'] = np.c_[edge, seamd, crease, m['ao']].astype(np.float32)
 m['legT'] = tt.astype(np.float32)
 meshes['skin']['cloth'] = np.c_[np.full(len(meshes['skin']['pos']), 9.0), np.full(len(meshes['skin']['pos']), 9.0), np.full(len(meshes['skin']['pos']), 9.0), meshes['skin']['ao']].astype(np.float32)
