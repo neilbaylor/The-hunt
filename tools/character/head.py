@@ -281,7 +281,7 @@ def reshape(P, q):
     # the ears stand out a little more (the portrait's outline shows them further from the head)
     for sx_, tip_ in ear_tips:
         we_ = np.clip(1 - np.linalg.norm(P - tip_, axis=1) / 0.03, 0, 1) ** 1.5 * (P[:, 0] * sx_ > abs(tip_[0]) - 0.02)
-        P[:, 0] += sx_ * 0.004 * we_
+        P[:, 0] += sx_ * 0.007 * we_
     # (no hollow under the cheekbones: the user wants the cheeks fuller)
     # fuller cheeks where his smile lifts them (the apples, upper/mid cheek), the jaw below stays defined
     apple = np.exp(-(((np.abs(x) - 0.036) / 0.016) ** 2 + ((y - (yN + 0.002)) / 0.016) ** 2)) * front

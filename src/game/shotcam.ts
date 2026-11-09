@@ -59,11 +59,12 @@ export class ShotCam {
   private landPos: THREE.Vector3 | null = null; private landLook = new THREE.Vector3();
   private out: ShotCamPose = { pos: new THREE.Vector3(), look: new THREE.Vector3(), dFov: 0, roll: 0, dof: 0 };
   private faceEnd = { pos: new THREE.Vector3(), look: new THREE.Vector3() };
+  private folHold = 0;   // how long we'd been following when the landing settle began (keeps the close-in)
 
   /** start at impact. faceDir: where the golfer faces at address (towards the ball); side: +1 if the golfer's
    *  back is on +lateral of the target line (lefty), -1 otherwise */
   start(camPos: THREE.Vector3, camLook: THREE.Vector3, faceDir: THREE.Vector3, targetDir: THREE.Vector3, side: number) {
-    this.active = true; this.phase = 'face'; this.t = 0; this.t0Phase = 0; this.landPos = null;
+    this.active = true; this.phase = 'face'; this.t = 0; this.t0Phase = 0; this.landPos = null; this.folHold = 0;
     this.startPos.copy(camPos); this.startLook.copy(camLook);
     this.faceDir.copy(faceDir).setY(0).normalize(); this.targetDir.copy(targetDir).setY(0).normalize(); this.side = side;
   }
@@ -142,7 +143,7 @@ export class ShotCam {
     const lat = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(this.side);
     const apex = b.phase === 'flight' ? Math.exp(-((b.vel.y / C.apexWidth) ** 2)) : 0;
     const fall = b.phase === 'flight' && b.vel.y < 0 ? smoother(-b.vel.y / 22) : 0;
-    const fol = this.phase === 'follow' ? this.t - this.t0Phase : 0;
+    const fol = this.phase === 'follow' ? (this.folHold = this.t - this.t0Phase) : this.phase === 'landing' ? this.folHold : 0;
     const back = C.chaseBack * (1 + 0.55 * apex) * (1 - C.closeIn * smoother(fol / 2.2));
     pos.copy(b.pos).addScaledVector(dir, -back).addScaledVector(lat, C.chaseSide);
     const g = ctx.groundAt(pos.x, pos.z);

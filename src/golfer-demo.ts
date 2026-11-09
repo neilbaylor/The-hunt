@@ -24,6 +24,7 @@ scene.environment = pmrem.fromScene(envScene as any, 0.04).texture;
 
 const golfer = new Golfer(q.get('head') === 'makehuman' ? { ...NEIL, head: 'makehuman' } : NEIL, q.has('old') ? undefined : await loadNeil());   // head=makehuman: the old face
 golfer.setClub(+(q.get('club') ?? 6), (q.get('mode') ?? 'full') as ShotMode);
+if (q.has('tee')) golfer.setTee(+q.get('tee')!);   // ball bottom above the turf, metres
 scene.add(golfer.root);
 for (const h of (q.get('hide') ?? '').split(',')) golfer.body.root.traverse(o => { if (h && o.name === h) o.visible = false; });
 const ball = new THREE.Mesh(new THREE.SphereGeometry(0.02135, 24, 16), new THREE.MeshStandardMaterial({ color: '#fff', roughness: 0.3 }));

@@ -102,15 +102,19 @@ const aimCtl = new AimController({
   // the golfer turns to face the aim line (he stands round the ball, which sits at the origin)
   onChange: () => { golfer.root.rotation.y = -aim.dir; golfer.root.updateMatrixWorld(true); if (state === 'ready') teeUp(); },
 });
-hud.onLie = () => sound.ui();
+hud.onLie = () => { sound.ui(); teeUp(); };
 
 function teeUp() {
+  // off the tee box: driver teed high (ball's equator at the top of the face, ~3.7 cm of tee showing),
+  // 3 wood low (~1.25 cm); everything else from the turf
+  const spec = CLUB_SPECS[hud.club], onTee = LIES[hud.lie]?.name === 'Tee box';
+  const teeH = !onTee ? 0 : spec.kind === 'driver' ? 0.037 : spec.id === '3W' ? 0.0125 : 0;
+  golfer.setTee(teeH);
   const p = golfer.ballWorld();
   ball.tee(p);
   ballMesh.position.copy(p);
-  const driver = CLUB_SPECS[hud.club].kind === 'driver';
-  tee.visible = driver;
-  tee.position.set(p.x, p.y - BALL.r - 0.03 + 0.008, p.z);
+  tee.visible = teeH > 0;
+  tee.position.set(p.x, p.y - BALL.r - 0.03 + 0.008, p.z);   // the cup (0.022 above the tee's origin) under the ball
 }
 
 // ── swing state ──
@@ -225,7 +229,7 @@ function strike(now: number, p: [number, number], released: boolean) {
   card = { plan, power, offMs: SW.off, done: false };
   if (dbg) dbg.textContent = `pull ${Math.round(SW.tDeep - SW.t0)} ms · pause ${Math.round(SW.tAt - SW.tDeep)} ms · push ${Math.round(now - SW.tTrans)} ms\nvs top ${dbgRaw > 0 ? '+' : ''}${Math.round(dbgRaw)} ms → graded ${Math.round(SW.off)} ms (${plan.tempoWord})`;
   hud.card(card);
-  hud.toast(plan.tempoWord, plan.why, plan.tempoCls);
+  hud.toast(plan.tempoWord, '', plan.tempoCls);   // the why lives in Shot details
   sound.strike(CLUB_SPECS[hud.club].kind, 1 - plan.error);
   try { navigator.vibrate?.(18); } catch { /* not allowed */ }
   hitStop = 0.09;
@@ -476,7 +480,10 @@ function frame(now: number) {
       const tot = ball.total() / YD, off = ball.offline() / YD;
       const near = range?.targets.reduce((b, t) => { const d = Math.hypot(t.pos.x - ball.pos.x, t.pos.z - ball.pos.z); return d < b.d ? { d, t } : b; }, { d: Infinity, t: null as any });
       const msg = near && near.t && near.d < near.t.radius ? `On the ${near.t.yards} green · ${(near.d / YD).toFixed(0)} yds from the pin` : `${tot.toFixed(0)} yds · ${Math.abs(off) < 1 ? 'online' : `${Math.abs(off).toFixed(0)} ${off < 0 ? 'left' : 'right'}`}`;
-      hud.toast(near && near.t && near.d < near.t.radius ? 'Green!' : `${tot.toFixed(0)} yds`, msg, near && near.t && near.d < near.t.radius ? 'good' : 'warn');
+      // one friendly line; the numbers wait behind 'Shot details'
+      const onGreen = !!(near && near.t && near.d < near.t.radius), pured = !!plan && plan.tempoWord === 'Smooth' && Math.abs(off) < 8;
+      hud.shotLine(onGreen ? `On the green! ${tot.toFixed(0)} yds` : pured ? `Pured it — ${tot.toFixed(0)} yds` : `${tot.toFixed(0)} · ${plan?.tempoWord ?? ''}`, onGreen || pured ? 'good' : 'warn');
+      void msg;
     }
   }
   if (state === 'result' && now - resultT > 4200) nextBall();

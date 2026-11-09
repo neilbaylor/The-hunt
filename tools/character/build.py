@@ -590,7 +590,29 @@ if C.get('untucked'):
     for vi in np.nonzero(pants)[0]:
         if V[vi, 1] > _lo2: pants_keep[vi] = False
 meshes['pants'] = build_mesh(body_faces, Vpants, normals=N, keep=pants_keep, extra_offset=pants_off)
-meshes['glove'] = build_mesh(body_faces, V, normals=N, keep=glove, normal_out=0.0012)
+# the glove: a thin second skin with a straight, clean cuff square to the forearm; the hand skin under it is
+# dropped (except a sliver at the cuff) so it can never poke through
+Vglove = V.copy()
+_gid = np.nonzero(glove)[0]
+NBall = NB
+_gbd = [vi for vi in _gid if any(not glove[n] for n in NBall[vi])]
+if _gbd:
+    gs = 'l' if V[_gbd[0], 0] > 0 else 'r'
+    a0, a1 = np.array(joint[BONES.index(f'lowerarm_{gs}')]), np.array(joint[BONES.index(f'hand_{gs}')]); ax = a1 - a0
+    ts = np.array([np.dot(V[vi] - a0, ax) / np.dot(ax, ax) for vi in _gbd]); t0 = float(np.percentile(ts, 35))
+    for vi, t in zip(_gbd, ts): Vglove[vi] = V[vi] - ax * (t - t0)
+    _G2 = {}
+    _pi2 = {vi: k for k, vi in enumerate(_gid)}
+    _r2, _c2, _d2 = [], [], []
+    for vi in _gid:
+        for n in NBall[vi]:
+            if glove[n]: _r2.append(_pi2[vi]); _c2.append(_pi2[n]); _d2.append(float(np.linalg.norm(V[vi] - V[n])))
+    from scipy.sparse import coo_matrix as _coo2
+    from scipy.sparse.csgraph import dijkstra as _dij2
+    _dg = _dij2(_coo2((_d2, (_r2, _c2)), shape=(len(_gid), len(_gid))).tocsr(), indices=[_pi2[v] for v in _gbd], min_only=True)
+    under_glove = np.zeros(NV, bool); under_glove[_gid[_dg > C.get('gloveSkinMargin', 0.01)]] = True
+    meshes['skin'] = build_mesh(body_faces, V, keep=~feet_hidden & ~under_shirt & ~under_glove)
+meshes['glove'] = build_mesh(body_faces, Vglove, normals=N, keep=glove, normal_out=C.get('gloveGap', 0.001))
 if C.get('socks'):
     socks = np.zeros(NV, bool)
     for vi in body_idx:
@@ -701,7 +723,9 @@ m['cloth'] = np.c_[edge, seamd, crease, m['ao']].astype(np.float32)
 m['legT'] = tt.astype(np.float32)
 meshes['skin']['cloth'] = np.c_[np.full(len(meshes['skin']['pos']), 9.0), np.full(len(meshes['skin']['pos']), 9.0), np.full(len(meshes['skin']['pos']), 9.0), meshes['skin']['ao']].astype(np.float32)
 if 'socks' in meshes: meshes['socks']['cloth'] = np.c_[geodesic_from(meshes['socks'], boundary_vertices(meshes['socks'])), np.full(len(meshes['socks']['pos']), 9.0), np.full(len(meshes['socks']['pos']), 9.0), meshes['socks']['ao']].astype(np.float32)
-meshes['glove']['cloth'] = np.c_[geodesic_from(meshes['glove'], boundary_vertices(meshes['glove'])), np.full(len(meshes['glove']['pos']), 9.0), np.full(len(meshes['glove']['pos']), 9.0), meshes['glove']['ao']].astype(np.float32)
+_gn = vertex_normals_tri(meshes['glove'])
+_gdors = np.array([max(0.0, float(np.dot(_gn[k], dorsal_dir['l' if p_[0] > 0 else 'r']))) for k, p_ in enumerate(meshes['glove']['pos'])])   # 1 on the back of the hand (perforations, tab)
+meshes['glove']['cloth'] = np.c_[geodesic_from(meshes['glove'], boundary_vertices(meshes['glove'])), np.full(len(meshes['glove']['pos']), 9.0), _gdors, meshes['glove']['ao']].astype(np.float32)
 
 # ───────────────────────── hair shell + head measurements ─────────────────────────
 head_bi = BONES.index('head')

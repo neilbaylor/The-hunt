@@ -121,6 +121,8 @@ export class Golfer {
   private tiltAdj = 0;
   /** height of the ball's bottom above the turf (on a tee), 0 on the turf */
   private teeH = 0;
+  /** extra spine tilt away from the target for the longer clubs (radians) */
+  private sideAdj = 0;
   /** tee the ball up (metres of tee showing under the ball); re-sets the address */
   setTee(h: number) { if (Math.abs(h - this.teeH) > 1e-4) { this.teeH = h; this.setupAddress(); } }
   /** the trail foot's toes: their flat (on the ground) heel→toe direction, turned with the foot's pivot */
@@ -180,6 +182,7 @@ export class Golfer {
     const L = this.club.length;
     const ahead = spec.kind === 'driver' ? 0.215 : spec.kind === 'wood' ? 0.13 : Math.max(0, Math.min(0.07, (L - 0.9) * 0.6));
     this.stanceX = -ahead * k;
+    this.sideAdj = spec.kind === 'driver' ? 0.05 : spec.kind === 'wood' ? 0.03 : 0;
     // set-up like a tour player: arms hang (shoulder sockets roughly above the hands), relaxed and nearly
     // straight. Find the distance from the ball that puts the lead shoulder over the hands, then bend more or
     // less from the hips until the lead arm is ~98% extended.
@@ -262,7 +265,7 @@ export class Golfer {
   private addressKeys(p: BodyPose) {
     const k = this.k, st = SHOT_STYLE[this.mode];
     p.hipTurn = A.hipTurn + st.open; p.hipTilt = A.hipTilt; p.hipSide = A.hipSide;
-    p.chestTurn = A.chestTurn + st.open * 0.5; p.chestTilt = A.chestTilt + this.tiltAdj; p.chestSide = A.chestSide;
+    p.chestTurn = A.chestTurn + st.open * 0.5; p.chestTilt = A.chestTilt + this.tiltAdj; p.chestSide = A.chestSide + this.sideAdj;
     p.pelvis.copy(this.pelvisBase);
     p.shrugL = p.shrugR = 0;
     this.feet(p, 0, 0);
@@ -353,7 +356,7 @@ export class Golfer {
     const breathe = s.phase === 'address' ? Math.sin(s.idleT * 1.6) * 0.006 : 0;
 
     p.hipTurn = key.hipTurn + st.open; p.hipTilt = key.hipTilt; p.hipSide = key.hipSide;
-    p.chestTurn = key.chestTurn + st.open * 0.5; p.chestTilt = key.chestTilt + breathe + this.tiltAdj * (s.phase === 'follow' ? 1 - smooth(0.25, 0.9, -phi / Math.abs(PHI_FINISH)) : 1); p.chestSide = key.chestSide;
+    p.chestTurn = key.chestTurn + st.open * 0.5; p.chestTilt = key.chestTilt + breathe + this.tiltAdj * (s.phase === 'follow' ? 1 - smooth(0.25, 0.9, -phi / Math.abs(PHI_FINISH)) : 1); p.chestSide = key.chestSide + this.sideAdj * (s.phase === 'follow' ? 1 - smooth(0.1, 0.6, -phi / Math.abs(PHI_FINISH)) : 1);
     p.pelvis.copy(this.pelvisBase); p.pelvis.x += key.shift * k; p.pelvis.y -= key.drop * k;
     // clavicles: within anatomical limits (±0.11 rad keeps the shoulder joint within 2 cm of its rest place)
     const clav = (v: number) => Math.max(-0.11, Math.min(0.11, v));

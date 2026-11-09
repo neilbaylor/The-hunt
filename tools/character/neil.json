@@ -26,6 +26,9 @@
   "torso/measure-bust-circ-incr": 0.15,
   "stomach/stomach-pregnant-decr": 1.0,
   "stomach/stomach-tone-incr": 0.35,
+  "torso/torso-scale-vert-decr": 0.2,
+  "hands/l-hand-fingers-length-incr": 0.3,
+  "hands/r-hand-fingers-length-incr": 0.3,
   "chin/chin-prominent-incr": 0.3,
   "chin/chin-width-incr": 0.45,
   "nose/nose-hump-incr": 0.1,
@@ -342,6 +345,11 @@
   ]
  },
  "visorAboveEyes": 0.074,
+ "hands": {
+  "knuckle": 0.0022,
+  "palm": 0.0015,
+  "thenar": 0.003
+ },
  "clothes": {
   "beltAbovePelvis": 0.025,
   "sleeve": 0.56,

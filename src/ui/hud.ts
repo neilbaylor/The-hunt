@@ -117,7 +117,7 @@ export function padSVG(skin: Skin) {
     // a chunky toy stick: cream bezel on a turf disc, a groove you pull the ball down, a power arc that fills
     const arcPt = (f: number, r = 80) => { const a = ((262 - 150 * f) * Math.PI) / 180; return [Math.cos(a) * r, Math.sin(a) * r]; };
     const [ax0, ay0] = arcPt(0), [ax1, ay1] = arcPt(1);
-    const beads = [0.25, 0.5, 0.75, 1].map((f, i) => { const [x, y] = arcPt(f); const [lx, ly] = arcPt(f, 66); return `<g class="bead" data-f="${f}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i === 3 ? 6 : 4.5}"/>${i < 3 ? `<text x="${lx.toFixed(1)}" y="${(ly + 3.5).toFixed(1)}" text-anchor="middle" class="bead-lab">${f * 100}</text>` : `<text x="${lx.toFixed(1)}" y="${(ly + 3.5).toFixed(1)}" text-anchor="middle" class="bead-lab max">MAX</text>`}</g>`; }).join('');
+    const beads = [0.25, 0.5, 0.75, 1].map((f, i) => { const [x, y] = arcPt(f); const [lx, ly] = arcPt(f, 66); return `<g class="bead" data-f="${f}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i === 3 ? 6 : 4.5}"/></g>`; void lx; void ly; }).join('');
     const stripes = Array.from({ length: 7 }, (_, i) => `<rect x="${-90 + i * 26}" y="-90" width="13" height="180" fill="rgba(255,255,255,.045)"/>`).join('');
     const rays = Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * Math.PI * 2; return `<path d="M${(Math.cos(a) * 30).toFixed(1)} ${(Math.sin(a) * 30).toFixed(1)} L${(Math.cos(a + 0.08) * 46).toFixed(1)} ${(Math.sin(a + 0.08) * 46).toFixed(1)} L${(Math.cos(a - 0.08) * 46).toFixed(1)} ${(Math.sin(a - 0.08) * 46).toFixed(1)} Z"/>`; }).join('');
     return `<svg class="pad-svg pad-f" id="${id}" viewBox="-100 -100 200 200" aria-hidden="true">
@@ -126,7 +126,7 @@ export function padSVG(skin: Skin) {
       <linearGradient id="${id}r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffdf5"/><stop offset=".55" stop-color="#fbeccc"/><stop offset="1" stop-color="#e2c27c"/></linearGradient>
       <radialGradient id="${id}t" cx="45%" cy="35%"><stop offset="0" stop-color="#4fa743"/><stop offset=".7" stop-color="#2e7a32"/><stop offset="1" stop-color="#1d5526"/></radialGradient>
       <linearGradient id="${id}p" gradientUnits="userSpaceOnUse" x1="0" y1="-80" x2="0" y2="80"><stop offset="0" stop-color="#ffe066"/><stop offset=".55" stop-color="#ffb21a"/><stop offset=".85" stop-color="#ff7a1a"/><stop offset="1" stop-color="#e5352b"/></linearGradient>
-      <linearGradient id="${id}g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0d1f3c"/><stop offset=".5" stop-color="#1b3561"/><stop offset="1" stop-color="#0d1f3c"/></linearGradient>
+      <linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#174a2c"/><stop offset=".55" stop-color="#2d6a3a"/><stop offset=".85" stop-color="#8f8a2e"/><stop offset="1" stop-color="#c9a227"/></linearGradient>
       <linearGradient id="${id}cap" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe680"/><stop offset="1" stop-color="#f2a900"/></linearGradient>
       <clipPath id="${id}c"><circle r="82"/></clipPath>
       <filter id="${id}s" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="4" stdDeviation="3.2" flood-color="#06142b" flood-opacity=".5"/></filter>
@@ -136,13 +136,12 @@ export function padSVG(skin: Skin) {
     <circle r="91" fill="url(#${id}r)"/>
     <circle r="82" fill="url(#${id}t)"/>
     <g clip-path="url(#${id}c)">${stripes}<circle r="82" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="6"/></g>
-    <path d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="rgba(6,20,43,.45)" stroke-width="9" stroke-linecap="round"/>
-    <path class="power-arc" d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="url(#${id}p)" stroke-width="9" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
+    <path d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="rgba(6,20,43,.45)" stroke-width="15" stroke-linecap="round"/>
+    <path class="power-arc" d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="url(#${id}p)" stroke-width="15" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
     ${beads}
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="url(#${id}g)"/>
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="3"/>
     <rect x="-15.5" y="-72.5" width="31" height="163" rx="15.5" fill="none" stroke="rgba(255,246,227,.22)" stroke-width="1.2"/>
-    <g class="top-cap"><rect class="cap-glow" x="-21" y="-89" width="42" height="22" rx="11" fill="#ffd23f" opacity=".0"/><rect x="-17" y="-86" width="34" height="16" rx="8" fill="url(#${id}cap)" stroke="#fff6e3" stroke-width="2"/><text y="-74.3" text-anchor="middle" class="cap-txt">PUSH</text></g>
     <g class="hint"><path d="M-10 26 L0 36 L10 26" fill="none" stroke="#ffd23f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M-10 39 L0 49 L10 39" fill="none" stroke="#ffd23f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/></g>
     <path class="trail-b" d="" fill="#ffd23f" opacity=".95"/>
     <path class="trail-d" d="" fill="#5ff0a0" opacity=".95"/>
@@ -241,6 +240,7 @@ export class Hud {
   readonly spinCv: HTMLCanvasElement;
   spin = { x: 0, y: 0 };
   private spinM: Mat3 = mat3Identity();
+  private lieOpen = false; private lieT = 0; private spinHint = true;
   /** where the club meets the ball: x +1 = outer half (fades), -1 = inner half (draws); y +1 = top (flies lower), -1 = bottom (flies higher) */
   strike = { x: 0, y: 0 };
   onStrike: (s: { x: number; y: number }) => void = () => {};
@@ -263,7 +263,7 @@ export class Hud {
       <div class="corner tl"><div class="row"><div id="clubSlot"></div><div id="modeSlot"></div></div><div class="who" id="who"></div><div class="pop hud-panel" id="clubPop" hidden></div><div class="pop hud-panel" id="modePop" hidden></div></div>
       <div class="corner tr"><div id="lieSlot"></div></div>
       <div class="corner bl"><div id="cardSlot"><div class="card-wrap" id="cardWrap"><button type="button" class="hud-panel card-mini" data-act="card-open" aria-expanded="false"></button><div class="card-body" id="cardBody"></div></div></div></div>
-      <div class="corner br"><button type="button" class="strike-btn" data-act="strike" aria-label="Strike point: centre. Choose where to hit the ball"><canvas width="112" height="112" aria-hidden="true"></canvas><i class="dot" aria-hidden="true"></i><span>Strike</span></button><div class="pad" id="pad" aria-label="Swing pad: press, pull down, push up"></div><div class="pad-label"><span>Pull <b>back</b></span><i></i><span>push <b>through</b></span></div></div>
+      <div class="corner br"><button type="button" class="strike-btn" data-act="strike" aria-label="Strike point: centre. Choose where to hit the ball"><canvas width="112" height="112" aria-hidden="true"></canvas><i class="dot" aria-hidden="true"></i><span>Strike</span></button><div class="pad" id="pad" aria-label="Swing pad: press, pull down, push up"></div></div>
       <div class="corner bc"><div class="spin off" id="spin"><canvas width="272" height="272" aria-label="Spin ball: swipe to add spin"></canvas><div class="spin-label" id="spinLabel">Swipe the ball to add spin</div></div></div>
       <div class="toast" id="toast"></div>
       <div class="confetti" id="confetti" aria-hidden="true"></div>
@@ -284,7 +284,7 @@ export class Hud {
     this.el.addEventListener('click', e => this.click(e));
     this.el.addEventListener('keydown', e => { const t = e.target as HTMLElement; if ((e.key === 'Enter' || e.key === ' ') && t.matches('.card.simple')) { e.preventDefault(); t.click(); } });
     this.initStrike();
-    this.spinCv.addEventListener('pointerdown', e => { if (!this.spinOn) return; this.spinCv.setPointerCapture(e.pointerId); this.spinDrag = [e.clientX, e.clientY]; e.preventDefault(); });
+    this.spinCv.addEventListener('pointerdown', e => { if (!this.spinOn) return; this.spinCv.setPointerCapture(e.pointerId); this.spinDrag = [e.clientX, e.clientY]; e.preventDefault(); this.q('#spin').classList.add('grab', 'used'); try { navigator.vibrate?.(8); } catch { /* not allowed */ } });
     this.spinCv.addEventListener('pointermove', e => {
       if (!this.spinDrag || !this.spinOn) return;
       const r = this.spinCv.getBoundingClientRect(), k = 136 / r.width;
@@ -293,7 +293,7 @@ export class Hud {
       this.spin = { x: sx, y: sy };
       this.spinLabel();
     });
-    const end = () => { this.spinDrag = null; };
+    const end = () => { this.spinDrag = null; this.q('#spin').classList.remove('grab'); };
     this.spinCv.addEventListener('pointerup', end); this.spinCv.addEventListener('pointercancel', end);
     this.setSkin(this.skin);
     onBallTexUpdate(() => drawSpinBall(this.spinCv, this.spinM, this.spin, this.skin, this.spinOn));
@@ -338,7 +338,7 @@ export class Hud {
     const [word, q, kind] = LIE_WORD[L.name] ?? ['Okay', 'ok', 'fairway'];
     const where = L.side ? (L.side < 0 ? 'starts left' : 'starts right') : 'flat';
     this.q('#lieSlot').innerHTML = this.skin === 'f'
-      ? `<button type="button" class="hud-panel lie-card lie-w" data-act="lie" aria-label="Lie: ${L.name}, ${word}, ${L.pct} percent distance, ${L.slope} degree slope, ball ${where}. Tap for another sample lie">
+      ? `<button type="button" class="hud-panel lie-card lie-w${this.lieOpen ? '' : ' mini'}" data-act="lie" aria-label="Lie: ${L.name}, ${word}, ${L.pct} percent distance, ${L.slope} degree slope, ball ${where}. Tap for another sample lie">
         ${lieScene(L.slope, L.side, kind)}
         <span class="lie-txt"><span class="lie-name${L.name.length > 10 ? ' long' : ''}">${L.name}</span><span class="lie-q ${q}">${word} · ${L.pct}%</span>
         <span class="lie-slope"><b>${L.slope}°</b><small>${where}</small></span></span></button>`
@@ -387,7 +387,7 @@ export class Hud {
     };
     // at a glance: tempo word + tiny bar, one big carry/total line, one small shape/offline line; tap for the rest
     const off = c.done && c.offline !== undefined ? side(c.offline) : '';
-    const more = this.q('#cardBody .card.simple')?.classList.contains('more') ?? false;
+    const more = true;   // opened on purpose from the pill: show everything
     body.innerHTML = `<div class="hud-panel card simple${more ? ' more' : ''}" data-act="card-more" role="button" tabindex="0" aria-expanded="${more}" aria-label="Last swing: ${P.tempoWord}. Tap for details"><button type="button" class="card-min" data-act="card-min" aria-label="Minimise">&minus;</button>
       <div class="sc-top"><b class="tempo-word ${P.tempoCls}">${P.tempoWord}</b><span class="sc-tempo" aria-hidden="true"><i class="win" style="left:${pos(-70)}%;width:${(+pos(160) - +pos(-70)).toFixed(1)}%"></i><i class="mark ${P.tempoCls}" style="left:${pos(c.offMs)}%"></i></span></div>
       <div class="sc-main"><span class="sc-n"><small>Carry</small>${tick('carry', c.carry).replace('<dd', '<b').replace('</dd>', '</b>')}</span><span class="sc-n"><small>Total</small>${tick('total', c.total, c.done).replace('<dd', '<b').replace('</dd>', '</b>')}</span><small class="sc-u">yds</small></div>
@@ -396,13 +396,17 @@ export class Hud {
         <div><dt>Power</dt><dd>${Math.round(c.power * 100)}%</dd></div>
         <div><dt>Takeaway</dt><dd class="${P.driftCls}">${P.driftWord}</dd></div>
         <div><dt>Timing</dt><dd>${c.offMs > 0 ? '+' : ''}${Math.round(c.offMs)} ms</dd></div>
+        <div><dt>Launch</dt><dd>${(P.launch.launch * 180 / Math.PI).toFixed(1)}°</dd></div>
+        <div><dt>Spin</dt><dd>${Math.round(P.launch.spinRpm / 50) * 50} rpm</dd></div>
+        <div><dt>Apex</dt><dd>${c.apex !== undefined ? c.apex.toFixed(0) + ' yds' : '…'}</dd></div>
       </dl></div>`;
     const yd = c.done && c.total !== undefined ? `${c.total.toFixed(0)} yds` : c.carry !== undefined ? `${c.carry.toFixed(0)} carry` : 'in the air';
-    mini.innerHTML = `<i class="dot ${P.tempoCls}"></i><b>${P.tempoWord}</b><span>${yd}</span><span class="chev" aria-hidden="true"></span>`;
+    mini.innerHTML = `<i class="dot ${P.tempoCls}"></i><b>${yd}</b><span>Shot details</span><span class="chev" aria-hidden="true"></span>`;
     this.runTicks();
-    if (c.carry === undefined) { if (phone) this.setCard('hidden'); else this.setCard('open'); clearTimeout(this.cardTimer); }
-    else if (!c.done) { this.setCard('open'); clearTimeout(this.cardTimer); }
-    else { this.setCard('open'); this.later(phone ? 2500 : 3000, () => this.collapse()); }
+    // a clean screen: the numbers stay out of the way; once the ball stops a small 'Shot details' pill offers them
+    void phone;
+    if (!c.done) { if (this.cardMode !== 'open') this.setCard('hidden'); clearTimeout(this.cardTimer); }
+    else if (this.cardMode !== 'open') { this.setCard('mini'); this.later(6000, () => this.setCard('hidden')); }
   }
   /** count numbers up to their value */
   private runTicks() {
@@ -440,9 +444,14 @@ export class Hud {
     const act = a.dataset.act;
     if (act === 'club') { mp.hidden = true; cp.hidden = !cp.hidden; cp.innerHTML = this.clubList(); }
     if (act === 'mode') { cp.hidden = true; mp.hidden = !mp.hidden; mp.innerHTML = this.modeList(); }
-    if (act === 'lie') { this.closePops(); this.lie = (this.lie + 1) % LIES.length; this.render(); this.onLie(this.lie); }
+    if (act === 'lie') {
+      this.closePops();
+      if (this.lieOpen) { this.lie = (this.lie + 1) % LIES.length; this.render(); this.onLie(this.lie); }   // open: tap for another sample lie
+      else { this.lieOpen = true; this.render(); }
+      clearTimeout(this.lieT); this.lieT = window.setTimeout(() => { this.lieOpen = false; this.render(); }, 4000);
+    }
     if (act === 'skin') { a.classList.remove('wiggle'); void a.offsetWidth; a.classList.add('wiggle'); }
-    if (act === 'card-open') { if (this.cardMode === 'open') this.collapse(); else { this.setCard('open'); this.later(isPhone() ? 3500 : 6000, () => this.collapse()); } }
+    if (act === 'card-open') { if (this.cardMode === 'open') this.setCard('hidden'); else { this.setCard('open'); this.later(9000, () => this.setCard('hidden')); } }
     if (act === 'card-more' && !t.closest('.card-min')) { const k = a.classList.toggle('more'); a.setAttribute('aria-expanded', String(k)); const cue = a.querySelector('.sc-more-cue'); if (cue) cue.textContent = k ? 'less' : 'more'; this.later(k ? 6000 : 2500, () => this.collapse()); }
     if (act === 'strike') { this.closePops(); this.openStrike(true); }
     if (act === 'strike-centre') { this.setStrike(0, 0); }
@@ -468,6 +477,7 @@ export class Hud {
       svg.querySelector('.power-arc')!.setAttribute('stroke-dasharray', `${(f * 100).toFixed(1)} 100`);
       svg.querySelectorAll<SVGGElement>('.bead').forEach(b => b.classList.toggle('lit', f >= +b.dataset.f! - 0.02));
       svg.classList.toggle('maxed', f >= 0.98);
+      (svg as unknown as HTMLElement).style.setProperty('--pull', f.toFixed(3));   // the dial swells as you pull
       if (atTop && !this.padTop) buzz(12);
       this.padTop = atTop;
       const hit = trailD.length > 0 && trailD[trailD.length - 1][1] < -45;
@@ -488,7 +498,7 @@ export class Hud {
   // ── spin ball ──
   private spinLabel(prefix = '') {
     const el = this.q('#spinLabel'), w = spinWords(this.spin), mag = Math.hypot(this.spin.x, this.spin.y);
-    el.textContent = w ? prefix + w : prefix ? 'No spin added' : 'Swipe the ball to add spin';
+    el.textContent = w ? prefix + w : prefix ? '' : this.spinHint ? 'Swipe for spin' : '';
     el.dataset.lvl = !w ? '' : mag < 0.45 ? 'lo' : mag < 0.8 ? 'mid' : 'hi';
     el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick');
   }
@@ -496,7 +506,14 @@ export class Hud {
     this.spinOn = on;
     this.q('#spin').classList.toggle('off', !on);
     this.el.classList.toggle('spin-on', on);
-    if (on) { this.strikeUsed = true; this.spin = { x: 0, y: 0 }; this.spinM = mat3Identity(); this.q('#spinLabel').textContent = 'Swipe the ball to add spin'; }
+    if (on) {
+      this.strikeUsed = true; this.spin = { x: 0, y: 0 }; this.spinM = mat3Identity();
+      // the hint only for the first couple of shots; the ring pulses every time it appears
+      let n = 0; try { n = +(localStorage.getItem('golf-spin-hint') ?? 0); localStorage.setItem('golf-spin-hint', String(n + 1)); } catch { /* storage blocked */ }
+      this.spinHint = n < 2;
+      const sp = this.q('#spin'); sp.classList.remove('pulse', 'used'); void sp.offsetWidth; sp.classList.add('pulse');
+      this.q('#spinLabel').textContent = this.spinHint ? 'Swipe for spin' : '';
+    }
   }
   spinDone() {
     this.spinOn = false;
@@ -565,6 +582,14 @@ export class Hud {
   /** the cinematic shot cam's phase (null when off): the spin ball steps aside for the face shot */
   setCine(phase: string | null) { this.el.classList.toggle('cine-face', phase === 'face'); }
 
+  /** after the shot: one friendly line that fades (the numbers live behind 'Shot details') */
+  shotLine(text: string, cls: string) {
+    const t = this.q('#toast');
+    t.classList.remove('on'); void t.offsetWidth;
+    t.innerHTML = `<span class="word line ${cls}">${text}</span>`;
+    t.classList.add('on'); clearTimeout(this.toastT); this.toastT = window.setTimeout(() => t.classList.remove('on'), 2600);
+    if (cls === 'good') this.celebrate(/green|pin|hole|pured/i.test(text) ? 34 : 18);
+  }
   toast(word: string, why: string, cls: string) {
     const t = this.q('#toast');
     t.classList.remove('on'); void t.offsetWidth; // restart the pop animation

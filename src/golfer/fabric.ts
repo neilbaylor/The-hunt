@@ -43,7 +43,7 @@ const BODY: Record<FabricKind, string> = {
     // twill weave: diagonal ribs
     float rib = 0.5 + 0.5 * sin((vB.y * 0.7 + vB.x + vB.z) * 1400.0);
     float fine = 1.0 - smoothstep(0.0006, 0.0025, fwidth(vB.y));
-    h += 0.00025 * rib * fine;
+    h += 0.00008 * rib * fine;   // very fine: stronger reads as moire stripes up close
     // pressed front crease (sharp ridge) and softer back crease
     h += 0.0007 * (1.0 - smoothstep(0.0, 0.005, crease));
     // knee bunching and the break over the shoe: horizontal folds
@@ -103,9 +103,20 @@ const BODY: Record<FabricKind, string> = {
   glove: /* glsl */ `
     float fine = 1.0 - smoothstep(0.0005, 0.002, fwidth(vB.y));
     h += 0.00005 * fn3(vB * 900.0) * fine;  // soft leather grain (stronger reads as sparkle)
-    float cuff = 1.0 - smoothstep(0.012, 0.016, vC.x);
-    col *= 1.0 - 0.12 * cuff;   // dark tab at the cuff
-    h += 0.0006 * cuff;
+    float cuff = 1.0 - smoothstep(0.008, 0.011, vC.x);
+    col *= 1.0 - 0.05 * cuff;   // a narrow hemmed cuff
+    h += 0.0003 * cuff;
+    float dors = vC.z < 1.5 ? clamp((vC.z - 0.45) / 0.3, 0.0, 1.0) : 0.0;   // back of the hand (gloves only)
+    // velcro tab: a stitched rectangle on the back of the wrist, slightly raised
+    float tab = dors * (1.0 - smoothstep(0.03, 0.033, vC.x)) * step(0.004, vC.x);
+    float tabEdge = tab * (1.0 - smoothstep(0.0, 0.0025, min(abs(vC.x - 0.005), abs(vC.x - 0.031))));
+    col *= 1.0 - 0.06 * tab - 0.15 * tabEdge;
+    h += 0.0007 * tab;
+    // small perforations across the back of the hand, above the tab
+    vec3 pp = vB * 260.0; vec3 pc = fract(pp) - 0.5;
+    float perf = dors * step(0.045, vC.x) * (1.0 - smoothstep(0.12, 0.2, length(pc.xy))) * step(0.5, fract(floor(pp.z) * 0.5)) * fine;
+    col *= 1.0 - 0.28 * perf;
+    h -= 0.00015 * perf;
   `,
 };
 
