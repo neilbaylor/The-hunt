@@ -34,10 +34,12 @@
   },
   "expressions": {
     "smile": {
-      "expression/units/caucasian/mouth-corner-puller": 0.9,
-      "expression/units/caucasian/mouth-parling": 0.45,
-      "expression/units/caucasian/eye-left-slit": 0.25,
-      "expression/units/caucasian/eye-right-slit": 0.25
+      "expression/units/caucasian/mouth-corner-puller": 1.25,
+      "expression/units/caucasian/mouth-parling": 1.0,
+      "expression/units/caucasian/mouth-upward-retraction": 0.55,
+      "expression/units/caucasian/mouth-open": 0.18,
+      "expression/units/caucasian/eye-left-slit": 0.35,
+      "expression/units/caucasian/eye-right-slit": 0.35
     }
   },
   "face": {
