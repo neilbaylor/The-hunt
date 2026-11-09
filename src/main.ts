@@ -677,7 +677,6 @@ for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) 
 // the live face badge: the head (and the lights) also live on the badge camera's layer
 const faceBadge = new FaceBadge(renderer, scene, () => golfer.body.bones[5] ?? null, () => (golfer.body as { face?: import('./ui/facebadge').FaceLike }).face, document.getElementById('who')!, profile.name, () => golfer.char);
 golfer.root.traverse(o => o.layers.enable(AVATAR_LAYER));
-scene.traverse(o => { if ((o as THREE.Light).isLight) o.layers.enable(AVATAR_LAYER); });
 requestAnimationFrame(t => { last = t; frame(t); });
 (window as any).__game = { faceBadge, wind, camera, range,
   golfer, ball, hud, aim, aimCtl, shotcam, get state() { return state; }, skipToLanding, skipToLandingNow,

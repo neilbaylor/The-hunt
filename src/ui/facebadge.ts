@@ -27,7 +27,9 @@ export class FaceBadge {
   readonly el: HTMLDivElement;
   private badge: HTMLDivElement; private word: HTMLSpanElement; private bubble: HTMLDivElement;
   private rt = new THREE.WebGLRenderTarget(192, 192, { samples: 4 });
-  private cam = new THREE.PerspectiveCamera(20, 1, 0.05, 3);
+  private cam = new THREE.PerspectiveCamera(30, 1, 0.05, 2);
+  private up = new THREE.Vector3(0, 1, 0); private fwdInit = false;
+  private key = new THREE.DirectionalLight('#fff4e6', 2.4); private fill = new THREE.DirectionalLight('#dbe9ff', 1.1);
   private blitScene = new THREE.Scene(); private blitCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private bg = new THREE.Color('#bfe0f2');
   private frame = 0;
@@ -43,6 +45,7 @@ export class FaceBadge {
     private face: () => FaceLike | undefined, host: HTMLElement, name: string, private body: () => THREE.Object3D | null = () => null) {
     this.rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
     this.cam.layers.set(AVATAR_LAYER);
+    for (const l of [this.key, this.fill]) { l.layers.set(AVATAR_LAYER); scene.add(l, l.target); }
     const mat = new THREE.ShaderMaterial({
       uniforms: { map: { value: this.rt.texture } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
@@ -111,18 +114,21 @@ export class FaceBadge {
     const R = this.renderer;
     if ((this.frame++ & 1) === 0) {
       const h = this.head(); if (!h) return;
-      const hp = new THREE.Vector3(); h.getWorldPosition(hp);
-      // face-on from the body's front (the head bows over the ball at address, so the head's own axis looks at the turf)
-      // the head's own facing, flattened: face-on whether he's bowed over the ball or turned to the target at the finish
-      let f = new THREE.Vector3(0, 0, 1).transformDirection(h.matrixWorld); f.y = 0;
-      if (f.lengthSq() < 0.05) { const bo = this.body(); if (bo) f = new THREE.Vector3(0, 0, 1).transformDirection(bo.matrixWorld).setY(0); }
-      if (f.lengthSq() < 1e-4) f.set(0, 0, 1); f.normalize();
-      this.fwd.lerp(f, 0.35).normalize();
-      const side = new THREE.Vector3(-this.fwd.z, 0, this.fwd.x).normalize();
-      const sway = this.shake > 0 ? Math.sin(this.t * 22) * 0.12 * this.shake : 0;
-      const aim = hp.clone().add(new THREE.Vector3(0, 0.02, 0)).addScaledVector(this.fwd, 0.07);
-      this.cam.position.copy(aim).addScaledVector(this.fwd, 0.8).addScaledVector(side, sway).add(new THREE.Vector3(0, -0.1, 0));
-      this.cam.lookAt(aim);
+      // a face camera in the head's own frame: along the face's forward axis, with the head's up as the camera's up,
+      // so the badge is always front-on and level (bowed over the ball, at the top, at the finish) whatever the pose
+      const eye = h.localToWorld(new THREE.Vector3(0, 0.085, 0.06));
+      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(h.matrixWorld).normalize();
+      const up = new THREE.Vector3(0, 1, 0).transformDirection(h.matrixWorld).normalize();
+      if (this.fwdInit) { this.fwd.lerp(fwd, 0.5).normalize(); this.up.lerp(up, 0.5).normalize(); } else { this.fwd.copy(fwd); this.up.copy(up); this.fwdInit = true; }
+      const right = new THREE.Vector3().crossVectors(this.up, this.fwd).normalize();
+      const sway = this.shake > 0 ? Math.sin(this.t * 22) * 0.1 * this.shake : 0;
+      const look = eye.clone().addScaledVector(this.up, -0.035);                    // just below the nose bridge: face + a little shoulder
+      this.cam.position.copy(look).addScaledVector(this.fwd, 0.56).addScaledVector(right, 0.12 + sway).addScaledVector(this.up, 0.02);   // slight ¾
+      this.cam.up.copy(this.up); this.cam.lookAt(look);
+      // its own key and fill, riding with the camera, so it's never dark
+      this.key.position.copy(this.cam.position).addScaledVector(this.up, 0.5).addScaledVector(right, -0.4); this.key.target.position.copy(look);
+      this.fill.position.copy(this.cam.position).addScaledVector(right, 0.6).addScaledVector(this.up, -0.1); this.fill.target.position.copy(look);
+      this.key.target.updateMatrixWorld(); this.fill.target.updateMatrixWorld();
       const prevBg = this.scene.background, prevFog = this.scene.fog, shadowAuto = R.shadowMap.autoUpdate;
       this.scene.background = this.bg; this.scene.fog = null; R.shadowMap.autoUpdate = false;
       R.setRenderTarget(this.rt); R.clear(); R.render(this.scene, this.cam); R.setRenderTarget(null);

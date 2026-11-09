@@ -74,7 +74,7 @@ Playful, not corporate, and minimal data (details behind a "Shot details" sheet)
 - Perf tiers in `src/render/perf.ts` (`?perf=low|med|high`).
 
 ## Style
-"Hand-drawn but realistic", but only **a bit**: the owner said the full finish was "way too hand-drawn". The post finish is a faint silhouette ink line, almost no hatching, light paper grain, and the face kept clean, as the game default at about 30% intensity (`?ink=0..1` to tune it). `?style=real` turns it off. Style lab: `src/render/styles.ts`, `style.html`.
+**Why hand-drawn at all:** hyper-realism is "too hard" to get right (skin, face likeness, hands, cloth, trees). The finish exists to make those gaps forgivable, not as a stylistic goal. Use subtle painterly simplification (soften CG sheen and texture noise, gentle brush texture, a small edge-preserving smoothing on skin and cloth) over linework, and keep the face readable. "Hand-drawn but realistic", but only **a bit**: the owner said the full finish was "way too hand-drawn". The post finish is a faint silhouette ink line, almost no hatching, light paper grain, and the face kept clean, as the game default at about 30% intensity (`?ink=0..1` to tune it). `?style=real` turns it off. Style lab: `src/render/styles.ts`, `style.html`.
 
 ## Working rules that matter
 - Agents edit main.ts concurrently: make targeted edits, re-read before editing, keep `npx tsc --noEmit` clean.
