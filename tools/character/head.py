@@ -267,8 +267,9 @@ for r_ in range(1, ROWS + 1):
     # Hermite: leave the cut heading straight down, arrive at the neck heading straight down
     h00, h10, h01, h11 = 2 * u ** 3 - 3 * u ** 2 + 1, u ** 3 - 2 * u ** 2 + u, -2 * u ** 3 + 3 * u ** 2, u ** 3 - u ** 2
     Ld = np.linalg.norm(bot - top, axis=1, keepdims=True)
-    tdir = np.array([0, -1.0, 0]) * Ld
-    pts = h00 * top + h10 * tdir + h01 * bot + h11 * tdir
+    # leave the cut heading toward the neck (under the jaw the neck tucks in), arrive heading straight down
+    t0 = (bot - top) * 0.8; t1 = np.array([0, -1.0, 0]) * Ld
+    pts = h00 * top + h10 * t0 + h01 * bot + h11 * t1
     rows.append(np.arange(len(Lv), len(Lv) + len(pts))); Lv.extend(pts)
 LV = np.array(Lv)
 nf = []
@@ -300,6 +301,12 @@ for i in range(len(LV)):
 used = sorted({b_ for w in wts for b_, v in w if v > 0} | {hb})
 print('weights use bones', [B[i] for i in used])
 
+# decimation folds a few hair spikes over: turn those faces back to agree with the surface (else they cull to holes)
+_fn = np.cross(LV[LF[:, 1]] - LV[LF[:, 0]], LV[LF[:, 2]] - LV[LF[:, 0]])
+_vn = vnormals(LV, LF)
+flip = np.einsum('ij,ij->i', _fn, _vn[LF].sum(1)) < 0
+LF[flip] = LF[flip][:, ::-1]
+print('flipped', int(flip.sum()), 'folded faces')
 # ───────────────────────── unwrap ─────────────────────────
 atlas = xatlas.Atlas(); atlas.add_mesh(LV.astype(np.float32), LF.astype(np.uint32))
 co = xatlas.ChartOptions(); co.max_cost = 2.0

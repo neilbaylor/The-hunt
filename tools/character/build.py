@@ -305,7 +305,8 @@ for vi in body_idx:
         sleeve_ok = True
         if arm_l > 0.5: sleeve_ok = along(vi, 'upperarm_l', 'lowerarm_l') < C['sleeve']
         if arm_r > 0.5: sleeve_ok = along(vi, 'upperarm_r', 'lowerarm_r') < C['sleeve']
-        if sleeve_ok and (torso > 0.3 or arm_l > 0.3 or arm_r > 0.3):
+        # (below the waist the untucked shirt also covers the thigh-weighted hips, so its hem goes level all round)
+        if sleeve_ok and (torso > 0.3 or arm_l > 0.3 or arm_r > 0.3 or (legs > 0.3 and y < belt_y + 0.03 and max(arm_l, arm_r) < 0.3)):
             shirt[vi] = True
             loose = 1 - min(1, abs(y - (pelvis_y + 0.2)) / 0.3)
             tuck = min(1.0, max(0.0, (y - (belt_y - 0.04)) / 0.08))  # tucked in: hugs the body at the waistband

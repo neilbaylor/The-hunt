@@ -9,9 +9,10 @@ import { CLUB_SPECS } from './golfer/club';
 import { Ball, BALL } from './game/ball';
 import { planShot, LIES, YD, type ShotPlan } from './game/shot';
 import { Tracer } from './game/tracer';
+import { ShotCam, isLongShot, type ShotCamCtx } from './game/shotcam';
 import { Sound } from './game/audio';
 import { Hud, viewport, type CardData } from './ui/hud';
-import { ballTex, onBallTexUpdate } from './ui/balltex';
+import { tourBallMaterial } from './ui/ballmat';
 import { AimController, aim } from './game/aim';
 import { MODES as SHOT_MODES } from './game/shot';
 
@@ -52,19 +53,9 @@ const profile = NEIL;
 const golfer = new Golfer(profile, await loadNeil());
 scene.add(golfer.root);
 const ball = new Ball(range);
-// tour ball: hex-packed dimple normal map + sidestamp print (shared with the HUD spin ball)
-const ballTexInfo = ballTex();
-const ballPrint = new THREE.CanvasTexture(ballTexInfo.printCanvas); ballPrint.colorSpace = THREE.SRGBColorSpace; ballPrint.anisotropy = 4;
-const ballNormal = new THREE.CanvasTexture(ballTexInfo.normalCanvas); ballNormal.colorSpace = THREE.NoColorSpace;
-onBallTexUpdate(() => { ballPrint.needsUpdate = true; });
-const ballMat = new THREE.MeshPhysicalMaterial({ color: '#fbfaf6', roughness: 0.42, clearcoat: 1, clearcoatRoughness: 0.12, normalMap: ballNormal, normalScale: new THREE.Vector2(1, 1) });
-ballMat.onBeforeCompile = sh => {
-  sh.uniforms.printMap = { value: ballPrint };
-  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D printMap;')
-    .replace('#include <map_fragment>', '#include <map_fragment>\nvec4 pr = texture2D(printMap, vNormalMapUv);\ndiffuseColor.rgb = mix(diffuseColor.rgb, pr.rgb, pr.a);');
-};
-ballMat.customProgramCacheKey = () => 'tour-ball';
-const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(BALL.r, 48, 32), ballMat);
+// tour ball: Pro V1x print, dimple normals/AO and clearcoat (src/ui/ballmat.ts, shared look with the HUD balls)
+const ballMat = tourBallMaterial();
+const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(BALL.r, 64, 40), ballMat);
 ballMesh.castShadow = true; scene.add(ballMesh);
 // a white painted wooden tee: pointed shank, flared neck and a shallow cup with a rolled rim (origin = old centre,
 // so the ball's bottom sits in the cup at y = +0.022); most of the shank is pushed into the turf by teeUp()
@@ -231,6 +222,9 @@ function strike(now: number, p: [number, number], released: boolean) {
   state = 'flight';
   hud.showSpin(true);
   camMode = 'chase'; chaseT0 = now;
+  // long shots get the cinematic: face and follow-through, fly after the ball, settle on the landing
+  { const land = ball.predictLanding(14), carry = land ? Math.hypot(land.x - ball.start.x, land.z - ball.start.z) / YD : 0;
+    if (isLongShot(hud.mode, carry)) startShotCam(); }
   setTimeout(() => shadowsOnGolfer(false), 900);
   setTimeout(() => { SW.trailB = []; SW.trailD = []; }, 700);
 }
@@ -254,7 +248,7 @@ function resetBall() {
 }
 
 // ── cameras ──
-type CamMode = 'intro' | 'address' | 'chase' | 'landing' | 'rest';
+type CamMode = 'intro' | 'address' | 'chase' | 'landing' | 'rest' | 'cine';
 let camMode: CamMode = 'intro';
 let chaseT0 = 0, shake = 0;
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
@@ -288,9 +282,46 @@ function fitCamera() {
 }
 fitCamera();
 function snapCamera() { addressCam(camPos, camLook); landingCam = null; }
+// ── cinematic shot cam (src/game/shotcam.ts) ──
+const shotcam = new ShotCam();
+let cineLens = false;
+const shotCtx: ShotCamCtx = {
+  ball, head: new THREE.Vector3(),
+  predictLanding: () => ball.predictLanding(8),
+  groundAt: (x, z) => range?.heightAt(x, z) ?? 0,
+  blocked: (x, z) => range?.targets.some(t => Math.hypot(t.pos.x - x, t.pos.z - z) < t.radius + 14) ?? false,
+};
+function startShotCam() {
+  const Y = new THREE.Vector3(0, 1, 0);
+  const faceDir = new THREE.Vector3(-side, 0, 0).applyAxisAngle(Y, -aim.dir);   // towards the ball at address
+  const targetDir = new THREE.Vector3(ball.vel.x, 0, ball.vel.z);
+  shotcam.start(camPos, camLook, faceDir, targetDir, side);
+  camMode = 'cine';
+}
+/** tap during the flight: run the ball on to just before it lands and show the landing */
+function skipToLanding() {
+  if (ball.phase !== 'flight') return;
+  for (let i = 0; i < 120 * 20 && ball.phase === 'flight'; i++) {
+    const g = range?.heightAt(ball.pos.x, ball.pos.z) ?? 0;
+    if (ball.vel.y < 0 && (ball.pos.y - g) / Math.max(1, -ball.vel.y) < 0.55) break;
+    ball.setAftertouch(hud.spin.y, hud.spin.x); ball.step(1 / 120); tracer.push(ball.pos);
+  }
+  if (camMode === 'cine') shotcam.skipToLanding(shotCtx);
+}
 
 function updateCamera(dt: number, now: number) {
   const k = 1 - Math.pow(0.0025, dt);
+  if (camMode === 'cine') {
+    golfer.body.bones[5].getWorldPosition(shotCtx.head);
+    const P = shotcam.update(dt, shotCtx);
+    camPos.copy(P.pos); camLook.copy(P.look);
+    if (lensShift > 0.001) lensShift = Math.max(0, lensShift - dt * 0.6);
+    fitCamera(); camera.fov += P.dFov; camera.updateProjectionMatrix(); cineLens = true;
+    camera.position.copy(camPos); camera.lookAt(camLook); camera.rotateZ(P.roll);
+    post.setDof(P.dof);
+    return;
+  }
+  if (cineLens) { cineLens = false; shotcam.stop(); fitCamera(); }
   if (camMode === 'intro') {
     // circle slowly in front of the golfer
     const th = (golfer.lefty ? Math.PI : 0) + 0.6 * Math.sin(now / 1000 * 0.22) + 0.35 * side;
@@ -370,6 +401,7 @@ shadowsOnGolfer(true);
 camMode = 'intro';
 camPos.set(3, 1.5, 3); camLook.set(0, 1, 0);
 let last = performance.now();
+let manualClock = false;
 const frameTimes: number[] = [];
 const focus = new THREE.Vector3();
 const tmp = new THREE.Vector3();
@@ -424,7 +456,7 @@ function frame(now: number) {
       if (card) { card.carry = ball.carry() / YD; card.apex = ball.apex / YD; hud.card(card); }
     }
     if (ball.phase === 'stopped') {
-      state = 'result'; resultT = now; camMode = 'rest';
+      state = 'result'; resultT = now; if (camMode !== 'cine') camMode = 'rest';
       if (card) { Object.assign(card, { done: true, carry: ball.carry() / YD, total: ball.total() / YD, offline: ball.offline() / YD }); hud.card(card); }
       const tot = ball.total() / YD, off = ball.offline() / YD;
       const near = range?.targets.reduce((b, t) => { const d = Math.hypot(t.pos.x - ball.pos.x, t.pos.z - ball.pos.z); return d < b.d ? { d, t } : b; }, { d: Infinity, t: null as any });
@@ -455,7 +487,7 @@ function frame(now: number) {
   const r0 = performance.now();
   post.render(dt);
   (window as any).__frameMs = performance.now() - r0;
-  requestAnimationFrame(frame);
+  if (!manualClock) requestAnimationFrame(frame);
 }
 // size to the visible viewport: phones resize it as the browser's bars show and hide
 const onViewport = () => { const { w, h } = viewport(); renderer.setSize(w, h); post.setSize(w, h); fitCamera(); };
@@ -466,12 +498,25 @@ addEventListener('orientationchange', () => setTimeout(onViewport, 250));
 renderer.domElement.addEventListener('pointerdown', e => {
   sound.unlock();
   if (state === 'result') { nextBall(); return; }
-  if (state === 'flight') { ff.held = true; try { renderer.domElement.setPointerCapture(e.pointerId); } catch { /* not supported */ } }
+  if (state === 'flight') { ff.held = true; pressT = performance.now(); try { renderer.domElement.setPointerCapture(e.pointerId); } catch { /* not supported */ } }
 });
+// a quick tap (not a hold) during the flight skips to the landing
+let pressT = 0;
+renderer.domElement.addEventListener('pointerup', () => { if (state === 'flight' && pressT && performance.now() - pressT < 230) skipToLanding(); pressT = 0; });
 for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) renderer.domElement.addEventListener(ev, () => { ff.held = false; });
 requestAnimationFrame(t => { last = t; frame(t); });
 (window as any).__game = {
-  golfer, ball, hud, aim, aimCtl, get state() { return state; },
+  golfer, ball, hud, aim, aimCtl, shotcam, get state() { return state; }, skipToLanding,
+  /** debug (storyboards): stop the RAF loop and step the game by hand: manual(true); tick(ms) */
+  manual(on: boolean) { manualClock = on; if (!on) requestAnimationFrame(t => { last = t; frame(t); }); },
+  tick(ms: number) { frame(last + ms); },
+  /** debug: a full-power, on-tempo swing with the current club, as if pushed through the pad */
+  demoShot() {
+    if (state !== 'ready') return;
+    Object.assign(SW, { active: true, phase: 'down', depth: 80, deep: [0, 80], off: 30, tTrans: last - 180, driftSum: 0, driftN: 0, trailB: [], trailD: [] });
+    G.topPhi = fullBack(); G.phi = 0; state = 'swinging';
+    strike(last, [0, -60], false);
+  },
   /** debug: plan and fly a shot on the real range terrain, synchronously (distances in yards) */
   sim(club: number, mode: 'full' | 'punch' | 'pitch' | 'flop' = 'full', lie = 0, top = 0, strike = { x: 0, y: 0 }) {
     const P = planShot({ power: 1, offMs: 0, pushMs: 200, angle: 0, drift: 0, released: false, strike, aim: { curve: aim.curve, loft: aim.loft } }, club, mode, LIES[lie], golfer.lefty);

@@ -18,12 +18,14 @@ export interface BallTex {
   printCanvas: HTMLCanvasElement;
   /** tangent-space normal map for three.js */
   normalCanvas: HTMLCanvasElement;
+  /** dimple ambient occlusion for three.js (grey, red channel used) */
+  aoCanvas: HTMLCanvasElement;
   version: number;
 }
 
 const DIMPLE_COUNT = 348;
 const DIMPLE_R = 0.094;     // angular radius of a dimple (rad)
-const DIMPLE_SLOPE = 0.34;   // wall steepness at the rim
+const DIMPLE_SLOPE = 0.46;   // wall steepness at the rim
 
 function buildDimples(normal: Float32Array, ao: Float32Array) {
   // bare sphere first
@@ -58,7 +60,7 @@ function buildDimples(normal: Float32Array, ao: Float32Array) {
         let tx = dx * dot - c[0], ty = dy * dot - c[1], tz = dz * dot - c[2];
         const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
         let s: number;
-        if (d < DIMPLE_R) { const q = d / DIMPLE_R; s = -DIMPLE_SLOPE * q; ao[i] = 1 - 0.09 * (1 - q * q); }
+        if (d < DIMPLE_R) { const q = d / DIMPLE_R; s = -DIMPLE_SLOPE * q; ao[i] = 1 - 0.16 * (1 - q * q) * (0.6 + 0.4 * q); }
         else { const q = (d - DIMPLE_R) / (rim - DIMPLE_R); s = 0.22 * (1 - q) * q * 4 * 0.5; } // rounded land between cups
         const nx = dx + s * tx, ny = dy + s * ty, nz = dz + s * tz, nl = Math.hypot(nx, ny, nz);
         normal[i * 3] = nx / nl; normal[i * 3 + 1] = ny / nl; normal[i * 3 + 2] = nz / nl;
@@ -76,39 +78,36 @@ function proV1x(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
   g.font = big; const w1 = g.measureText('Pro V1').width;
   g.font = small; const w2 = g.measureText('x').width;
   const x0 = -(w1 + w2 + 2) / 2;
-  g.font = big; g.fillStyle = '#111'; g.strokeStyle = '#111'; g.lineWidth = 1.6; g.strokeText('Pro V1', x0, 0); g.fillText('Pro V1', x0, 0);
-  g.font = small; g.fillStyle = '#c8102e'; g.strokeStyle = '#c8102e'; g.lineWidth = 1.2; g.strokeText('x', x0 + w1 + 2, 2); g.fillText('x', x0 + w1 + 2, 2);
+  g.font = big; g.fillStyle = '#16161a'; g.fillText('Pro V1', x0, 0);
+  g.font = small; g.fillStyle = '#c8102e'; g.fillText('x', x0 + w1 + 2, 2);
   g.restore();
 }
 
 function drawPrint(g: CanvasRenderingContext2D, align: boolean) {
   g.clearRect(0, 0, BT_W, BT_H);
   const cx = 0.25 * BT_W, cy = BT_H / 2;
-  // sidestamp: black script wordmark
+  // front: the thin black script sidestamp with the play number under it (as on the real ball)
   g.save();
-  g.translate(cx, cy + 6);
-  g.scale(1, 1.15);
-  g.fillStyle = '#111'; g.strokeStyle = '#111'; g.lineWidth = 3.2; g.lineJoin = 'round';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = '66px "Yellowtail", "Brush Script MT", "Segoe Script", cursive';
-  g.strokeText('Titleist', 0, 0); g.fillText('Titleist', 0, 0);
+  g.translate(cx, cy - 4); g.scale(1.06, 1.18);
+  g.fillStyle = '#16161a'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = '60px "Yellowtail", "Brush Script MT", "Segoe Script", cursive';
+  g.fillText('Titleist', 0, 0);
+  // the real wordmark is a fine pen script: shave the strokes thinner
+  g.globalCompositeOperation = 'destination-out'; g.lineWidth = 2.4; g.lineJoin = 'round'; g.strokeText('Titleist', 0, 0); g.globalCompositeOperation = 'source-over';
   g.restore();
-  // model mark under the sidestamp so the face you see at address reads "Pro V1x"
-  proV1x(g, cx, cy + 74, 0.9);
-  if (align) {
-    g.fillStyle = '#111';
-    g.fillRect(cx - 120, cy + 44, 240, 3);
-    g.beginPath(); g.moveTo(cx + 126, cy + 45.5); g.lineTo(cx + 112, cy + 38); g.lineTo(cx + 112, cy + 53); g.fill();
-  }
-  // the other side: the "Pro V1x" model mark with the red play number above it
-  const bx = 0.75 * BT_W;
-  proV1x(g, bx, cy + 4, 1);
   g.save();
-  g.translate(bx, cy - 92); g.scale(1, 1.25);
+  g.translate(cx + 4, cy + 62); g.scale(1, 1.3);
   g.fillStyle = '#c8102e'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = '700 58px "Barlow", "Arial", sans-serif';
+  g.font = '400 40px "Barlow", "Arial", sans-serif';
   g.fillText('1', 0, 0);
+  g.globalCompositeOperation = 'destination-out'; g.lineWidth = 1.6; g.strokeText('1', 0, 0); g.globalCompositeOperation = 'source-over';
   g.restore();
+  // back: the model mark with a thin alignment line under it
+  const bx = 0.75 * BT_W;
+  proV1x(g, bx, cy, 1);
+  g.fillStyle = '#16161a';
+  g.fillRect(bx - 74, cy + 36, 148, 2.2);
+  if (align) { g.fillRect(bx - 150, cy + 36, 300, 2.2); }
 }
 
 function bakeTangentMap(normal: Float32Array, out: HTMLCanvasElement) {
@@ -141,7 +140,9 @@ export function ballTex(align = false): BallTex {
   bakeTangentMap(normal, normalCanvas);
   const pg = printCanvas.getContext('2d', { willReadFrequently: true })!;
   drawPrint(pg, align);
-  shared = { normal, ao, print: pg.getImageData(0, 0, BT_W, BT_H).data, printCanvas, normalCanvas, version: 1 };
+  const aoCanvas = document.createElement('canvas'); aoCanvas.width = BT_W; aoCanvas.height = BT_H;
+  { const ag = aoCanvas.getContext('2d')!, img = ag.createImageData(BT_W, BT_H); for (let i = 0; i < ao.length; i++) { const v = ao[i] * 255; img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255; } ag.putImageData(img, 0, 0); }
+  shared = { normal, ao, print: pg.getImageData(0, 0, BT_W, BT_H).data, printCanvas, normalCanvas, aoCanvas, version: 1 };
   const refresh = () => { drawPrint(pg, align); shared!.print = pg.getImageData(0, 0, BT_W, BT_H).data; shared!.version++; listeners.forEach(f => f()); };
   try {
     Promise.all(['64px "Yellowtail"', 'italic 700 46px "Barlow Condensed"', '700 58px "Barlow"'].map(f => document.fonts.load(f))).then(refresh, () => {});
@@ -213,7 +214,7 @@ export function shadeBall(size: number, m: Mat3): HTMLCanvasElement {
       const fres = Math.pow(1 - vz, 3) * 0.18;
       const ao = AO[i];
       const lit = (0.66 * diff + amb) * ao;
-      let rC = 0.975 * lit, gC = 0.972 * lit, bC = 0.962 * lit;
+      let rC = 0.972 * lit, gC = 0.963 * lit, bC = 0.94 * lit;   // soft, slightly warm white
       const pa = P[i * 4 + 3] / 255;
       if (pa > 0) { rC = rC * (1 - pa) + (P[i * 4] / 255) * lit * pa; gC = gC * (1 - pa) + (P[i * 4 + 1] / 255) * lit * pa; bC = bC * (1 - pa) + (P[i * 4 + 2] / 255) * lit * pa; }
       rC += spec + fres * 0.75; gC += spec + fres * 0.82; bC += spec + fres;

@@ -189,7 +189,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   weldNormals(shirtMesh);
   const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.82, sheen: 0.3, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.6), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   applyFabric(pantsMat, 'chino', fu);
-  weldNormals(add('pants', pantsMat));
+  const pantsMesh = add('pants', pantsMat); weldNormals(pantsMesh); if (pantsMesh && location.search.includes('dbgnopants')) pantsMesh.visible = false;
   const glove = new THREE.MeshPhysicalMaterial({ color: O.glove, roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color('#ffffff'), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   applyFabric(glove, 'glove', fu);
   add('glove', glove);

@@ -92,10 +92,10 @@ function ribbon(pts: [number, number][], w0: number, w1: number) {
 }
 const buzz = (p: number | number[]) => { try { navigator.vibrate?.(p); } catch { /* not allowed */ } };
 
-/** the swing-stick puck: a real Pro V1x, sidestamp facing the player, cached as an image */
+/** the swing-stick puck: a real Pro V1x, model mark facing the player, cached as an image */
 let puckCache = '';
 function puckURL() {
-  if (!puckCache) { const m = mat3Identity(); mat3Rotate(m, 0.18, 0); puckCache = shadeBall(160, m).toDataURL(); }
+  if (!puckCache) { const m = mat3Identity(); mat3Rotate(m, 0, Math.PI); mat3Rotate(m, 0.18, 0); puckCache = shadeBall(160, m).toDataURL(); }
   return puckCache;
 }
 onBallTexUpdate(() => { puckCache = ''; const u = puckURL(); document.querySelectorAll('.puck-img').forEach(i => i.setAttribute('href', u)); });
