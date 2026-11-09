@@ -86,6 +86,13 @@ export class ShotCam {
   /** start at impact. faceDir: where the golfer faces at address (towards the ball); side: +1 if the golfer's
    *  back is on +lateral of the target line (lefty), -1 otherwise */
   variant: ShotCamVariant = 'orbit';
+  /** the camera is on the golfer (the HUD keeps clear of him) */
+  get facing() {
+    if (!this.active) return false;
+    if (this.variant === 'low') return false;
+    if (this.variant === 'cut') return !this.bc && this.t < VARIANT.cut.stay;
+    return this.phase === 'face';
+  }
   /** sim time scale the variant asks for (0 = frozen: bullet time) */
   timeScale = 1;
   private bc: THREE.Vector3 | null = null;   // the broadcast camera (cut / low)

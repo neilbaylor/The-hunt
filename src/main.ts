@@ -410,7 +410,7 @@ function updateCamera(dt: number, now: number) {
     fitCamera(); camera.fov += P.dFov; camera.updateProjectionMatrix(); cineLens = true;
     camera.position.copy(camPos); camera.lookAt(camLook); camera.rotateZ(P.roll);
     post.setDof(P.dof);
-    hud.setCine(shotcam.phase);
+    hud.setCine(shotcam.facing ? 'face' : 'ball');
     return;
   }
   if (cineLens) { cineLens = false; shotcam.stop(); fitCamera(); hud.setCine(null); }

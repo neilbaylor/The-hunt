@@ -112,8 +112,10 @@ export class FaceBadge {
       const h = this.head(); if (!h) return;
       const hp = new THREE.Vector3(); h.getWorldPosition(hp);
       // face-on from the body's front (the head bows over the ball at address, so the head's own axis looks at the turf)
-      const bo = this.body() ?? h;
-      const f = new THREE.Vector3(0, 0, 1).transformDirection(bo.matrixWorld); f.y = 0; if (f.lengthSq() < 1e-4) f.set(0, 0, 1); f.normalize();
+      // the head's own facing, flattened: face-on whether he's bowed over the ball or turned to the target at the finish
+      let f = new THREE.Vector3(0, 0, 1).transformDirection(h.matrixWorld); f.y = 0;
+      if (f.lengthSq() < 0.05) { const bo = this.body(); if (bo) f = new THREE.Vector3(0, 0, 1).transformDirection(bo.matrixWorld).setY(0); }
+      if (f.lengthSq() < 1e-4) f.set(0, 0, 1); f.normalize();
       this.fwd.lerp(f, 0.35).normalize();
       const side = new THREE.Vector3(-this.fwd.z, 0, this.fwd.x).normalize();
       const sway = this.shake > 0 ? Math.sin(this.t * 22) * 0.12 * this.shake : 0;
