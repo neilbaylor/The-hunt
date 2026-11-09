@@ -312,7 +312,7 @@ export class Golfer {
         let parentQ = qh, acc = 0;
         chain.forEach((b, si) => {
           acc += curls[fi][si];
-          const axis = fi === 0 ? E.palm[s].clone().cross(E.handDir[s]).normalize().lerp(E.curlAxis[s], 0.5).normalize() : E.curlAxis[s];
+          const axis = fi === 0 ? E.curlAxis[s].clone().lerp(E.handDir[s], 0.6).normalize() : E.curlAxis[s];
           const q = qh.clone().multiply(new THREE.Quaternion().setFromAxisAngle(axis, acc));
           local(b, parentQ, q); parentQ = q;
         });

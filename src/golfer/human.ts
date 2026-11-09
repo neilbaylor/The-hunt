@@ -350,7 +350,9 @@ float hh(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * 
     const across = J[bi(`index_01_${sfx}`)].clone().sub(J[bi(`pinky_01_${sfx}`)]).normalize();
     const n = new THREE.Vector3().crossVectors(dir, across).normalize();
     // the palm faces the thigh at rest: toward -x for the left hand, +x for the right
-    if ((s === 'L' && n.x > 0) || (s === 'R' && n.x < 0)) n.negate();
+    // the palm is the side the fingertips curl toward: the finger chain bends that way in the bind pose
+    const tip = Tl[bi(`middle_03_${sfx}`)].clone().sub(J[bi(`middle_01_${sfx}`)]);
+    if (tip.dot(n) < 0) n.negate();
     extras.palm[s].copy(n);
     extras.curlAxis[s].crossVectors(dir, n).normalize(); // rotating fingers about this bends them toward the palm
     extras.handDir[s].copy(dir);
