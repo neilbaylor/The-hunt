@@ -7,6 +7,7 @@
 // The sidestamp is centred at u = 0.25, which faces +Z (toward the viewer) with no rotation.
 
 import scriptSvg from '../assets/brand/titleist-script.svg?raw';
+import markSvg from '../assets/brand/prov1x-mark.svg?raw';
 
 export const BT_W = 1024, BT_H = 512;
 
@@ -26,7 +27,7 @@ export interface BallTex {
 }
 
 const DIMPLE_COUNT = 348;
-const DIMPLE_DEPTH = 0.0105;   // cup depth in ball radii (real: ~0.25 mm on a 21 mm radius): large, shallow cups
+const DIMPLE_DEPTH = 0.0092;   // cup depth in ball radii (real: ~0.25 mm on a 21 mm radius): large, shallow cups
 const DIMPLE_RC = 0.112;      // rad: cup radius (cells are ~0.102 inscribed, ~0.118 circumscribed)
 const CELL_REACH = 0.19;       // rad: how far a dimple's cell can reach (≥ the largest cell's circumradius)
 /** print map resolution (2× the normal map, so the script stays crisp up close) */
@@ -60,7 +61,7 @@ function buildDimples(normal: Float32Array, ao: Float32Array) {
   for (let i = 0; i < n; i++) {
     const x = Math.min(1, d1[i] / DIMPLE_RC), cup = Math.pow(1 - x * x, 1.5);
     H[i] = -DIMPLE_DEPTH * cup;
-    ao[i] = 1 - 0.05 * cup;
+    ao[i] = 1 - 0.035 * cup;
     void d2;
   }
   const dth = Math.PI / BT_H, dph = (Math.PI * 2) / BT_W;
@@ -82,48 +83,26 @@ function buildDimples(normal: Float32Array, ao: Float32Array) {
   }
 }
 
-/** the back of the ball: PRO V1x (small caps, all black) between two arrow alignment lines, centred on (x, y).
- *  Widths are in degrees of longitude so the mark sits on the sphere at the real proportions. */
-function sideMark(g: CanvasRenderingContext2D, x: number, y: number, degX: number) {
-  const textHalf = 16.5 * degX, arrIn = 18.8 * degX, arrOut = 38 * degX, cap = 13;
-  g.save(); g.translate(x, y); g.fillStyle = '#121214'; g.textBaseline = 'alphabetic'; g.textAlign = 'left';
-  // lay the letters out at a nominal size, then scale to the target width
-  const big = '700 40px "Barlow", "Arial", sans-serif', small = '700 31px "Barlow", "Arial", sans-serif';
-  const parts: [string, string][] = [['P', big], ['RO', small], [' ', small], ['V', big], ['1', big], ['x', small]];
-  let w = 0; for (const [t, f] of parts) { g.font = f; w += g.measureText(t).width + 1.5; }
-  const k = (2 * textHalf) / w, capNom = 40 * 0.7;
-  g.save(); g.scale(k, (cap / capNom) * 1.05);
-  let cx = -w / 2;
-  g.strokeStyle = '#121214'; g.lineWidth = 1.4; g.lineJoin = 'round';   // a touch bolder than the 700 weight
-  for (const [t, f] of parts) { g.font = f; g.fillText(t, cx, capNom / 2); g.strokeText(t, cx, capNom / 2); cx += g.measureText(t).width + 1.5; }
-  g.restore();
-  // arrows: a sharp point outward, a broad notched tail by the text
-  const h = cap * 0.78, notch = 2.4 * degX;
-  for (const sgn of [-1, 1]) {
-    g.beginPath();
-    g.moveTo(sgn * arrOut, 0); g.lineTo(sgn * arrIn, -h / 2); g.lineTo(sgn * (arrIn + notch), 0); g.lineTo(sgn * arrIn, h / 2); g.closePath(); g.fill();
-  }
+/** a traced print mark (an SVG in lon/lat degrees): its group transform and paths */
+function traced(svg: string) {
+  const m = (/matrix\(([^)]+)\)/.exec(svg)?.[1] ?? '1,0,0,1,0,0').split(',').map(Number);
+  const paths = [...svg.matchAll(/<path d="([^"]+)"/g)].map(x => new Path2D(x[1]));
+  return { m, paths };
+}
+const SCRIPT = traced(scriptSvg), MARK = traced(markSvg);
+/** draw a traced mark centred at (x, y) in the 1024 × 512 print space */
+function drawTraced(g: CanvasRenderingContext2D, t: ReturnType<typeof traced>, x: number, y: number, degX: number, degY: number) {
+  g.save(); g.translate(x, y); g.scale(degX, degY); g.transform(t.m[0], t.m[1], t.m[2], t.m[3], t.m[4], t.m[5]);
+  g.fillStyle = '#121214'; for (const p of t.paths) g.fill(p);
   g.restore();
 }
-
-/** the traced sidestamp script (src/assets/brand/titleist-script.svg): its group transform and paths */
-const SCRIPT = (() => {
-  const m = (/matrix\(([^)]+)\)/.exec(scriptSvg)?.[1] ?? '1,0,0,1,0,0').split(',').map(Number);
-  const paths = [...scriptSvg.matchAll(/<path d="([^"]+)"/g)].map(x => new Path2D(x[1]));
-  return { m, paths };
-})();
 
 function drawPrint(g: CanvasRenderingContext2D, align: boolean) {
   g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, PR_W, PR_H);
   g.setTransform(PR_W / BT_W, 0, 0, PR_H / BT_H, 0, 0);   // lay out in the 1024 × 512 space
   const cx = 0.25 * BT_W, cy = BT_H / 2, degX = BT_W / 360, degY = BT_H / 180;
   // front: the "Titleist" script, traced from a photo of the real ball and stored in lon/lat degrees (see the SVG)
-  g.save();
-  g.translate(cx, cy); g.scale(degX, degY);
-  const m = SCRIPT.m; g.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
-  g.fillStyle = '#121214';
-  for (const p of SCRIPT.paths) g.fill(p);
-  g.restore();
+  drawTraced(g, SCRIPT, cx, cy, degX, degY);
   // the red play number, hand-lettered: a flag at the top, a straight stem and a small foot
   g.save();
   g.translate(cx, cy + 3.5 * degY);
@@ -132,8 +111,8 @@ function drawPrint(g: CanvasRenderingContext2D, align: boolean) {
   g.beginPath(); g.moveTo(-h * 0.2, -h * 0.34); g.quadraticCurveTo(-h * 0.02, -h * 0.4, h * 0.06, -h * 0.5); g.lineTo(h * 0.02, h * 0.42); g.stroke();
   g.beginPath(); g.moveTo(-h * 0.24, h * 0.47); g.quadraticCurveTo(0, h * 0.4, h * 0.26, h * 0.46); g.stroke();
   g.restore();
-  // back: "PRO V1x" in black small caps on the equator, flanked by long tapered alignment arrows (~60% of the width)
-  sideMark(g, 0.75 * BT_W, cy, degX);
+  // back: PRO V1x between two long tapered arrow lines on the equator, traced from a photo (see the SVG)
+  drawTraced(g, MARK, 0.75 * BT_W, cy, degX, degY);
   void align;
   g.setTransform(1, 0, 0, 1, 0, 0);
 }
