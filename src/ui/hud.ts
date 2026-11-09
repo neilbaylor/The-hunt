@@ -26,6 +26,13 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 let uid = 0;
 
 /** the shot's flight in miniature: ball on the left, dotted flight, where it lands and how far it rolls */
+/** how each club reads in the UI: the badge in the chip's circle and its full name */
+export const CLUB_UI: Record<string, [string, string]> = {
+  '1W': ['D', 'Driver'], '3W': ['3W', '3 Wood'], '5W': ['5W', '5 Wood'], '4H': ['Hy', 'Hybrid'],
+  '5i': ['5i', '5 Iron'], '6i': ['6i', '6 Iron'], '7i': ['7i', '7 Iron'], '8i': ['8i', '8 Iron'], '9i': ['9i', '9 Iron'],
+  'PW': ['PW', 'PW'], '50°': ['GW', 'GW · 50°'], '56°': ['SW', 'SW · 56°'], '60°': ['LW', 'LW · 60°'],
+};
+const clubUI = (id: string) => CLUB_UI[id] ?? [id, id];
 const modeGlyph = (m: ShotMode, _w = 3) => {
   const [lx, ay, roll] = { full: [46, 3, 6], punch: [34, 17, 16], pitch: [32, 8, 5], flop: [24, 1, 0] }[m]; // land x, apex y, roll
   const x0 = 6, gy = 23, cx = (x0 + lx) / 2, cy = 2 * ay - gy; // quadratic control point so the apex sits at ay
@@ -332,12 +339,17 @@ export class Hud {
 
   render(card?: CardData | null) {
     const id = CLUB_SPECS[this.club].id, M = MODES[this.mode];
-    this.q('#clubSlot').innerHTML = `<button type="button" class="hud-panel club-btn" data-act="club" aria-label="Club: ${CLUB_SPECS[this.club].name}, ${M.max(id)} yards. Change club"><span class="eyebrow-h">Club</span><span class="big">${id}</span><span class="yds">${M.max(id)}<small>yds</small></span><span class="cap">${this.skin === 'f' ? CLUB_SPECS[this.club].name.replace('Pitching wedge', 'Pitch wedge') : `${CLUB_SPECS[this.club].name} · ${M.label.toLowerCase()} max`}</span></button>`;
-    this.q('#modeSlot').innerHTML = `<button type="button" class="hud-panel mode-btn" data-act="mode" aria-label="Swing mode: ${M.label}. Change swing mode"><span class="eyebrow-h">Swing</span><span class="big">${M.label}</span>${modeGlyph(this.mode)}</button>`;
+    const [badge, cname] = clubUI(id);
+    this.q('#clubSlot').innerHTML = `<button type="button" class="hud-panel club-btn" data-act="club" aria-label="Club: ${cname}, ${M.label} shot, ${M.max(id)} yards. Change club or shot"><span class="eyebrow-h">Club</span><span class="big${badge.length > 2 ? ' sm' : ''}">${badge}</span><span class="yds">${M.max(id)}<small>yds</small></span><span class="cap">${cname}${this.mode !== 'full' ? ` · <em>${M.label}</em>` : ''}</span></button>`;
+    this.q('#modeSlot').innerHTML = '';
     const L = LIES[this.lie];
     const [word, q, kind] = LIE_WORD[L.name] ?? ['Okay', 'ok', 'fairway'];
     const where = L.side ? (L.side < 0 ? 'starts left' : 'starts right') : 'flat';
-    this.q('#lieSlot').innerHTML = this.skin === 'f'
+    const short: Record<string, string> = { 'Tee box': 'Tee', 'Fairway': 'Fairway', 'First cut': 'Cut', 'Rough': 'Rough', 'Fairway bunker': 'Sand' };
+    const qc = q === 'good' ? 'good' : q === 'bad' ? 'bad' : 'warn';
+    this.q('#lieSlot').innerHTML = this.skin === 'f' && !this.lieOpen
+      ? `<button type="button" class="hud-panel lie-pill" data-act="lie" aria-label="Lie: ${L.name}, ${word}${L.slope ? `, ${L.slope} degree slope` : ''}. Tap for details"><i class="dot ${qc}" aria-hidden="true"></i><b>${short[L.name] ?? L.name}</b>${L.slope ? `<small>${L.slope}° ${L.side < 0 ? '↖' : '↗'}</small>` : ''}</button>`
+      : this.skin === 'f'
       ? `<button type="button" class="hud-panel lie-card lie-w${this.lieOpen ? '' : ' mini'}" data-act="lie" aria-label="Lie: ${L.name}, ${word}, ${L.pct} percent distance, ${L.slope} degree slope, ball ${where}. Tap for another sample lie">
         ${lieScene(L.slope, L.side, kind)}
         <span class="lie-txt"><span class="lie-name${L.name.length > 10 ? ' long' : ''}">${L.name}</span><span class="lie-q ${q}">${word} · ${L.pct}%</span>
@@ -425,8 +437,10 @@ export class Hud {
   }
 
   private clubList() {
-    const M = MODES[this.mode];
-    return `<div class="list clubs" role="group" aria-label="Clubs">${CLUB_SPECS.map((c, i) => `<button type="button" data-club="${i}" aria-pressed="${i === this.club}" ${M.ok(c.id) ? '' : 'disabled'}><b>${c.id}</b><span>${M.ok(c.id) ? M.max(c.id) + ' yds' : '—'}</span></button>`).join('')}</div>`;
+    const M = MODES[this.mode], id = CLUB_SPECS[this.club].id;
+    // shot type for the selected club (only the ones it can play), then the clubs at that shot type's yardage
+    const seg = (Object.keys(MODES) as ShotMode[]).filter(k => MODES[k].ok(id)).map(k => `<button type="button" data-mode="${k}" aria-pressed="${k === this.mode}">${MODES[k].label}</button>`).join('');
+    return `<div class="seg" role="group" aria-label="Shot type">${seg}</div><div class="list clubs" role="group" aria-label="Clubs">${CLUB_SPECS.map((c, i) => { const ok = M.ok(c.id); const [b, n] = clubUI(c.id); return `<button type="button" data-club="${i}" aria-pressed="${i === this.club}" aria-label="${n}, ${ok ? M.max(c.id) : MODES.full.max(c.id)} yards"><b>${b === 'D' ? 'Dr' : b}</b><span>${ok ? M.max(c.id) : MODES.full.max(c.id)} yds</span></button>`; }).join('')}</div>`;
   }
   private modeList() {
     const id = CLUB_SPECS[this.club].id;
@@ -438,8 +452,12 @@ export class Hud {
     const t = e.target as HTMLElement;
     const a = t.closest('[data-act]') as HTMLElement | null, cb = t.closest('[data-club]') as HTMLButtonElement | null, mb = t.closest('[data-mode]') as HTMLButtonElement | null;
     const cp = this.q('#clubPop'), mp = this.q('#modePop');
-    if (cb && !cb.disabled) { this.club = +cb.dataset.club!; cp.hidden = true; this.render(); this.onClub(this.club); return; }
-    if (mb && !mb.disabled) { this.mode = mb.dataset.mode as ShotMode; mp.hidden = true; this.render(); this.onMode(this.mode); return; }
+    if (cb && !cb.disabled) {
+      this.club = +cb.dataset.club!; cp.hidden = true;
+      if (!MODES[this.mode].ok(CLUB_SPECS[this.club].id)) { this.mode = 'full'; this.render(); this.onMode(this.mode); }
+      this.render(); this.onClub(this.club); return;
+    }
+    if (mb && !mb.disabled) { this.mode = mb.dataset.mode as ShotMode; this.render(); cp.innerHTML = this.clubList(); this.onMode(this.mode); return; }
     if (!a) { if (!t.closest('.pop')) this.closePops(); return; }
     const act = a.dataset.act;
     if (act === 'club') { mp.hidden = true; cp.hidden = !cp.hidden; cp.innerHTML = this.clubList(); }

@@ -487,3 +487,19 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 .pad-f .power-arc { filter: drop-shadow(0 0 5px rgba(255,190,40,.85)); }
 .pad-f .bead circle { stroke-width: 1.6; }
 @media (prefers-reduced-motion: reduce) { .hud .spin.pulse canvas { animation: none; } .pad-f { transition: none; } }
+
+/* club chip = club + yardage (+ a tiny shot-type tag); the picker holds the shot type as a segmented control */
+.hud .tl .row #modeSlot:empty { display: none; }
+.hud.skin-f .club-btn { width: auto; min-width: 128px; padding-right: 14px; }
+.hud.skin-f .club-btn .big.sm { font-size: 18px; }
+.hud.skin-f .club-btn .cap em { font-style: normal; color: var(--red); font-weight: 800; }
+.hud.skin-f .club-btn .cap { white-space: nowrap; }
+.hud .pop .seg { display: flex; gap: 4px; padding: 8px 8px 0; }
+.hud .pop .seg button { all: unset; flex: 1; text-align: center; cursor: pointer; padding: 8px 6px; border-radius: 999px; font: 600 14px/1 var(--h-display); color: var(--navy); background: rgba(19,41,75,.07); }
+.hud .pop .seg button[aria-pressed="true"] { background: var(--navy); color: #fff6e3; box-shadow: 0 0 0 2px var(--flag); }
+.hud .pop .seg button:focus-visible { outline: 2px solid var(--h-accent); }
+/* lie pill: the word, a quality dot and the slope when there is one */
+.hud.skin-f .lie-pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px 8px 10px; border-radius: 999px; font: 600 14px/1 var(--h-display); color: var(--navy); white-space: nowrap; }
+.lie-pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--h-good); box-shadow: 0 0 0 2px rgba(255,255,255,.8); }
+.lie-pill .dot.warn { background: var(--h-warn); } .lie-pill .dot.bad { background: var(--h-bad); }
+.lie-pill small { font: 800 11px/1 var(--h-body); color: var(--red); }
