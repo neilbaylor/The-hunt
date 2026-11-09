@@ -554,7 +554,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const outsoleMat = new THREE.MeshStandardMaterial({ color: '#7f5434', roughness: 0.7 });
   const laceMat = new THREE.MeshStandardMaterial({ color: '#f4f3ef', roughness: 0.75 });
   const liningMat = new THREE.MeshStandardMaterial({ color: '#f2f1ec', roughness: 0.95, side: THREE.DoubleSide });
-  const spikeMat = new THREE.MeshStandardMaterial({ color: '#2b2622', roughness: 0.6, metalness: 0.2 });
+  const spikeMat = new THREE.MeshStandardMaterial({ color: '#8a7350', roughness: 0.5, metalness: 0.35 });   // bronze-tone soft spikes, not black
   for (const sfx of ['l', 'r'] as const) {
     const f = M.feet[sfx], fb = M.bones.indexOf(`foot_${sfx}`);
     const { len, z0, hw } = shoeDims(f);
@@ -656,14 +656,40 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const wall = new THREE.BufferGeometry(); wall.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3)); wall.setAttribute('uv', new THREE.Float32BufferAttribute(wu, 2)); wall.setIndex(wi); wall.computeVertexNormals();
       grp.add(new THREE.Mesh(wall, new THREE.MeshStandardMaterial({ map: soleTex, roughness: 0.55, side: THREE.DoubleSide })));
       const tris = THREE.ShapeUtils.triangulateShape(out, []);
-      const cap = (y: (t: number) => number, mat: THREE.Material, flip: boolean) => {
-        const cp: number[] = []; out.forEach((p, i) => cp.push(p.x, y(ts[i]), p.y));
-        const ci: number[] = []; tris.forEach(([a, b, c]) => (flip ? ci.push(a, c, b) : ci.push(a, b, c)));
-        const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3)); cg.setIndex(ci); cg.computeVertexNormals();
+      // the leather outsole: tan-brown, a slightly darker heel block, a stitch line round the edge
+      const minX = Math.min(...out.map(p => p.x)), maxX = Math.max(...out.map(p => p.x)), minZ = Math.min(...out.map(p => p.y)), maxZ = Math.max(...out.map(p => p.y));
+      const UVx = (x: number) => (x - minX) / (maxX - minX), UVz = (z: number) => (z - minZ) / (maxZ - minZ);
+      const botTex = canvasTex(256, 768, g => {
+        const W = 256, H = 768, X = (x: number) => UVx(x) * W, Y = (z: number) => (1 - UVz(z)) * H;
+        g.fillStyle = '#7f5434'; g.fillRect(0, 0, W, H);
+        for (let i = 0; i < 2500; i++) { g.fillStyle = rand() < 0.5 ? 'rgba(60,34,16,.10)' : 'rgba(200,150,100,.08)'; g.fillRect(rand() * W, rand() * H, 2 + rand() * 6, 1 + rand()); }
+        // heel block (darker, stacked leather/rubber top-lift) and its breast line
+        const hb = Y(zAt(0.255));
+        g.save(); g.beginPath(); out.forEach((p, i) => (i ? g.lineTo(X(p.x), Y(p.y)) : g.moveTo(X(p.x), Y(p.y)))); g.closePath(); g.clip();
+        g.fillStyle = 'rgba(70,40,20,.38)'; g.fillRect(0, hb, W, H - hb);
+        g.strokeStyle = 'rgba(50,28,12,.6)'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, hb); g.lineTo(W, hb); g.stroke();
+        // fine cross-hatch tread on the forefoot, very subtle
+        g.strokeStyle = 'rgba(60,34,16,.12)'; g.lineWidth = 1.5;
+        for (let k = -H; k < H; k += 12) { g.beginPath(); g.moveTo(0, k); g.lineTo(W, k + W * 0.6); g.stroke(); g.beginPath(); g.moveTo(0, k + W * 0.6); g.lineTo(W, k); g.stroke(); }
+        g.restore();
+        // edge stitching, inset from the outline
+        const inset = out.map(p => { const d = new THREE.Vector2(p.x - (minX + maxX) / 2, 0).setLength(0.0045); return new THREE.Vector2(p.x - d.x, p.y); });
+        g.strokeStyle = 'rgba(225,200,160,.75)'; g.setLineDash([6, 5]); g.lineWidth = 2; g.beginPath();
+        inset.forEach((p, i) => (i ? g.lineTo(X(p.x), Y(p.y)) : g.moveTo(X(p.x), Y(p.y)))); g.closePath(); g.stroke(); g.setLineDash([]);
+      }, true, 1);
+      botTex.wrapS = botTex.wrapT = THREE.ClampToEdgeWrapping; botTex.repeat.set(1, 1);
+      const cap = (y: (t: number) => number, mat: THREE.Material, down: boolean) => {
+        const cp: number[] = [], cu: number[] = []; out.forEach((p, i) => { cp.push(p.x, y(ts[i]), p.y); cu.push(UVx(p.x), UVz(p.y)); });
+        const build = (flip: boolean) => { const ci: number[] = []; tris.forEach(([a, b, c]) => (flip ? ci.push(a, c, b) : ci.push(a, b, c))); return ci; };
+        const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3)); cg.setAttribute('uv', new THREE.Float32BufferAttribute(cu, 2));
+        cg.setIndex(build(false)); cg.computeVertexNormals();
+        // face the right way (bottom: down, top: up), checked rather than assumed, so it's lit as a front face
+        const na = cg.getAttribute('normal') as THREE.BufferAttribute; let ny = 0; for (let i = 0; i < na.count; i++) ny += na.getY(i);
+        if ((ny < 0) !== down) { cg.setIndex(build(true)); cg.computeVertexNormals(); }
         grp.add(new THREE.Mesh(cg, mat));
       };
-      cap(yTop, new THREE.MeshStandardMaterial({ color: '#2e2018', roughness: 0.6, side: THREE.DoubleSide }), false);
-      cap(yBot, new THREE.MeshStandardMaterial({ color: '#2a2420', roughness: 0.9, side: THREE.DoubleSide }), true);
+      cap(yTop, new THREE.MeshStandardMaterial({ color: '#3a281b', roughness: 0.6 }), false);
+      cap(yBot, new THREE.MeshStandardMaterial({ map: botTex, roughness: 0.7 }), true);
       void soleMat; void weltMat; void outsoleMat;
       // soft spikes under the heel and forefoot
       for (const [t, xo] of [[0.1, -0.45], [0.1, 0.45], [0.2, 0], [0.56, -0.55], [0.56, 0.55], [0.68, -0.15], [0.68, 0.5], [0.8, -0.4], [0.8, 0.35], [0.9, 0]] as [number, number][]) {
