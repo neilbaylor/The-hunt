@@ -225,7 +225,9 @@ export class Golfer {
         const wrist = grip.clone().addScaledVector(palm, -rMcp).addScaledVector(dir, -along).addScaledVector(palm, -depth);
         return { dir, palm, wrist };
       };
-      const fL = frame('L', gl), fR = frame('R', gr);
+      // overlap grip: the trail pinky rides over the lead index, so the hands sit ~7 cm apart (the club's own
+      // trail grip point is 9 cm below the lead one)
+      const fL = frame('L', gl), fR = frame('R', gl.clone().lerp(gr, 0.78));
       this.handFrame = { L: fL, R: fR };
       this.hands = { group: new THREE.Group(), wristLead: fL.wrist, wristTrail: fR.wrist };
     } else {
@@ -476,7 +478,7 @@ export class Golfer {
           chain.forEach((b, si) => {
             const d = P.clone().sub(axisP), along = d.dot(axisD);
             const radial = d.clone().addScaledVector(axisD, -along); const rl = radial.length(); radial.normalize();
-            const target = axisP.clone().addScaledVector(axisD, along - (0.03 + 0.012 * si)).addScaledVector(radial, rFinger + 0.15 * Math.max(0, rl - rFinger));
+            const target = axisP.clone().addScaledVector(axisD, along - (0.03 + 0.012 * si)).addScaledVector(radial, (s === 'L' ? rFinger - 0.002 : rFinger) + (s === 'L' ? 0 : 0.15) * Math.max(0, rl - rFinger));
             const segW = segs[si].clone().applyQuaternion(qPrev).normalize();
             const q = new THREE.Quaternion().setFromUnitVectors(segW, target.sub(P).normalize()).multiply(qPrev);
             local(b, parentQ, q); parentQ = q; qPrev = q;
@@ -488,15 +490,21 @@ export class Golfer {
         const segs = [offs[1], offs[2], offs[2].clone().multiplyScalar(0.85)];       // the last one: to the fingertip
         let P = handP.clone().add(offs[0].clone().applyQuaternion(qh));
         const axis = E.curlAxis[s], qr = new THREE.Quaternion();
+        // fingers lie against each other on a grip (the mesh's bind hand has them spread): turn each one toward the
+        // middle finger about the palm normal before it wraps
+        const mid0 = bones[E.fingers[s][2][0]].position, across = offs[0].clone().sub(mid0);
+        const side = Math.sign(new THREE.Vector3().crossVectors(E.palm[s], E.handDir[s]).dot(across));
+        const qSpread = new THREE.Quaternion().setFromAxisAngle(E.palm[s], -side * [0, 0.1, 0, 0.06, 0.12][fi]);
+        const qhs = qh.clone().multiply(qSpread);
         chain.forEach((b, si) => {
           let best = 0, bestErr = Infinity;
-          for (let d = -0.1; d <= 1.8; d += 0.03) {
-            const q = qh.clone().multiply(qr.setFromAxisAngle(axis, acc + d));
+          for (let d = -0.6; d <= 1.8; d += 0.03) {
+            const q = qhs.clone().multiply(qr.setFromAxisAngle(axis, acc + d));
             const err = Math.abs(fromAxis(P.clone().add(segs[si].clone().applyQuaternion(q))) - rFinger);
             if (err < bestErr - 1e-5) { bestErr = err; best = d; }
           }
           acc += best;
-          const q = qh.clone().multiply(new THREE.Quaternion().setFromAxisAngle(axis, acc));
+          const q = qhs.clone().multiply(new THREE.Quaternion().setFromAxisAngle(axis, acc));
           local(b, parentQ, q); parentQ = q;
           P.add(segs[si].clone().applyQuaternion(q));
         });
