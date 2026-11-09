@@ -13,8 +13,9 @@ import type { Range } from '../world/range';
 const YD = 0.9144;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-export interface Aim { dir: number; distanceYds: number; curve: number }
-export const aim: Aim = { dir: 0, distanceYds: 165, curve: 0 };
+export interface Aim { dir: number; distanceYds: number; curve: number; loft: number }
+/** loft: -1..1 (launch lower .. higher), set with the loft arc on the left in the aim view */
+export const aim: Aim = { dir: 0, distanceYds: 165, curve: 0, loft: 0 };
 
 const NAVY = new THREE.Color('#14284b'), GOLD = new THREE.Color('#f2c21b'), CYAN = new THREE.Color('#5fd8ff'), CREAM = new THREE.Color('#fff6e2');
 
@@ -76,25 +77,27 @@ class Ribbon {
 function makeRing() {
   const g = new THREE.Group();
   const mat = (c: THREE.Color, o: number) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, side: THREE.DoubleSide });
-  const fill = new THREE.Mesh(new THREE.CircleGeometry(1, 64), mat(GOLD, 0.16));
-  const rimOut = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.06, 96), mat(NAVY, 0.75));
-  const rim = new THREE.Mesh(new THREE.RingGeometry(0.93, 1.03, 96), mat(GOLD, 1));
+  const fill = new THREE.Mesh(new THREE.CircleGeometry(1, 64), mat(GOLD, 0.07));
+  const rimOut = new THREE.Mesh(new THREE.RingGeometry(0.925, 1.045, 96), mat(NAVY, 0.6));
+  const rim = new THREE.Mesh(new THREE.RingGeometry(0.945, 1.025, 96), mat(GOLD, 1));
   // centre chevron pointing down the aim line
-  const tri = new THREE.Shape(); tri.moveTo(0, 0.42); tri.lineTo(0.26, -0.18); tri.lineTo(0, -0.05); tri.lineTo(-0.26, -0.18); tri.closePath();
+  const tri = new THREE.Shape(); tri.moveTo(-0.24, 0.2); tri.lineTo(0.24, 0.2); tri.lineTo(0, -0.22); tri.closePath(); // points back toward the ball
   const triOut = new THREE.Mesh(new THREE.ShapeGeometry(tri), mat(NAVY, 0.85)); triOut.scale.setScalar(1.22);
   const triIn = new THREE.Mesh(new THREE.ShapeGeometry(tri), mat(CREAM, 1));
   const chevron = new THREE.Group(); chevron.add(triOut, triIn); triIn.position.z = 0.001;
   for (const m of [fill, rimOut, rim]) { m.rotation.x = -Math.PI / 2; g.add(m); }
-  chevron.rotation.x = -Math.PI / 2; g.add(chevron);
+  // the chevron rides on the far edge of the ring
+  const holder = new THREE.Group(); chevron.position.set(0, 0, -1); holder.add(chevron); holder.rotation.x = -Math.PI / 2; holder.rotation.x = 0; chevron.rotation.x = -Math.PI / 2; g.add(holder);
   fill.renderOrder = rimOut.renderOrder = 6; rim.renderOrder = 7; triOut.renderOrder = 8; triIn.renderOrder = 9;
-  return { group: g, chevron };
+  return { group: g, chevron: holder };
 }
 
 function makeHandle() {
   const g = new THREE.Group();
   const m = (c: THREE.Color) => new THREE.MeshBasicMaterial({ color: c, transparent: true, depthWrite: false, depthTest: false });
-  const out = new THREE.Mesh(new THREE.CircleGeometry(1.25, 40), m(NAVY)); const inn = new THREE.Mesh(new THREE.CircleGeometry(1, 40), m(CREAM)); const dot = new THREE.Mesh(new THREE.CircleGeometry(0.42, 24), m(CYAN));
-  for (const [x, o] of [[out, 10], [inn, 11], [dot, 12]] as [THREE.Mesh, number][]) { x.rotation.x = -Math.PI / 2; x.renderOrder = o; g.add(x); }
+  const out = new THREE.Mesh(new THREE.CircleGeometry(1.15, 40), m(new THREE.Color('#0b3a52'))); const inn = new THREE.Mesh(new THREE.CircleGeometry(0.9, 40), m(CYAN)); const dot = new THREE.Mesh(new THREE.CircleGeometry(0.34, 24), m(CREAM));
+  const arrow = (sx: number) => { const sh = new THREE.Shape(); sh.moveTo(sx * 1.45, 0.42); sh.lineTo(sx * 2.05, 0); sh.lineTo(sx * 1.45, -0.42); sh.closePath(); return new THREE.Mesh(new THREE.ShapeGeometry(sh), m(CYAN)); };
+  for (const [x, o] of [[out, 10], [inn, 11], [dot, 12], [arrow(1), 12], [arrow(-1), 12]] as [THREE.Mesh, number][]) { x.rotation.x = -Math.PI / 2; x.renderOrder = o; g.add(x); }
   inn.position.y = 0.01; dot.position.y = 0.02;
   return g;
 }
@@ -113,7 +116,16 @@ const CSS = `
 .aim-rail .inaim { display: none; }
 body.aiming .aim-rail .inaim { display: grid; }
 body.aiming .aim-rail .aim-go { display: none; }
-body.aiming .hud .br, body.aiming .hud .bc, body.aiming .hud .bl, body.aiming .hud .tr { opacity: 0 !important; pointer-events: none !important; transition: opacity .25s; }
+body.aiming .hud .bc, body.aiming .hud .bl, body.aiming .hud .tr { opacity: 0 !important; pointer-events: none !important; transition: opacity .25s; }
+body.aiming .hud .br { opacity: .92; }
+.aim-loft { position: fixed; z-index: 30; left: max(10px, env(safe-area-inset-left)); top: calc(var(--aim-top, 38%) + 40px); display: none; gap: 6px; justify-items: center; font-family: 'Fredoka', 'Nunito', system-ui, sans-serif; }
+body.aiming .aim-loft { display: grid; }
+.aim-loft button { -webkit-tap-highlight-color: transparent; border: 0; cursor: pointer; width: 40px; height: 40px; border-radius: 999px; font: 600 22px/1 'Fredoka', system-ui, sans-serif; color: #14284b; background: linear-gradient(#fffaf0, #f3e6c8); box-shadow: 0 3px 0 #c9b385, 0 6px 14px rgba(10,20,40,.28), inset 0 1px 0 #fff; }
+.aim-loft button:active { transform: translateY(2px) scale(.97); }
+.aim-loft button:focus-visible { outline: 3px solid #f2c21b; outline-offset: 2px; }
+.aim-loft .arc { display: grid; justify-items: center; background: rgba(255,246,226,.92); border-radius: 14px; padding: 6px 6px 4px; box-shadow: 0 4px 10px rgba(10,20,40,.25); }
+.aim-loft .arc svg { width: 56px; height: 35px; }
+.aim-loft .lv { font: 600 11px/1 'Fredoka', system-ui, sans-serif; color: #14284b; letter-spacing: .02em; }
 .aim-label { position: fixed; z-index: 29; left: 0; top: 0; pointer-events: none; transform: translate(-50%, -100%); font: 600 14px/1.1 'Fredoka', 'Nunito', system-ui, sans-serif; color: #14284b; background: #fff6e2; border-radius: 999px; padding: 6px 11px; box-shadow: 0 2px 0 #c9b385, 0 4px 10px rgba(10,20,40,.3); white-space: nowrap; transition: opacity .2s; }
 .aim-label b { color: #b8860b; font-weight: 700; }
 .aim-label.off { opacity: 0; }
@@ -141,16 +153,17 @@ export class AimController {
   private enabled = false;
   private guide = new Ribbon(80, GOLD, { dash: 2.2, fadeStart: 12, fadeEnd: 38, opacity: 0.95 });
   private marker = makeRing();
-  private aimLine = new Ribbon(80, GOLD, { dash: 4, opacity: 0.9 });
+  private aimLine = new Ribbon(80, GOLD, { opacity: 0.95 });
   private pathLine = new Ribbon(96, CYAN, { opacity: 0.95, edge: new THREE.Color('#0b3a52') });
   private ring = makeRing();
   private handle = makeHandle();
-  private rail: HTMLDivElement; private label: HTMLDivElement; private tip: HTMLDivElement;
+  private rail: HTMLDivElement; private loftRail: HTMLDivElement; private label: HTMLDivElement; private tip: HTMLDivElement;
   private ray = new THREE.Raycaster();
   private drag: 'ring' | 'bend' | null = null;
   private pts = new Map<number, { x: number; y: number }>();
   private pinch0 = 0; private zoom0 = 1;
   private t = 0;
+  private loftShown = NaN;
 
   constructor(private o: AimOptions) {
     o.scene.add(this.guide.mesh, this.marker.group, this.aimLine.mesh, this.pathLine.mesh, this.ring.group, this.handle);
@@ -159,12 +172,17 @@ export class AimController {
     this.rail.innerHTML = `
       <button type="button" class="aim-go" aria-label="Aim the shot"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="#14284b" stroke-width="2.4"/><circle cx="12" cy="12" r="4.2" fill="#f2c21b" stroke="#14284b" stroke-width="1.6"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="#14284b" stroke-width="2.4" stroke-linecap="round"/></svg>Aim</button>
       <div class="inaim" style="gap:8px;justify-items:end">
-        <button type="button" class="zoom" data-z="in" aria-label="Zoom in">+</button>
         <button type="button" class="zoom" data-z="out" aria-label="Zoom out">−</button>
-        <button type="button" class="zoom" data-z="reset" aria-label="Aim straight at the target" style="font-size:15px">⟲</button>
+        <button type="button" class="zoom" data-z="reset" aria-label="Reset aim to straight"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="#14284b" stroke-width="2.4" stroke-linecap="round"/><path d="M17.5 3.5v4.2h-4.2" fill="none" stroke="#14284b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.6" fill="#f2c21b"/></svg></button>
+        <button type="button" class="zoom" data-z="in" aria-label="Zoom in">+</button>
         <button type="button" class="done">Done</button>
       </div>`;
     document.body.appendChild(this.rail);
+    // loft control on the left: + / arc gauge / −
+    this.loftRail = document.createElement('div'); this.loftRail.className = 'aim-loft';
+    this.loftRail.innerHTML = `<button type="button" data-l="1" aria-label="Higher launch">+</button><div class="arc" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M6 34 Q32 -6 58 34" fill="none" stroke="rgba(20,40,75,.25)" stroke-width="5" stroke-linecap="round"/><path class="arcp" d="M6 34 Q32 -6 58 34" fill="none" stroke="#f2c21b" stroke-width="5" stroke-linecap="round"/><circle class="dot" cx="32" cy="14" r="5" fill="#fff6e2" stroke="#14284b" stroke-width="2"/></svg><span class="lv">Normal</span></div><button type="button" data-l="-1" aria-label="Lower launch">−</button>`;
+    document.body.appendChild(this.loftRail);
+    this.loftRail.querySelectorAll<HTMLButtonElement>('button').forEach(b => b.addEventListener('click', () => { aim.loft = clamp(Math.round((aim.loft + +b.dataset.l! * 0.5) * 2) / 2, -1, 1); this.changed(); }));
     this.label = document.createElement('div'); this.label.className = 'aim-label off'; document.body.appendChild(this.label);
     this.tip = document.createElement('div'); this.tip.className = 'aim-tip off';
     this.tip.innerHTML = '<b>Drag</b> to move the target · drag the <b>blue dot</b> to curve it';
@@ -300,7 +318,7 @@ export class AimController {
       this.guide.set(pts, 0.11);
       this.guide.mat.uniforms.flow.value = -this.t * 1.4;
       this.marker.group.position.set(T.x, T.y + 0.05, T.z); this.marker.group.scale.setScalar(disp * 0.8);
-      this.marker.chevron.rotation.z = -aim.dir; this.marker.chevron.visible = false;
+      this.marker.chevron.visible = false;
     }
     // 2. aim view: straight dashed aim line, cyan shot shape, ring, bend handle, distance label
     const a = this.active;
@@ -310,11 +328,11 @@ export class AimController {
       const w = clamp(camD * 0.012, 0.25, 2.2);
       const sp: THREE.Vector3[] = [];
       for (let i = 0; i <= 60; i++) { const p = b.clone().lerp(T, i / 60); p.y = this.ground(p.x, p.z) + 0.04; sp.push(p); }
-      this.aimLine.set(sp, w * 0.7); this.aimLine.mat.uniforms.dash.value = w * 6; this.aimLine.mat.uniforms.flow.value = -this.t * w * 4;
+      this.aimLine.set(sp, w * 0.42);
       const cp: THREE.Vector3[] = []; for (let i = 0; i <= 90; i++) cp.push(this.shapePoint(i / 90, new THREE.Vector3()));
-      this.pathLine.set(cp, w * 0.55);
+      this.pathLine.set(cp, w * 0.34);
       this.ring.group.position.set(T.x, T.y + 0.06, T.z); this.ring.group.scale.setScalar(disp);
-      this.ring.chevron.rotation.z = -aim.dir; this.ring.chevron.scale.setScalar(clamp(w * 3.2 / disp, 0.25, 0.9));
+      this.ring.chevron.rotation.y = -aim.dir; this.ring.chevron.children[0].scale.setScalar(clamp(w * 4.2 / disp, 0.3, 1.1));
       this.shapePoint(0.5, this.handle.position); this.handle.position.y += 0.1; this.handle.scale.setScalar(w * 2.1);
       // floating label above the ring
       const s = this.screenOf(T.clone().add(new THREE.Vector3(0, 0, 0)).addScaledVector(d, disp * 1.1));
@@ -322,6 +340,13 @@ export class AimController {
       this.label.style.transform = `translate(${s.x}px, ${s.y - 10}px) translate(-50%, -100%)`;
       this.label.innerHTML = `${Math.round(aim.distanceYds)} yds · <b>${this.shapeName()}</b>`;
     } else this.label.classList.add('off');
+    if (this.loftShown !== aim.loft) {
+      this.loftShown = aim.loft;
+      const cy = 14 - aim.loft * 9; // peak of the arc rises with loft
+      this.loftRail.querySelectorAll('path').forEach(p => p.setAttribute('d', `M6 34 Q32 ${(-6 - aim.loft * 16).toFixed(1)} 58 34`));
+      this.loftRail.querySelector('.dot')!.setAttribute('cy', cy.toFixed(1));
+      this.loftRail.querySelector('.lv')!.textContent = aim.loft > 0.25 ? (aim.loft > 0.75 ? 'Max high' : 'High') : aim.loft < -0.25 ? (aim.loft < -0.75 ? 'Max low' : 'Low') : 'Normal';
+    }
     void D;
   }
 }
