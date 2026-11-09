@@ -280,6 +280,7 @@ export class Hud {
     // one look for players: the playful 'f' skin (older a/b/c looks stay in code for the concept board only)
     this.skin = 'f';
     this.el.addEventListener('click', e => this.click(e));
+    this.el.addEventListener('keydown', e => { const t = e.target as HTMLElement; if ((e.key === 'Enter' || e.key === ' ') && t.matches('.card.simple')) { e.preventDefault(); t.click(); } });
     this.initStrike();
     this.spinCv.addEventListener('pointerdown', e => { if (!this.spinOn) return; this.spinCv.setPointerCapture(e.pointerId); this.spinDrag = [e.clientX, e.clientY]; e.preventDefault(); });
     this.spinCv.addEventListener('pointermove', e => {
@@ -360,7 +361,7 @@ export class Hud {
   private later(ms: number, fn: () => void) { clearTimeout(this.cardTimer); this.cardTimer = window.setTimeout(fn, ms); }
   private collapse() { this.setCard(isPhone() ? 'hidden' : 'mini'); }
 
-  /** Last-swing card. Phones: pops in when the ball lands, leaves ~4 s after it stops. Elsewhere: shows,
+  /** Last-swing card. Phones: pops in when the ball lands, leaves ~2.5 s after it stops. Elsewhere: shows,
    *  then shrinks to a pill you can tap to open again. */
   card(c: CardData | null) {
     this.cardInit = true;
@@ -382,24 +383,24 @@ export class Hud {
       const from = this.ticks[k]; this.ticks[k] = v;
       return `<dd data-tick="${v.toFixed(0)}" data-from="${from === undefined ? 0 : from.toFixed(0)}">${from === undefined && !reduced() ? 0 : v.toFixed(0)}</dd>`;
     };
-    body.innerHTML = `<div class="hud-panel card"><button type="button" class="card-min" data-act="card-min" aria-label="Minimise">&minus;</button><span class="eyebrow-h">Last swing</span>
-      <div><div class="tempo-head"><span>Tempo</span><b class="tempo-word ${P.tempoCls}">${P.tempoWord}</b></div>
-      <div class="tempo-track"><span class="win" style="left:${pos(-70)}%;width:${(+pos(160) - +pos(-70)).toFixed(1)}%"></span><span class="mark" style="left:${pos(c.offMs)}%"></span></div>
-      <div class="tempo-scale"><span>Quick</span><span>${c.offMs > 0 ? '+' : ''}${Math.round(c.offMs)} ms</span><span>Late</span></div></div>
-      <dl class="stats">
+    // at a glance: tempo word + tiny bar, one big carry/total line, one small shape/offline line; tap for the rest
+    const off = c.done && c.offline !== undefined ? side(c.offline) : '';
+    const more = this.q('#cardBody .card.simple')?.classList.contains('more') ?? false;
+    body.innerHTML = `<div class="hud-panel card simple${more ? ' more' : ''}" data-act="card-more" role="button" tabindex="0" aria-expanded="${more}" aria-label="Last swing: ${P.tempoWord}. Tap for details"><button type="button" class="card-min" data-act="card-min" aria-label="Minimise">&minus;</button>
+      <div class="sc-top"><b class="tempo-word ${P.tempoCls}">${P.tempoWord}</b><span class="sc-tempo" aria-hidden="true"><i class="win" style="left:${pos(-70)}%;width:${(+pos(160) - +pos(-70)).toFixed(1)}%"></i><i class="mark ${P.tempoCls}" style="left:${pos(c.offMs)}%"></i></span></div>
+      <div class="sc-main"><span class="sc-n"><small>Carry</small>${tick('carry', c.carry).replace('<dd', '<b').replace('</dd>', '</b>')}</span><span class="sc-n"><small>Total</small>${tick('total', c.total, c.done).replace('<dd', '<b').replace('</dd>', '</b>')}</span><small class="sc-u">yds</small></div>
+      <div class="sc-sub"><span>${P.shape}</span>${off ? `<i></i><span>${off}</span>` : ''}<span class="sc-more-cue" aria-hidden="true">${more ? 'less' : 'more'}</span></div>
+      <dl class="stats sc-more">
         <div><dt>Power</dt><dd>${Math.round(c.power * 100)}%</dd></div>
         <div><dt>Takeaway</dt><dd class="${P.driftCls}">${P.driftWord}</dd></div>
-        <div><dt>Shape</dt><dd>${P.shape}</dd></div>
-        <div><dt>Carry</dt>${tick('carry', c.carry)}</div>
-        <div><dt>Total</dt>${tick('total', c.total, c.done)}</div>
-        <div><dt>Offline</dt><dd>${c.done && c.offline !== undefined ? side(c.offline) : '…'}</dd></div>
+        <div><dt>Timing</dt><dd>${c.offMs > 0 ? '+' : ''}${Math.round(c.offMs)} ms</dd></div>
       </dl></div>`;
     const yd = c.done && c.total !== undefined ? `${c.total.toFixed(0)} yds` : c.carry !== undefined ? `${c.carry.toFixed(0)} carry` : 'in the air';
     mini.innerHTML = `<i class="dot ${P.tempoCls}"></i><b>${P.tempoWord}</b><span>${yd}</span><span class="chev" aria-hidden="true"></span>`;
     this.runTicks();
     if (c.carry === undefined) { if (phone) this.setCard('hidden'); else this.setCard('open'); clearTimeout(this.cardTimer); }
     else if (!c.done) { this.setCard('open'); clearTimeout(this.cardTimer); }
-    else { this.setCard('open'); this.later(4200, () => this.collapse()); }
+    else { this.setCard('open'); this.later(phone ? 2500 : 3000, () => this.collapse()); }
   }
   /** count numbers up to their value */
   private runTicks() {
@@ -439,7 +440,8 @@ export class Hud {
     if (act === 'mode') { cp.hidden = true; mp.hidden = !mp.hidden; mp.innerHTML = this.modeList(); }
     if (act === 'lie') { this.closePops(); this.lie = (this.lie + 1) % LIES.length; this.render(); this.onLie(this.lie); }
     if (act === 'skin') { a.classList.remove('wiggle'); void a.offsetWidth; a.classList.add('wiggle'); }
-    if (act === 'card-open') { if (this.cardMode === 'open') this.collapse(); else { this.setCard('open'); this.later(isPhone() ? 4000 : 8000, () => this.collapse()); } }
+    if (act === 'card-open') { if (this.cardMode === 'open') this.collapse(); else { this.setCard('open'); this.later(isPhone() ? 3500 : 6000, () => this.collapse()); } }
+    if (act === 'card-more' && !t.closest('.card-min')) { const k = a.classList.toggle('more'); a.setAttribute('aria-expanded', String(k)); const cue = a.querySelector('.sc-more-cue'); if (cue) cue.textContent = k ? 'less' : 'more'; this.later(k ? 6000 : 2500, () => this.collapse()); }
     if (act === 'strike') { this.closePops(); this.openStrike(true); }
     if (act === 'strike-centre') { this.setStrike(0, 0); }
     if (act === 'strike-done') { this.openStrike(false); }
@@ -562,7 +564,7 @@ export class Hud {
     const t = this.q('#toast');
     t.classList.remove('on'); void t.offsetWidth; // restart the pop animation
     t.innerHTML = `<span class="word ${cls}">${word}</span>${why ? `<span class="why">${why}</span>` : ''}`;
-    t.classList.add('on'); clearTimeout(this.toastT); this.toastT = window.setTimeout(() => t.classList.remove('on'), 2100);
+    t.classList.add('on'); clearTimeout(this.toastT); this.toastT = window.setTimeout(() => t.classList.remove('on'), 1500);
     if (cls === 'good') this.celebrate(/green|pin|hole/i.test(word + why) ? 34 : 18);
   }
   /** a little burst of confetti from the toast */

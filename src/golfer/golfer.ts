@@ -335,6 +335,37 @@ export class Golfer {
     p.look.copy(this.ballC).lerp(new THREE.Vector3(60, 6, -4), watch);
     if (s.lookAt) p.look.copy(this.char.worldToLocal(s.lookAt.clone()));
     this.rig.apply(p);
+    if (s.phase === 'follow') {
+      // Through-swing hand path, traced (down-the-line refs): after impact the arms extend down the line with the club
+      // parallel to the ground, then the hands rise in front of the chest with the shaft up, and only then fold behind
+      // the head. Targets are in the chest's frame so they turn with the body. The club keeps its face roll; only the
+      // shaft is re-aimed.
+      const f = Math.min(1, -phi / Math.abs(PHI_FINISH)) * st.finish;
+      const w = smooth(0.0, 0.12, f);
+      if (w > 0.001) {
+        const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];
+        const L = (v: number[]) => new THREE.Vector3(v[0], v[1], v[2]).applyQuaternion(qChest);
+        const ARC = [   // [f, grip (from the neck, × body scale), shaft butt→head]
+          [0.12, [0.06, -0.52, 0.32], [0.55, -0.25, 0.8]],
+          [0.33, [0.12, -0.25, 0.45], [0.15, 0.95, 0.25]],
+          [0.55, [0.15, 0.02, 0.3], [-0.35, 0.55, -0.75]],
+        ] as [number, number[], number[]][];
+        let j = 0; while (j < ARC.length - 2 && f > ARC[j + 1][0]) j++;
+        const t = smooth(ARC[j][0], ARC[j + 1][0], f);
+        const gL = ARC[j][1].map((v, i) => v + (ARC[j + 1][1][i] - v) * t), sL = ARC[j][2].map((v, i) => v + (ARC[j + 1][2][i] - v) * t);
+        const gripT = neck.clone().addScaledVector(L(gL), k);
+        const shaftT = L(sL).normalize();
+        const shaftNow = this.club.shaftDir.clone().applyQuaternion(qc).negate().normalize();
+        const aim = new THREE.Quaternion().setFromUnitVectors(shaftNow, shaftNow.clone().lerp(shaftT, w).normalize());
+        const gripNow = this.club.gripLead.clone().applyQuaternion(qc).add(g.position);
+        qc.premultiply(aim);
+        g.quaternion.copy(qc);
+        g.position.copy(gripNow.lerp(gripT, w)).sub(this.club.gripLead.clone().applyQuaternion(qc));
+        p.wristL.copy(this.hands.wristLead.clone().applyQuaternion(qc).add(g.position));
+        p.wristR.copy(this.hands.wristTrail.clone().applyQuaternion(qc).add(g.position));
+        this.rig.apply(p);
+      }
+    }
     if (finW > 0.001) {
       // full finish target, built in the chest's frame: hands up past the lead shoulder, shaft wrapped behind the neck
       const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];

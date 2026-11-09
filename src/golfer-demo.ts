@@ -42,6 +42,9 @@ const poses: Record<string, any> = {
 };
 golfer.body.setSmile(+(q.get('smile') ?? 0));
 if (q.has('novisor')) golfer.body.root.traverse(o => { if (o.name === 'visor') o.visible = false; });
+// generic poses: b0.3 = backswing at 30% of a full top, d0.38 = downswing with the hands at 38% of the top, f0.12 = 12% of the follow-through
+const pm = /^([bdf])([\d.]+)$/.exec(q.get('pose') ?? '');
+if (pm) poses[pm[0]] = pm[1] === 'b' ? { phase: 'back', phi: PHI_TOP * +pm[2] } : pm[1] === 'd' ? { phase: 'down', phi: PHI_TOP * +pm[2] } : { phase: 'follow', phi: PHI_FINISH * +pm[2] };
 const ps = poses[q.get('pose') ?? 'address'];
 if (ps) golfer.update({ topPhi: PHI_TOP, idleT: 0, ...ps });
 else { golfer.body.bones.forEach((b, i) => { b.quaternion.identity(); if (i === 1) b.position.copy(golfer.body.skel.joint[1]); }); golfer.club.group.visible = false; golfer.root.updateMatrixWorld(true); }

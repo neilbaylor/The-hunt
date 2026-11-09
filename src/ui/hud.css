@@ -425,3 +425,29 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 @media (orientation: portrait) { .hud.skin-f .mode-btn svg.flight-glyph { width: 46px; height: 25px; } }
 .list.modes button svg.flight-glyph { width: 46px; height: 25px; }
 .list.modes:has(.flight-glyph) button { grid-template-columns: 46px 1fr; }
+
+/* swing card, simplified: tempo word + mini bar, one big carry/total line, a small shape/offline line; tap for more */
+.hud.skin-f .card.simple { width: 236px; padding: 10px 14px 10px; display: grid; gap: 6px; cursor: pointer; }
+.hud.skin-f .bl .card.simple { width: 252px; }
+.card.simple .sc-top { display: flex; align-items: center; gap: 10px; }
+.card.simple .tempo-word { font: 700 20px/1 var(--h-display); padding: 2px 12px 4px; border-radius: 999px; color: #fff; animation: wordPop .5s cubic-bezier(.2,1.8,.4,1) both; }
+.card.simple .tempo-word.good { background: var(--h-good); } .card.simple .tempo-word.warn { background: var(--h-warn); } .card.simple .tempo-word.bad { background: var(--h-bad); }
+.card.simple .sc-tempo { position: relative; flex: 1; height: 8px; border-radius: 4px; background: rgba(19,41,75,.12); }
+.card.simple .sc-tempo .win { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg, #5ff0a0, #17a558); opacity: .85; }
+.card.simple .sc-tempo .mark { position: absolute; top: -4px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35), inset 0 0 0 3px var(--navy); }
+.card.simple .sc-main { display: flex; align-items: baseline; gap: 14px; color: var(--navy); }
+.card.simple .sc-n { display: flex; align-items: baseline; gap: 5px; }
+.card.simple .sc-n small, .card.simple .sc-u { font: 800 11px/1 var(--h-body); letter-spacing: .06em; text-transform: uppercase; color: var(--h-dim); }
+.card.simple .sc-n b { font: 600 30px/1 var(--h-display); font-variant-numeric: tabular-nums; }
+.card.simple .sc-n b.landed { animation: tickPop .35s cubic-bezier(.2,1.8,.4,1); }
+.card.simple .sc-u { margin-left: auto; }
+.card.simple .sc-sub { display: flex; align-items: center; gap: 7px; font: 800 12.5px/1 var(--h-body); color: var(--navy); }
+.card.simple .sc-sub i { width: 4px; height: 4px; border-radius: 50%; background: var(--gold); }
+.card.simple .sc-more-cue { margin-left: auto; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--h-dim); }
+.card.simple .sc-more-cue::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 5px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform .2s; }
+.card.simple.more .sc-more-cue::after { transform: translateY(1px) rotate(-135deg); }
+.card.simple .sc-more { display: none; padding-top: 6px; border-top: 2px dotted var(--h-rule); }
+.card.simple.more .sc-more { display: grid; animation: pillIn .3s cubic-bezier(.2,1.6,.4,1) both; }
+.card.simple .sc-more dd { font-size: 15px; }
+.card.simple:focus-visible { outline: 3px solid var(--flag); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .card.simple .tempo-word, .card.simple.more .sc-more, .card.simple .sc-n b.landed { animation: none; } }
