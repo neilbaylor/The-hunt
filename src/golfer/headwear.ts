@@ -30,7 +30,9 @@ function logoTexture(kind: Headwear['logo'], base: string) {
 }
 
 /** A visor sized for a head of half-widths rx (side) and rz (front/back) at band height. */
-export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 0.032, mirrored = false) {
+export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 0.032, mirrored = false, profile?: number[]) {
+  // measured radius of the head/hair round the band (64 angles from the back, a = -PI)
+  const rAt = (a: number) => { if (!profile) return null; const t = ((a + Math.PI) / (2 * Math.PI)) * 64; const i = Math.floor(t) % 64, f = t - Math.floor(t); return profile[i] * (1 - f) + profile[(i + 1) % 64] * f; };
   const group = new THREE.Group(); group.name = 'visor';
   const fabric = new THREE.MeshStandardMaterial({ map: logoTexture(h.logo, h.color), roughness: 0.85, side: THREE.DoubleSide });
   // band: an open ring, a bit taller at the front, tilted so the front sits lower on the forehead
@@ -40,10 +42,12 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
     const back = Math.max(0, -Math.cos(a)), sideB = Math.abs(Math.sin(a));
     // the strap sits proud of the hair at the sides and back
     const fr = Math.max(0, Math.cos(a));
-    const x = Math.sin(a) * (rx + 0.005 * sideB + 0.004 * back), z = Math.cos(a) * (rz + 0.011 * back + 0.008 * fr) + zc;
+    const pr = rAt(a);
+    const x = pr !== null ? Math.sin(a) * (pr + 0.005) : Math.sin(a) * (rx + 0.009 * sideB + 0.006 * back);
+    const z = pr !== null ? Math.cos(a) * (pr + 0.005) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
     const front = 0.5 + 0.5 * Math.cos(a);
     const hh = height * (0.55 + 0.45 * front);
-    const tilt = -0.012 * front;                    // front lower
+    const tilt = -0.006 * front - 0.024 * back;                    // front lower
     pos.push(x, y0 + tilt - hh / 2, z, x * 0.985, y0 + tilt + hh / 2, z * 0.985 + zc * 0.015);
     const u = mirrored ? 1 - i / seg : i / seg; // a left-hander's body is mirrored, so mirror the logo back
     uv.push(u, 0, u, 1);
@@ -57,13 +61,14 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   // sweatband inside, a soft rolled top edge
   const roll = new THREE.Mesh(new THREE.TorusGeometry(1, 0.0032 / rx, 6, 72), new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.8 }));
   roll.scale.set(rx * 0.985, rz * 0.985, rx); roll.rotation.x = Math.PI / 2; roll.position.set(0, y0 + height / 2 - 0.006, zc);
-  group.add(roll);
+  if (!profile) group.add(roll);
   // brim: a curved, slightly drooping shell with a white top and dark underside
   const bs = 48, rows = 8, bp: number[] = [], bidx: number[] = [], under: number[] = [];
   for (let r = 0; r <= rows; r++) for (let i = 0; i <= bs; i++) {
     const a = -1.32 + (i / bs) * 2.64;
     const L = 0.064 * Math.pow(Math.cos(a * 0.95), 0.8) * (r / rows);
-    const bx = Math.sin(a) * rx, bz = Math.cos(a) * rz + zc;
+    const pr = rAt(a);
+    const bx = pr !== null ? Math.sin(a) * (pr + 0.005) : Math.sin(a) * rx, bz = pr !== null ? Math.cos(a) * (pr + 0.005) + zc : Math.cos(a) * rz + zc;
     const dx = Math.sin(a), dz = Math.cos(a) * 1.15;
     const t = r / rows;
     const side = Math.abs(Math.sin(a));

@@ -315,10 +315,7 @@ meshes['skin'] = build_mesh(body_faces, V)
 meshes['shirt'] = build_mesh(body_faces, Vshirt, normals=N, keep=shirt, extra_offset=shirt_off)
 meshes['pants'] = build_mesh(body_faces, Vpants, normals=N, keep=pants, extra_offset=pants_off)
 meshes['glove'] = build_mesh(body_faces, V, normals=N, keep=glove, normal_out=0.0012)
-meshes['eyes'] = build_mesh(face_list({'helper-l-eye', 'helper-r-eye'}), V)
 meshes['teeth'] = build_mesh(face_list({'helper-upper-teeth', 'helper-lower-teeth', 'helper-tongue'}), V)
-lash_groups = {gname for gname in group_verts if 'eyelashes' in gname}
-meshes['lashes'] = build_mesh(face_list(lash_groups), V)
 
 # shoes: flatten the sole and square the toe a little
 
@@ -327,13 +324,16 @@ head_bi = BONES.index('head')
 head_v = np.array([vi for vi in body_idx if vw[vi].get(head_bi, 0) > 0.6])
 hc = V[head_v].mean(0)
 eye_c = (cube('joint-l-eye') + cube('joint-r-eye')) / 2
+# the cranium's centre (for the hairline): above the eyes, set back from them
+cran = V[[vi for vi in head_v if V[vi, 1] > eye_c[1]]]
+hcr = np.array([0.0, (cran[:, 1].min() + cran[:, 1].max()) / 2 - 0.01, (cran[:, 2].min() + cran[:, 2].max()) / 2])
+print('head centre', hc.round(3), 'cranium centre', hcr.round(3), 'eyes', eye_c.round(3))
 def hair_mask(p):
-    d = p - hc
+    d = p - hcr
     az = math.atan2(d[0], d[2]); el = math.atan2(d[1], math.hypot(d[0], d[2]))
     a = abs(az)
     H = P['hair']
-    keys = [(0, H['front']), (0.45, H['front'] + 0.02), (0.75, H['temple']), (1.05, H['side']), (1.25, -0.05), (1.38, 0.18),
-            (1.62, 0.2), (1.9, -0.1), (2.35, -0.45), (math.pi, -0.52)]
+    keys = [tuple(k) for k in H['keys']]
     for i in range(1, len(keys)):
         if a <= keys[i][0]:
             (a0, e0), (a1, e1) = keys[i - 1], keys[i]
@@ -342,11 +342,11 @@ def hair_mask(p):
             break
     return el - e, el
 def hair_mask_v(p):
-    d = p - hc
+    d = p - hcr
     a = np.abs(np.arctan2(d[:, 0], d[:, 2])); el = np.arctan2(d[:, 1], np.hypot(d[:, 0], d[:, 2]))
     H = P['hair']
-    ka = [0, 0.45, 0.75, 1.05, 1.25, 1.38, 1.62, 1.9, 2.35, math.pi]
-    ke = [H['front'], H['front'] + 0.02, H['temple'], H['side'], -0.05, 0.18, 0.2, -0.1, -0.45, -0.52]
+    ka = [k[0] for k in H['keys']]
+    ke = [k[1] for k in H['keys']]
     return el - np.interp(a, ka, ke)
 hm = np.zeros(NV); hthick = np.zeros(NV)
 for vi in head_v:
@@ -364,7 +364,25 @@ meshes['hair'] = hair
 band_y = eye_c[1] + P['visorAboveEyes']
 ring = V[[vi for vi in body_idx if abs(V[vi, 1] - band_y) < 0.006 and np.linalg.norm(V[vi] - hc) < 0.16]]
 print('visor ring', len(ring), 'z', ring[:, 2].min().round(3), ring[:, 2].max().round(3), 'x', ring[:, 0].min().round(3), ring[:, 0].max().round(3))
-visor = {'center': [float(hc[0]), float(band_y), float((ring[:, 2].max() + ring[:, 2].min()) / 2)],
+# radius of the outer surface (hair shell or skin) round the head along the band, 64 angles; the band tilts lower at the back
+hp_all = np.vstack([hair['pos'], V[head_v]])
+vc = np.array([hc[0], band_y, (ring[:, 2].max() + ring[:, 2].min()) / 2])
+prof = []
+for i in range(64):
+    a = -math.pi + i / 64 * 2 * math.pi
+    back = max(0.0, -math.cos(a)); front = max(0.0, math.cos(a))
+    yb = band_y - 0.006 * front - 0.024 * back
+    d = hp_all - vc
+    near = np.abs(hp_all[:, 1] - yb) < 0.016
+    ang = np.arctan2(d[:, 0], d[:, 2])
+    sel = near & (np.abs(((ang - a + math.pi) % (2 * math.pi)) - math.pi) < 0.07)
+    prof.append(float(np.hypot(d[sel, 0], d[sel, 2]).max()) if sel.any() else None)
+for i in range(64):  # fill gaps
+    if prof[i] is None: prof[i] = next(prof[(i + k) % 64] for k in range(1, 64) if prof[(i + k) % 64] is not None)
+# a band is taut: take the max over neighbours, then smooth
+prof = [max(prof[(i + k) % 64] for k in (-2, -1, 0, 1, 2)) for i in range(64)]
+prof = [sum(prof[(i + k) % 64] for k in (-1, 0, 1)) / 3 for i in range(64)]
+visor = {'profile': prof, 'center': [float(hc[0]), float(band_y), float((ring[:, 2].max() + ring[:, 2].min()) / 2)],
          'rx': float((ring[:, 0].max() - ring[:, 0].min()) / 2 + 0.0115),
          'rz': float((ring[:, 2].max() - ring[:, 2].min()) / 2 + 0.0125)}
 
@@ -460,67 +478,94 @@ def value_noise(p, freq, seed=0):
                 out = out + w * h(i[:, 0] + dx, i[:, 1] + dy, i[:, 2] + dz)
     return out
 
-# the photo
-photo = None
+# ── the photos: several views of the face, each with its own head turn, blended by which sees a point best ──
 F = P.get('face')
+views = []
 if F:
-    im = ImageOps.exif_transpose(Image.open(F['photo'])).convert('RGB')
-    sk = np.asarray(im.crop(tuple(F['skinSample']))).reshape(-1, 3).astype(np.float32) / 255.0
-    skin_rgb = np.median(sk, axis=0)
-    if P['handed'] == 'left':
-        # a left-hander is drawn mirrored, so project a mirrored photo: the final render reads true
-        im = ImageOps.mirror(im)
-        W0 = im.width
-        for k in ('eyeR', 'eyeL', 'mouth', 'chin', 'nose'):
-            F[k] = [W0 - F[k][0], F[k][1]]
-        F['eyeR'], F['eyeL'] = F['eyeL'], F['eyeR']
-    photo = np.asarray(im).astype(np.float32) / 255.0
-    # landmark correspondences: mesh (x, y) in front projection → photo (px, py)
     mouth_d = np.linalg.norm(load_target(f'{D}/targets/expression/units/caucasian/mouth-parling.target.gz'), axis=1)
     lips = np.array([vi for vi in body_idx if mouth_d[vi] > np.percentile(mouth_d[body_idx], 99.6)])
     mouth_c = V[lips].mean(0)
     face_front = [vi for vi in head_v if V[vi, 2] > hc[2] and abs(V[vi, 0] - hc[0]) < 0.02]
     chin_cands = [vi for vi in body_idx if abs(V[vi, 0]) < 0.006 and V[vi, 2] > mouth_c[2] - 0.04 and mouth_c[1] - 0.09 < V[vi, 1] < mouth_c[1]]
-    # the chin's lowest point: where the front of the face turns under toward the neck
-    chin_vi = min(chin_cands, key=lambda vi: V[vi, 1] - 2.0 * max(0, V[vi, 2] - (mouth_c[2] - 0.035)) * 0 + (0 if N[vi, 2] > 0.05 else 9))
+    chin_vi = min(chin_cands, key=lambda vi: V[vi, 1] + (0 if N[vi, 2] > 0.05 else 9))
     nose_vi = max(face_front, key=lambda vi: V[vi, 2])
-    src_pts = np.array([[cube('joint-r-eye')[0], cube('joint-r-eye')[1]], [cube('joint-l-eye')[0], cube('joint-l-eye')[1]],
-                        [mouth_c[0], mouth_c[1]], [V[chin_vi, 0], V[chin_vi, 1]]])
-    # the photo's right eye (subject's right) is on the image left; the mesh's right eye is at -x
-    dst_pts = np.array([F['eyeR'], F['eyeL'], F['mouth'], F['chin']], dtype=np.float64)
-    A = np.c_[src_pts, np.ones(4)]
-    affine, *_ = np.linalg.lstsq(A, dst_pts, rcond=None)
-    print('photo affine residual px', np.round(np.linalg.norm(A @ affine - dst_pts, axis=1), 1))
-    print('mesh landmarks (x,y m):', np.round(src_pts, 4), 'nose', np.round(V[nose_vi], 4), 'hc', np.round(hc, 4), 'lips n', len(lips))
-    print('sampled skin', (skin_rgb * 255).round())
-    F['photoSkin'] = list(skin_rgb * 255)
+    # mesh landmarks (3D), in the order: subject's right eye, left eye, nose tip, mouth, chin
+    L3 = np.array([cube('joint-r-eye'), cube('joint-l-eye'), V[nose_vi], mouth_c, V[chin_vi]])
+    def rot(pts, yaw, pitch):
+        d = pts - hc
+        cy, sy, cp, sp = math.cos(yaw), math.sin(yaw), math.cos(pitch), math.sin(pitch)
+        x = d[:, 0] * cy + d[:, 2] * sy; z = -d[:, 0] * sy + d[:, 2] * cy
+        y = d[:, 1] * cp - z * sp; z2 = d[:, 1] * sp + z * cp
+        return np.c_[x, y, z2]
+    samples = []
+    for vdef in F['views']:
+        im = ImageOps.exif_transpose(Image.open(vdef['photo'])).convert('RGB')
+        sk = np.median(np.asarray(im.crop(tuple(vdef['skinSample']))).reshape(-1, 3).astype(np.float32) / 255.0, axis=0)
+        lm = {k: list(vdef[k]) for k in ('eyeR', 'eyeL', 'nose', 'mouth', 'chin')}
+        for mirror in ([False, True] if vdef.get('mirrorToo') else [False]):
+            img, L = im, {k: list(v) for k, v in lm.items()}
+            # a left-hander is drawn mirrored, so project mirrored photos (the render then reads true);
+            # 'mirrorToo' adds the flipped photo as a view of the other side of the face
+            flip = (P['handed'] == 'left') != mirror
+            if flip:
+                img = ImageOps.mirror(im); W0 = im.width
+                for k in L: L[k] = [W0 - L[k][0], L[k][1]]
+                L['eyeR'], L['eyeL'] = L['eyeL'], L['eyeR']
+            dst = np.array([L['eyeR'], L['eyeL'], L['nose'], L['mouth'], L['chin']], dtype=np.float64)
+            best = None
+            for yaw in np.radians(np.arange(-55, 55.1, 1.0)):
+                for pitch in np.radians(np.arange(-20, 20.1, 2.0)):
+                    q = rot(L3, yaw, pitch)
+                    A = np.c_[q[:, 0], q[:, 1], np.ones(5)]
+                    aff, *_ = np.linalg.lstsq(A, dst, rcond=None)
+                    r = np.linalg.norm(A @ aff - dst, axis=1).mean()
+                    if best is None or r < best[0]: best = (r, yaw, pitch, aff)
+            r, yaw, pitch, aff = best
+            print(f"view {os.path.basename(vdef['photo'])}{' (mirrored)' if mirror else ''}: yaw {math.degrees(yaw):.0f}°, pitch {math.degrees(pitch):.0f}°, residual {r:.1f}px")
+            views.append({'img': np.asarray(img).astype(np.float32) / 255.0, 'yaw': yaw, 'pitch': pitch, 'aff': aff,
+                          'weight': vdef.get('weight', 1.0) * (vdef.get('mirrorWeight', 0.6) if mirror else 1.0), 'skin': sk})
+            samples.append(sk)
+    skin_rgb = np.mean([v['skin'] for v in views[:1]], axis=0)  # the main (first) photo sets the tone
+    for v in views:
+        v['gain'] = (skin_rgb / np.maximum(v['skin'], 1e-3)) ** 0.85
+    print('skin', (skin_rgb * 255).round())
 else:
     skin_rgb = np.array([0.86, 0.66, 0.56])
 
 def skin_fn(p, n):
     base = np.tile(skin_rgb, (len(p), 1)).astype(np.float32)
-    # subtle variation: warmer on hands, knuckles, elbows, ears; blotchy noise; pores
+    # subtle variation: blotchy noise and pores
     nz = value_noise(p, 40) * 0.6 + value_noise(p, 140, 1) * 0.4
     base *= (0.94 + 0.1 * nz)[:, None]
     base *= 1 + 0.03 * (value_noise(p, 9, 2) - 0.5)[:, None]
-    if photo is not None:
+    if views:
         d = p - hc
-        xy = np.c_[p[:, 0], p[:, 1], np.ones(len(p))] @ affine
-        px = np.clip(xy[:, 0], 0, photo.shape[1] - 1).astype(int); py = np.clip(xy[:, 1], 0, photo.shape[0] - 1).astype(int)
-        ph = photo[py, px]
-        # blend: front-facing parts of the face only, fading toward the ears, the neck and the hairline
-        facing = np.clip((n[:, 2] - 0.25) / 0.45, 0, 1)
-        inface = np.clip(1 - (np.abs(d[:, 0]) - F['faceHalfWidth']) / 0.012, 0, 1)
-        yband = np.clip((p[:, 1] - (V[chin_vi, 1] - 0.03)) / 0.025, 0, 1) * np.clip(((hc[1] + F['foreheadTop']) - p[:, 1]) / 0.02, 0, 1)
-        front = (d[:, 2] > 0).astype(np.float32)
-        wgt = (facing * inface * yband * front)[:, None]
-        # colour-match the photo to the body skin so the seam disappears
-        base = base * (1 - wgt) + ph * wgt
+        acc = np.zeros_like(base); wsum = np.zeros(len(p), np.float32)
+        near = (np.linalg.norm(d, axis=1) < 0.17) & (p[:, 1] > V[chin_vi, 1] - 0.05)
+        yband = np.clip((p[:, 1] - (V[chin_vi, 1] - 0.035)) / 0.03, 0, 1) * np.clip(((hc[1] + F['foreheadTop']) - p[:, 1]) / 0.02, 0, 1)
+        for v in views:
+            q = rot(p, v['yaw'], v['pitch'])
+            # which way this camera looks at the head, in head space
+            cy, sy, cp, sp = math.cos(v['yaw']), math.sin(v['yaw']), math.cos(v['pitch']), math.sin(v['pitch'])
+            camdir = np.array([-sy * cp, sp, cy * cp]); camdir /= np.linalg.norm(camdir)
+            facing = np.clip((n @ camdir - 0.3) / 0.5, 0, 1) ** 2
+            xy = np.c_[q[:, 0], q[:, 1], np.ones(len(p))] @ v['aff']
+            img = v['img']
+            inside = (xy[:, 0] > 2) & (xy[:, 0] < img.shape[1] - 3) & (xy[:, 1] > 2) & (xy[:, 1] < img.shape[0] - 3)
+            px = np.clip(xy[:, 0], 0, img.shape[1] - 1).astype(int); py = np.clip(xy[:, 1], 0, img.shape[0] - 1).astype(int)
+            col = img[py, px] * v['gain']
+            # only trust pixels that look like skin (not the kitchen behind, not hair)
+            skinlike = np.exp(-np.sum((col - skin_rgb) ** 2, axis=1) / (2 * 0.2 ** 2))
+            w = facing * yband * near * inside * v['weight'] * skinlike
+            acc += col * w[:, None]; wsum += w
+        cov = np.clip(wsum / 0.35, 0, 1)[:, None]
+        ph = acc / np.maximum(wsum, 1e-6)[:, None]
+        base = base * (1 - cov) + ph * cov
     # painted short hair under the hair shell (soft hairline)
     hp = P['hair']
     hcol = np.array(hp['color']) / 255.0
     mm = hair_mask_v(p)
-    hw = np.clip((mm + 0.03) / 0.06, 0, 1)[:, None] * (np.linalg.norm(p - hc, axis=1) < 0.16)[:, None]
+    hw = np.clip((mm + 0.03) / 0.06, 0, 1)[:, None] * (np.linalg.norm(p - hcr, axis=1) < 0.16)[:, None]
     base = base * (1 - 0.92 * hw) + hcol * 0.92 * hw
     return np.clip(base, 0, 1)
 
@@ -535,14 +580,13 @@ def eye_fn(p, n):
     c = np.where((p[:, 0] > 0)[:, None], eye_l, eye_r)
     d = p - c; d /= np.linalg.norm(d, axis=1, keepdims=True)
     ang = np.degrees(np.arccos(np.clip(d[:, 2], -1, 1)))
-    out = np.tile([0.93, 0.9, 0.88], (len(p), 1)).astype(np.float32)
+    out = np.tile([0.74, 0.68, 0.64], (len(p), 1)).astype(np.float32)
     rad = value_noise(np.c_[np.arctan2(d[:, 1], d[:, 0]) * 3, ang * 0.2, d[:, 2]], 6, 3)
     iris_c = iris * (0.75 + 0.4 * rad)[:, None]
-    ir = (ang < 17)[:, None]; ring = ((ang > 15.5) & (ang < 17.5))[:, None]; pupil = (ang < 6.5)[:, None]
+    ir = (ang < 30)[:, None]; ring = ((ang > 27) & (ang < 30.5))[:, None]; pupil = (ang < 11)[:, None]
     out = np.where(ir, iris_c, out); out = np.where(ring, iris * 0.45, out); out = np.where(pupil, [0.03, 0.03, 0.035], out)
     return out
-eye_img = raster(meshes['eyes'], eye_fn, 512, bg=(0.9, 0.88, 0.86))
-Image.fromarray((eye_img * 255).astype(np.uint8)).save(f'{OUT}/eyes.png')
+Image.new('RGB', (4, 4), (230, 225, 220)).save(f'{OUT}/eyes.png')
 
 # ───────────────────────── write the binary ─────────────────────────
 blobs = bytearray(); desc = {}
@@ -571,6 +615,9 @@ meta = {
     'joint': [list(map(float, j)) for j in joint], 'tail': [list(map(float, t)) for t in tail],
     'eye': list(map(float, eye_c)), 'headCenter': list(map(float, hc)), 'visor': visor,
     'collar': collar, 'belt': belt, 'feet': feet,
+    'eyeballs': {sfx: {'c': list(map(float, V[sorted(group_verts[f'helper-{sfx}-eye'])].mean(0))),
+                       'r': float(np.linalg.norm(V[sorted(group_verts[f'helper-{sfx}-eye'])] - V[sorted(group_verts[f'helper-{sfx}-eye'])].mean(0), axis=1).mean())} for sfx in 'lr'},
+    'iris': P['eyes'],
     'meshes': desc, 'heightM': P['heightM'],
 }
 mj = json.dumps(meta).encode()

@@ -32,35 +32,72 @@
     }
   },
   "face": {
-    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/efc78715-image.jpg",
-    "eyeR": [
-      673,
-      1220
+    "views": [
+      {
+        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/8716142c-image.jpg",
+        "eyeR": [
+          876,
+          1186
+        ],
+        "eyeL": [
+          1186,
+          1184
+        ],
+        "nose": [
+          1024,
+          1400
+        ],
+        "mouth": [
+          1024,
+          1620
+        ],
+        "chin": [
+          1024,
+          1890
+        ],
+        "skinSample": [
+          920,
+          920,
+          1120,
+          1000
+        ],
+        "weight": 1.0
+      },
+      {
+        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/ee55797f-image.jpg",
+        "eyeR": [
+          680,
+          1110
+        ],
+        "eyeL": [
+          936,
+          1116
+        ],
+        "nose": [
+          860,
+          1310
+        ],
+        "mouth": [
+          820,
+          1480
+        ],
+        "chin": [
+          800,
+          1760
+        ],
+        "skinSample": [
+          560,
+          860,
+          800,
+          940
+        ],
+        "weight": 0.9,
+        "mirrorToo": true,
+        "mirrorWeight": 0.55
+      }
     ],
-    "eyeL": [
-      902,
-      1210
-    ],
-    "mouth": [
-      820,
-      1515
-    ],
-    "chin": [
-      830,
-      1735
-    ],
-    "nose": [
-      810,
-      1350
-    ],
-    "skinSample": [
-      720,
-      1010,
-      900,
-      1090
-    ],
-    "faceHalfWidth": 0.062,
-    "foreheadTop": 0.07
+    "faceHalfWidth": 0.07,
+    "foreheadTop": 0.075
   },
   "eyes": [
     118,
@@ -72,13 +109,59 @@
     "temple": 0.74,
     "side": 0.38,
     "color": [
-      58,
-      42,
+      52,
+      40,
       31
     ],
-    "volume": 0.007
+    "volume": 0.007,
+    "keys": [
+      [
+        0,
+        0.24
+      ],
+      [
+        0.35,
+        0.27
+      ],
+      [
+        0.62,
+        0.36
+      ],
+      [
+        0.85,
+        0.12
+      ],
+      [
+        1.1,
+        -0.32
+      ],
+      [
+        1.25,
+        -0.62
+      ],
+      [
+        1.42,
+        -0.2
+      ],
+      [
+        1.62,
+        -0.15
+      ],
+      [
+        1.9,
+        -0.62
+      ],
+      [
+        2.4,
+        -0.85
+      ],
+      [
+        3.1416,
+        -0.9
+      ]
+    ]
   },
-  "visorAboveEyes": 0.03,
+  "visorAboveEyes": 0.064,
   "clothes": {
     "beltAbovePelvis": 0.025,
     "sleeve": 0.55,

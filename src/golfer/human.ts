@@ -9,7 +9,8 @@ import { buildVisor } from './headwear';
 export interface HumanData {
   meta: {
     bones: string[]; parents: number[]; joint: number[][]; tail: number[][];
-    eye: number[]; headCenter: number[]; visor: { center: number[]; rx: number; rz: number };
+    eye: number[]; headCenter: number[]; visor: { center: number[]; rx: number; rz: number; profile?: number[] };
+    eyeballs: Record<'l' | 'r', { c: number[]; r: number }>; iris: number[];
     collar: number[][]; belt: { y: number; cx: number; cz: number; rx: number; rz: number };
     feet: Record<'l' | 'r', { heelZ: number; toeZ: number; x: number; halfW: number; ankleY: number }>;
     meshes: Record<string, Record<string, { offset: number; count: number; type: string }>>;
@@ -123,10 +124,8 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   add('pants', pantsMat);
   const glove = new THREE.MeshPhysicalMaterial({ color: O.glove, roughness: 0.6, normalMap: fabricNormal('leather'), normalScale: new THREE.Vector2(0.3, 0.3), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   add('glove', glove);
-  const eyeMat = new THREE.MeshPhysicalMaterial({ map: tex(data.eyes), roughness: 0.08, clearcoat: 1, clearcoatRoughness: 0.02 });
-  add('eyes', eyeMat);
+  void data.eyes;
   const teeth = add('teeth', new THREE.MeshStandardMaterial({ color: '#e8e0d2', roughness: 0.35 }));
-  add('lashes', new THREE.MeshStandardMaterial({ color: '#241812', roughness: 0.9, side: THREE.DoubleSide }));
   // hair: per-pixel ragged edge from the baked mask
   const hairCol = new THREE.Color(p.look.hair);
   const strands = canvasTex(512, 512, g => {
@@ -226,9 +225,33 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
 
   // hat
   const headBi = M.bones.indexOf('head');
+  // eyeballs: sclera, iris, pupil and a glossy cornea, looking straight ahead (+Z)
+  {
+    const ir = M.iris;
+    const eyeTex = canvasTex(256, 128, g => {
+      // equirectangular: u = longitude, v = latitude; the front (+Z) is u = 0.25 for three's sphere UVs
+      g.fillStyle = '#d9d0c8'; g.fillRect(0, 0, 256, 128);
+      const cx = 0.25 * 256, cy = 64;
+      for (let i = 0; i < 30; i++) { g.strokeStyle = 'rgba(190,90,80,.25)'; g.lineWidth = 0.6; g.beginPath(); const a = rand() * 7; g.moveTo(cx + Math.cos(a) * 60, cy + Math.sin(a) * 30); g.lineTo(cx + Math.cos(a) * 24, cy + Math.sin(a) * 12); g.stroke(); }
+      const gr = g.createRadialGradient(cx, cy, 2, cx, cy, 20);
+      gr.addColorStop(0, `rgb(${ir[0] * 0.6},${ir[1] * 0.65},${ir[2] * 0.65})`); gr.addColorStop(0.55, `rgb(${ir[0]},${ir[1]},${ir[2]})`); gr.addColorStop(0.9, `rgb(${ir[0] * 0.7},${ir[1] * 0.75},${ir[2] * 0.8})`); gr.addColorStop(1, 'rgb(40,46,52)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(cx, cy, 20, 20, 0, 0, 7); g.fill();
+      for (let i = 0; i < 60; i++) { const a = rand() * 7; g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 0.7; g.beginPath(); g.moveTo(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8); g.lineTo(cx + Math.cos(a) * 18, cy + Math.sin(a) * 18); g.stroke(); }
+      g.fillStyle = '#0b0b0d'; g.beginPath(); g.arc(cx, cy, 7.5, 0, 7); g.fill();
+    }, true, 1);
+    eyeTex.wrapS = eyeTex.wrapT = THREE.ClampToEdgeWrapping; eyeTex.repeat.set(1, 1);
+    const eyeMat = new THREE.MeshPhysicalMaterial({ map: eyeTex, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.03 });
+    for (const sfx of ['l', 'r'] as const) {
+      const e = M.eyeballs[sfx];
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(e.r * 1.02, 32, 20), eyeMat);
+      ball.name = 'eye';
+      ball.position.set(e.c[0], e.c[1], e.c[2]).sub(J[headBi]);
+      bones[headBi].add(ball); meshes.push(ball);
+    }
+  }
   if (O.headwear?.kind === 'visor') {
     const v = M.visor;
-    const g = buildVisor(O.headwear, v.rx, v.rz, 0, 0, p.handed === 'left');
+    const g = buildVisor(O.headwear, v.rx, v.rz, 0, 0, p.handed === 'left', v.profile);
     g.position.set(v.center[0], v.center[1], v.center[2]).sub(J[headBi]);
     bones[headBi].add(g); meshes.push(g);
   }

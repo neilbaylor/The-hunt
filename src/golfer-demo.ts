@@ -39,6 +39,7 @@ const poses: Record<string, any> = {
   finish: { phase: 'follow', phi: PHI_FINISH },
 };
 golfer.body.setSmile(+(q.get('smile') ?? 0));
+if (q.has('novisor')) golfer.body.root.traverse(o => { if (o.name === 'visor') o.visible = false; });
 const ps = poses[q.get('pose') ?? 'address'];
 if (ps) golfer.update({ topPhi: PHI_TOP, idleT: 0, ...ps });
 else { golfer.body.bones.forEach((b, i) => { b.quaternion.identity(); if (i === 1) b.position.copy(golfer.body.skel.joint[1]); }); golfer.club.group.visible = false; golfer.root.updateMatrixWorld(true); }
@@ -48,6 +49,7 @@ const view = q.get('view') ?? 'behind';
 const lx = golfer.lefty ? 1 : -1; // side of the ball the golfer stands on (world x)
 if (view === 'game') { cam.position.set(-0.85 * lx, 1.62, 5.6); cam.lookAt(0.45 * lx, 0.92, -22); cam.fov = 42; cam.updateProjectionMatrix(); }
 else if (view === 'back') { const h = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(h); cam.position.set(h.x + lx * 0.9, h.y + 0.25, h.z + 0.5); cam.lookAt(h.x, h.y + 0.05, h.z); }
+else if (view === 'eye') { const e = golfer.body.skel.eye.clone(); golfer.body.bones[0].localToWorld(e); golfer.char.localToWorld(e.copy(golfer.body.skel.eye)); cam.position.set(e.x - lx * 0.25, e.y + 0.01, e.z); cam.lookAt(e); }
 else if (view === 'hands') { const h = new THREE.Vector3(); golfer.body.bones[8].getWorldPosition(h); cam.position.set(h.x - lx * 0.5, h.y + 0.15, h.z + 0.35); cam.lookAt(h.x, h.y - 0.05, h.z); }
 else if (view === 'portrait') {
   cam.fov = 52; cam.updateProjectionMatrix();
@@ -63,7 +65,7 @@ else if (view === 'close' || view === 'three') {
   golfer.body.bones[5].getWorldPosition(h);
   e.copy(golfer.body.skel.eye).sub(golfer.body.skel.joint[5]); golfer.body.bones[5].localToWorld(e);
   const f = e.clone().sub(h).setY(0).normalize();
-  if (view === 'three') f.applyAxisAngle(new THREE.Vector3(0, 1, 0), 0.6);
+  if (view === 'three') f.applyAxisAngle(new THREE.Vector3(0, 1, 0), +(q.get('turn') ?? 0.6));
   const c = h.clone().add(new THREE.Vector3(0, 0.1, 0));
   cam.position.copy(c).addScaledVector(f, 0.9).add(new THREE.Vector3(0, 0.03, 0)); cam.lookAt(c);
 }
