@@ -357,7 +357,7 @@ def along(vi, a, b):  # 0 at bone a's head, 1 at b's head
     return float(np.dot(V[vi] - pa, d) / np.dot(d, d))
 
 C = P['clothes']
-belt_y = pelvis_y + C['beltAbovePelvis']
+belt_y = (C['beltAtH'] * float(V[body_idx, 1].max())) if C.get('beltAtH') else pelvis_y + C['beltAbovePelvis']   # natural waist (fraction of height) or above the pelvis joint
 shirt = np.zeros(NV, bool); pants = np.zeros(NV, bool); shoes = np.zeros(NV, bool); glove = np.zeros(NV, bool)
 shirt_off = np.zeros(NV); pants_off = np.zeros(NV); shoe_off = np.zeros(NV)
 for vi in body_idx:
@@ -384,7 +384,7 @@ for vi in body_idx:
             shirt_off[vi] = C['shirtGap'] * (0.5 + 0.5 * tuck) + C['shirtLoose'] * loose * tuck
     # trousers: belt line down to just above the ankle
     hem_y = (joint[BONES.index('calf_l')][1] + C['shortsAboveKnee']) if C.get('shorts') else min(ankle_y.values()) - 0.012
-    if y < belt_y + 0.004 and feet < 0.85 and legs > 0.3 and y > hem_y:
+    if y < belt_y + 0.004 and feet < 0.85 and (legs > 0.3 or (y > pelvis_y - 0.05 and max(arm_l, arm_r) < 0.3 and torso > 0.3)) and y > hem_y:   # up to the natural waist
         pants[vi] = True
         knee = min(abs(y - joint[BONES.index('calf_l')][1]), 0.3)
         pants_off[vi] = C['pantsGap'] + C['pantsLoose'] * (0.6 + 0.4 * (1 - knee / 0.3)) * (1.2 if y < joint[BONES.index('calf_l')][1] else 1)

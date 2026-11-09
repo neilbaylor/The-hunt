@@ -499,7 +499,7 @@ if A.neck == 'loft':
     # the seam follows the collar (low at the front, high at the back, so it stays under the polo at the back and sides)
     cz = np.polyfit(collar[:, 2], collar[:, 1], 1)
     def y_seam_at(z): return cz[0] * z + cz[1] + 0.01
-    neck_z = SP[(np.abs(SP[:, 1] - (y_seam_at(SP[:, 2]) - 0.012)) < 0.008) & (np.abs(SP[:, 0]) < 0.075)]
+    neck_z = SP[(np.abs(SP[:, 1] - (y_seam_at(SP[:, 2]) - 0.012)) < 0.008) & (np.abs(SP[:, 0]) < 0.062)]   # the neck itself, not the shoulders
     axis_c = np.array([0.0, (neck_z[:, 2].min() + neck_z[:, 2].max()) / 2])
     neckv = neck_z
     na = np.arctan2(neckv[:, 0] - axis_c[0], neckv[:, 2] - axis_c[1]); nr = np.hypot(neckv[:, 0] - axis_c[0], neckv[:, 2] - axis_c[1])
@@ -998,7 +998,7 @@ _b = io.BytesIO(); Image.fromarray(nimg).save(_b, 'JPEG', quality=90); normal_jp
 print(f'  normal map {NT}px: {len(normal_jpg) // 1024} KB')
 # crevices (the hi-res surface sits below the low-res one): concha, behind the ear, the nose and mouth corners
 dep = np.einsum('ij,ij->i', cp - tp, tn)
-ao = 1 - np.clip(-dep / 0.004, 0, 1) * 0.35
+ao = 1 - np.clip(-dep / 0.004, 0, 1) * 0.35 * (cp[:, 1] > lm_f[152, 1] - 0.003)   # not on the neck (the generator's cut rim)
 out = out * ao[:, None]
 tex = np.zeros((T, T, 3), np.float32); have = np.zeros((T, T), np.uint8)
 tex[ty, tx] = out; have[ty, tx] = 255
