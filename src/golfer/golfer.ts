@@ -402,7 +402,7 @@ export class Golfer {
         const L = (v: number[]) => new THREE.Vector3(v[0], v[1], v[2]).applyQuaternion(qChest);
         const ARC = [   // [f, grip (from the neck, × body scale), shaft butt→head]
           [0.12, [0.06, -0.5, 0.4], [0.45, -0.22, 0.9]],
-          [0.33, [0.1, -0.22, 0.55], [0.15, 0.62, 0.77]],   // arms extended, shaft ~40° up toward the target
+          [0.33, [0.12, -0.2, 0.55], [0.7, 0.6, 0.4]],   // arms extended, shaft up toward the target and the lead side (away from the ball)
           [0.55, [0.15, 0.02, 0.3], [0.12, 0.75, -0.65]],   // shaft up over the lead shoulder, heading behind the head
         ] as [number, number[], number[]][];
         let j = 0; while (j < ARC.length - 2 && f > ARC[j + 1][0]) j++;
