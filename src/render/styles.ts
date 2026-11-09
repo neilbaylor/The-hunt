@@ -387,15 +387,13 @@ export function createStyler(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// Game finish: "hand-drawn realism" (styles 0 + 5/7 + 9 blended). An EffectComposer pass that runs on the linear
-// HDR scene right after the RenderPass, while the scene depth is still intact (later passes write over it), and
-// before depth of field so far ink softens with the background:
-//   - a thin warm-brown ink contour from depth silhouettes and creases (normal breaks), fading with distance
-//   - light hatching in relative shadows only (cross-hatching in the deepest, on 'high')
-//   - a touch of painterly colour: soft value steps, warm highlights, a small Kuwahara on near subjects ('high')
-//   - a gentle static paper grain
-//   - the golfer's face kept clean: a screen-space mask around the head (setFace) plus a skin-tone mask
-// Analysis (luma, steps, skin) uses a cheap tone-mapped proxy of the HDR colour; the changes apply to the HDR colour.
+// Game finish: "hand-drawn realism", dialled to a hint: realistic first. An EffectComposer pass on the linear HDR
+// scene right after the RenderPass, while the scene depth is still intact (later passes write over it):
+//   - a faint ~1 px warm-brown ink line on silhouettes only (depth jumps), near subjects only, fading out by ~30 m
+//   - a barely visible hatch hint in the deepest cast shadows (scales with intensity squared)
+//   - a tiny warm lift in the highlights and a light static paper grain
+//   - the golfer's face kept clean: a screen-space mask around the head (setFace)
+// One intensity (uniform `strength`, ?ink=0..1, default 0.3) scales all of it. Analysis uses a cheap tone-mapped proxy.
 
 export type HandTier = 'med' | 'high';
 
@@ -412,88 +410,52 @@ float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32)
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
 void main() {
+  // strength (?ink, default 0.3) scales everything; at the default it reads as realistic with a hint of illustration
+  float I = strength;
   vec2 uv = vUv; vec2 p = uv * res / px;
   vec3 c = texture2D(tDiffuse, uv).rgb;
   float z = viewZ(uv);
-  float near = smoothstep(16.0, 4.0, z), mid = 1.0 - smoothstep(45.0, 160.0, z);
-  vec3 d0 = disp(c); float L = luma(d0);
-  // face mask: the head's screen circle at the head's depth, softened
+  float L = luma(disp(c));
   vec2 fd = (uv - face.xy) * vec2(aspect, 1.0);
   float fm = face.w > 0.0 ? (1.0 - smoothstep(face.z * 0.7, face.z, length(fd))) * (1.0 - smoothstep(0.35, 0.8, abs(z - face.w))) : 0.0;
-  float skin = smoothstep(0.03, 0.09, d0.r - d0.g) * smoothstep(0.0, 0.05, d0.g - d0.b) * smoothstep(0.25, 0.45, d0.r);
-  float keep = 1.0 - max(fm, 0.6 * skin * near);   // 1 = full effect, 0 = untouched
 
-  // depth taps (shared by contour and crease)
-  float w = (1.2 + 1.0 * near) * px * (0.75 + 0.5 * vnoise(p * 0.07));
-  vec2 o = w / res;
-  float za = viewZ(uv + vec2(o.x, 0.0)), zb = viewZ(uv - vec2(o.x, 0.0)), zc = viewZ(uv + vec2(0.0, o.y)), zd = viewZ(uv - vec2(0.0, o.y));
+  // a tiny warm lift in the highlights
+  c *= mix(vec3(1.0), vec3(1.06, 1.0, 0.9), smoothstep(0.62, 0.95, L) * I);
 
-#ifdef HIGH
-  // painterly colour on near subjects: 3x3 four-sector Kuwahara (flattens blotchy fabric shading)
-  {
-    vec2 k = 1.2 * px / res; vec3 m0 = vec3(0.0), m1 = vec3(0.0), m2 = vec3(0.0), m3 = vec3(0.0); float v0 = 0.0, v1 = 0.0, v2 = 0.0, v3 = 0.0;
-    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
-      vec3 t = texture2D(tDiffuse, uv + vec2(float(i), float(j)) * k).rgb; float l = luma(disp(t));
-      if (i <= 0 && j <= 0) { m0 += t; v0 += l * l - 0.0; } if (i >= 0 && j <= 0) { m1 += t; v1 += l * l; }
-      if (i <= 0 && j >= 0) { m2 += t; v2 += l * l; } if (i >= 0 && j >= 0) { m3 += t; v3 += l * l; }
-    }
-    float l0 = luma(disp(m0 * 0.25)), l1 = luma(disp(m1 * 0.25)), l2 = luma(disp(m2 * 0.25)), l3 = luma(disp(m3 * 0.25));
-    float s0 = v0 * 0.25 - l0 * l0, s1 = v1 * 0.25 - l1 * l1, s2 = v2 * 0.25 - l2 * l2, s3 = v3 * 0.25 - l3 * l3;
-    vec3 kc = m0; float b = s0; if (s1 < b) { b = s1; kc = m1; } if (s2 < b) { b = s2; kc = m2; } if (s3 < b) { kc = m3; }
-    c = mix(c, kc * 0.25, 0.55 * near * (1.0 - fm));
+  // hatching: a faint hint only in the deepest cast shadows (scales with I squared: barely there at the default)
+  float hz = 1.0 - smoothstep(15.0, 60.0, z);
+  if (hz > 0.0 && L < 0.35) {
+    vec2 r = 14.0 * px / res;
+    float loc = (Ld(uv + vec2(r.x, 0.0)) + Ld(uv - vec2(r.x, 0.0)) + Ld(uv + vec2(0.0, r.y)) + Ld(uv - vec2(0.0, r.y))) * 0.25;
+    float deep = (1.0 - smoothstep(0.45, 0.65, L / max(loc, 0.03))) * (1.0 - smoothstep(0.15, 0.35, L));
+    float h = 1.0 - smoothstep(0.12, 0.34, abs(fract(dot(p, vec2(0.6, -0.8)) / 3.0 + 0.3 * vnoise(p * 0.045)) - 0.5) * 2.0);
+    c *= 1.0 - 0.6 * I * I * h * deep * hz * (1.0 - fm);
   }
-#endif
 
-  // a touch of posterisation (soft value steps) and warm highlights
-  float steps = 7.0, Lq = (floor(L * steps) + smoothstep(0.3, 0.7, fract(L * steps))) / steps;
-  float Lp = mix(L, Lq, 0.35 * strength * keep);
-  c *= pow(max(Lp, 1e-3) / max(L, 1e-3), 2.0);
-  c *= mix(vec3(1.0), vec3(1.05, 1.0, 0.9), smoothstep(0.62, 0.95, L) * strength);
-
-  // hatching where it is darker than its surroundings (cast shadows, folds, under arms, tree shade)
-  vec2 r = 14.0 * px / res;
-  float loc = (Ld(uv + vec2(r.x, 0.0)) + Ld(uv - vec2(r.x, 0.0)) + Ld(uv + vec2(0.0, r.y)) + Ld(uv - vec2(0.0, r.y))
-#ifdef HIGH
-             + Ld(uv + r * 0.7071) + Ld(uv - r * 0.7071) + Ld(uv + vec2(r.x, -r.y) * 0.7071) + Ld(uv + vec2(-r.x, r.y) * 0.7071)) / 8.0;
-#else
-             ) / 4.0;
-#endif
-  float shade = L / max(loc, 0.03);
-  float wob = 0.3 * vnoise(p * 0.045);
-  float h1 = 1.0 - smoothstep(0.12, 0.34, abs(fract(dot(p, vec2(0.6, -0.8)) / 3.0 + wob) - 0.5) * 2.0);
-  float hat = h1 * max(1.0 - smoothstep(0.7, 0.95, shade), 0.7 * (1.0 - smoothstep(0.12, 0.3, L)));
-#ifdef HIGH
-  float h2 = 1.0 - smoothstep(0.12, 0.34, abs(fract(dot(p, vec2(0.8, 0.6)) / 3.3 + wob) - 0.5) * 2.0);
-  hat = max(hat, h2 * (1.0 - smoothstep(0.45, 0.72, shade)));
-#endif
-  hat *= mid * keep * (0.6 + 0.4 * vnoise(p * 0.5)) * strength;
-  c *= 1.0 - 0.6 * hat;
-
-  // ink: silhouettes (relative depth jumps, gated so gentle terrain steps never draw) + creases (normal breaks)
-  float m = min(min(za, zb), min(zc, zd));
-  float jump = (z - m) / max(m, 0.3);
-  float gate = max(smoothstep(8.0, 5.0, m), smoothstep(0.5, 0.9, jump));
-  float sil = smoothstep(0.1, 0.28, jump) * gate;
-  float crease = abs(za + zb + zc + zd - 4.0 * z) / max(z, 0.3);
-  float cr = smoothstep(0.012, 0.04, crease) * near * 0.7;
-  // interior lines where the tone breaks sharply (collar, sleeves, belt, folds), near subjects only
-  vec2 q = px / res;
-  float gx = Ld(uv + vec2(q.x, 0.0)) - Ld(uv - vec2(q.x, 0.0)), gy = Ld(uv + vec2(0.0, q.y)) - Ld(uv - vec2(0.0, q.y));
-  float te = smoothstep(0.1, 0.24, length(vec2(gx, gy))) * mid * 0.55;
-  float ink = max(max(sil, cr), te * keep) * (0.7 + 0.3 * vnoise(p * 0.4));
-  ink *= 1.0 - 0.65 * smoothstep(40.0, 450.0, z);                // fades with distance
-  ink *= mix(1.0, 0.45, fm);                                     // a lighter line around the face
-  c = mix(c, vec3(0.03, 0.016, 0.01), clamp(ink, 0.0, 1.0) * 0.92 * strength);
+  // ink: silhouettes only (relative depth jumps), about 1 px, faint, near subjects only
+  float near = 1.0 - smoothstep(6.0, 30.0, z);
+  if (near > 0.0) {
+    vec2 o = px * (0.9 + 0.3 * near) / res;
+    float m = min(min(viewZ(uv + vec2(o.x, 0.0)), viewZ(uv - vec2(o.x, 0.0))), min(viewZ(uv + vec2(0.0, o.y)), viewZ(uv - vec2(0.0, o.y))));
+    float jump = (z - m) / max(m, 0.3);
+    float sil = smoothstep(0.1, 0.28, jump) * max(smoothstep(8.0, 5.0, m), smoothstep(0.5, 0.9, jump));
+    float ink = sil * near * (0.8 + 0.2 * vnoise(p * 0.4)) * mix(1.0, 0.5, fm);
+    c = mix(c, vec3(0.03, 0.016, 0.01), clamp(ink * I, 0.0, 1.0));
+  }
 
   // paper grain: static (no shimmer), strongest in the mid tones
   float g = 0.65 * vnoise(p * 0.75) + 0.35 * hash(floor(p));
-  c *= 1.0 + (g - 0.5) * 0.17 * strength * (0.4 + 0.6 * (1.0 - abs(L - 0.55) * 1.6)) * (1.0 - 0.7 * fm);
+  c *= 1.0 + (g - 0.5) * 0.17 * I * (0.4 + 0.6 * (1.0 - abs(L - 0.55) * 1.6)) * (1.0 - 0.7 * fm);
   gl_FragColor = vec4(c, texture2D(tDiffuse, uv).a);
 }`;
 
 /** composer pass: reads the scene target's colour + depth and writes the hand-drawn image back into it (via a private
  *  colour target, so nothing samples a depth texture that is also bound for writing). It does not swap, so later
  *  passes (depth of field) still find the scene depth on the read buffer. */
+/** default intensity of the game finish; ?ink=0..1 tunes it (0.3 ≈ realistic with a hint of illustration) */
+const inkQ = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('ink') : null;
+export const HAND_INK = inkQ !== null && isFinite(+inkQ) ? THREE.MathUtils.clamp(+inkQ, 0, 1) : 0.3;
+
 export class HandDrawnPass extends Pass {
   readonly mat: THREE.ShaderMaterial;
   private quad: FullScreenQuad;
@@ -513,7 +475,7 @@ export class HandDrawnPass extends Pass {
       defines: tier === 'high' ? { HIGH: 1 } : {},
       uniforms: {
         tDiffuse: { value: null }, tDepth: { value: null }, res: { value: new THREE.Vector2(1, 1) }, px: { value: 1 },
-        cNear: { value: 0.1 }, cFar: { value: 1000 }, exposure: { value: 1 }, aspect: { value: 1 }, strength: { value: 1 },
+        cNear: { value: 0.1 }, cFar: { value: 1000 }, exposure: { value: 1 }, aspect: { value: 1 }, strength: { value: HAND_INK },
         face: { value: new THREE.Vector4(0, 0, 0, 0) },
       },
       vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
@@ -524,6 +486,8 @@ export class HandDrawnPass extends Pass {
   /** render size in device pixels and the pixel ratio (line widths and grain scale with it) */
   setSize(w: number, h: number, pr = 1) { this.rt.setSize(w, h); this.mat.uniforms.res.value.set(w, h); this.mat.uniforms.px.value = pr; this.mat.uniforms.aspect.value = w / h; }
   /** the golfer's head (world position, radius in metres) to keep the face clean; null for none */
+  /** overall intensity 0..1 (default HAND_INK) */
+  setIntensity(k: number) { this.mat.uniforms.strength.value = THREE.MathUtils.clamp(k, 0, 1); }
   setFace(pos: THREE.Vector3 | null, radius = 0.14) { this.faceWorld = pos ? (this.faceWorld ?? new THREE.Vector3()).copy(pos) : null; this.faceR = radius; }
   render(renderer: THREE.WebGLRenderer, _writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget) {
     const u = this.mat.uniforms, cam = this.camera;
