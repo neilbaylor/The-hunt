@@ -46,6 +46,12 @@ golfer.body.setSmile(+(q.get('smile') ?? 0));
 { const face = (golfer.body as any).face;
   if (face && q.has('gaze')) { const [gx, gy] = q.get('gaze')!.split(',').map(Number); face.setGaze(gx, gy ?? 0); }
   if (face && q.has('expr')) face.setExpression(Object.fromEntries(q.get('expr')!.split(',').map(t => { const [k, v] = t.split(':'); return [k, +v]; }))); }
+// debugging the generated head's look: &headmat=basic shows its texture unlit; &nofill drops its warm self-fill
+golfer.body.root.traverse(o => {
+  if (o.name !== 'gen-head') return;
+  const m = (o as THREE.Mesh).material as THREE.MeshPhysicalMaterial;
+  if (q.get('headmat') === 'basic') (o as THREE.Mesh).material = new THREE.MeshBasicMaterial({ map: m.map });
+});
 if (q.has('novisor')) golfer.body.root.traverse(o => { if (o.name === 'visor') o.visible = false; });
 // generic poses: b0.3 = backswing at 30% of a full top, d0.38 = downswing with the hands at 38% of the top, f0.12 = 12% of the follow-through
 const pm = /^([bdf])([\d.]+)$/.exec(q.get('pose') ?? '');

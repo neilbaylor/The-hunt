@@ -43,6 +43,8 @@ ap.add_argument('--rest', default='closed', choices=['closed', 'grin'], help='re
 ap.add_argument('--rest-smile', type=float, default=-0.85, help='smile morph baked into the rest face')
 ap.add_argument('--real-photos', default='8716142c,ee55797f,efc78715,f9637097', help='his photos the central face is projected from (name prefixes; empty = none)')
 ap.add_argument('--skin-lift', type=float, default=6.0, help='Lab L added to the real-photo face')
+ap.add_argument('--ear-back', type=float, default=0.3, help='ears swung back about their roots (rad)')
+ap.add_argument('--ear-out', type=float, default=0.7, help='ear protrusion scale')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
 ap.add_argument('--debug', default=None, help='directory for debug images')
@@ -283,9 +285,15 @@ def reshape(P, q):
     S = S * (1 + (nose - 1) * tn_)
     P[:, 0] = x * S
     # the ears stand out a little more (the portrait's outline shows them further from the head)
+    # ears: his sit close to the head and angle back (his front selfies show mostly the rim): swing each ear back
+    # about its root and bring it in (the generator's stand out like handles)
     for sx_, tip_ in ear_tips:
-        we_ = np.clip(1 - np.linalg.norm(P - tip_, axis=1) / 0.03, 0, 1) ** 1.5 * (P[:, 0] * sx_ > abs(tip_[0]) - 0.02)
-        P[:, 0] += sx_ * 0.007 * we_
+        root_ = tip_ - np.array([sx_ * 0.02, 0, 0])
+        we_ = np.clip(1 - np.linalg.norm(P - tip_, axis=1) / 0.035, 0, 1) ** 1.2 * (P[:, 0] * sx_ > abs(tip_[0]) - 0.022)
+        th_ = sx_ * A.ear_back * we_; d_ = P - root_
+        x2 = d_[:, 0] * np.cos(th_) + d_[:, 2] * np.sin(th_); z2 = -d_[:, 0] * np.sin(th_) + d_[:, 2] * np.cos(th_)
+        x2 = x2 * (1 - (1 - A.ear_out) * we_)
+        P[:, 0] = root_[0] + x2; P[:, 2] = root_[2] + z2
     # (no hollow under the cheekbones: the user wants the cheeks fuller)
     # fuller cheeks where his smile lifts them (the apples, upper/mid cheek), the jaw below stays defined
     apple = np.exp(-(((np.abs(x) - 0.036) / 0.016) ** 2 + ((y - (yN + 0.002)) / 0.016) ** 2)) * front
