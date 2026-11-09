@@ -879,7 +879,7 @@ if A.unwrap not in (None, 'none') and os.path.exists(A.unwrap):
     if DBG: sheet_.save(os.path.join(DBG, 'irises.png'))
     print('  irises from the unwrap; sclera', [np.round(np.array(e_['sclera']) * 255) for e_ in eyes_uv])
 # (the body's skin colour: skin_xform above; a flat tint is kept for older loaders)
-tint = np.clip(Aff[:3].sum(1) * 0 + (Aff[:3] @ np.ones(3) / 3 + Aff[3]), 0.5, 1.6) if False else np.ones(3)
+tint = np.ones(3)   # (superseded by skinXform; kept so older loaders still read a tint)
 
 # ───────────────────────── write head.bin ─────────────────────────
 PV = mir(VV).astype(np.float32)
