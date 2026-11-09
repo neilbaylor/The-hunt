@@ -25,14 +25,52 @@ export interface SwingState {
 export const BALL_R = 0.02135;
 const IN = 0.0254;
 
-interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: number; chestTilt: number; chestSide: number; shift: number; drop: number; heel: number; shrug: number; pro: number }
+// Body keyframes. Turns and forward bend traced from tour swing sequences (MediaPipe pose landmarks, three
+// down-the-line sequences, outliers dropped); side bend and pelvis shift, which a down-the-line camera can't
+// see, from published 3D tour averages. Angles in radians as the rig reads them: chest = Rz(side)·Rx(tilt)·Ry(turn),
+// pelvis = Ry(turn)·Rz(side)·Rx(tilt); + turn opens toward the target, + side tilts the spine away from it.
+// hinge: wrist cock as a fraction of a full set (− = re-hinged in the follow-through); beta: hands carried round
+// the body (radians about the vertical); pro: trail shoulder reaching toward the ball.
+interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: number; chestTilt: number; chestSide: number; shift: number; drop: number; heel: number; shrug: number; pro: number; hinge: number; beta: number }
+const K = (o: Partial<Keys>, base: Keys): Keys => ({ ...base, ...o });
 // address: spine bent toward the ball and tilted away from the target (trail shoulder low, lead hip high)
-const A: Keys = { hipTurn: 0, hipTilt: 0.22, hipSide: 0.07, chestTurn: 0, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15 };
-const T: Keys = { hipTurn: -0.8, hipTilt: 0.2, hipSide: 0.02, chestTurn: -1.62, chestTilt: 0.66, chestSide: 0.1, shift: -0.02, drop: 0, heel: 0, shrug: 0.18, pro: 0.1 };
-const I: Keys = { hipTurn: 0.68, hipTilt: 0.18, hipSide: 0.08, chestTurn: 0.16, chestTilt: 0.6, chestSide: 0.25, shift: 0.075, drop: 0.012, heel: 0.3, shrug: -0.05, pro: -0.13 };
+const A: Keys = { hipTurn: 0.04, hipTilt: 0.22, hipSide: 0.07, chestTurn: 0.04, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15, hinge: 0, beta: 0 };
+const TAKE = K({ hipTurn: -0.12, hipSide: 0.05, chestTurn: -0.5, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.18, beta: -0.06 }, A);
+const HALF = K({ hipTurn: -0.36, hipSide: 0.02, chestTurn: -0.98, chestTilt: 0.65, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.15 }, A);
+const B3Q = K({ hipTurn: -0.6, hipTilt: 0.21, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.67, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.26 }, A);
+const T: Keys = { hipTurn: -0.78, hipTilt: 0.2, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.67, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.18, pro: 0.1, hinge: 1, beta: -0.32 };
+// downswing: the hips lead (they're already unwinding while the chest is still turned), the trail side drops
+const TRANS = K({ hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
+const DOWN = K({ hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 1, beta: -0.25 }, T);
+const LATE = K({ hipTurn: 0.32, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.38, shift: 0.075, drop: 0.008, heel: 0.1, shrug: 0.0, pro: -0.08, hinge: 0.62, beta: -0.12 }, T);
+const I: Keys = { hipTurn: 0.7, hipTilt: 0.16, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.4, shift: 0.08, drop: 0.012, heel: 0.28, shrug: -0.05, pro: -0.13, hinge: 0, beta: 0 };
+// follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
+const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.46, chestSide: 0.38, shift: 0.1, heel: 0.5, hinge: -0.08, beta: 0.08, pro: -0.12 }, I);
+const THRU = K({ hipTurn: 1.25, hipTilt: 0.12, hipSide: 0.06, chestTurn: 1.35, chestTilt: 0.28, chestSide: 0.3, shift: 0.13, drop: 0.0, heel: 0.8, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
+const T3Q = K({ hipTurn: 1.5, hipTilt: 0.08, hipSide: 0.03, chestTurn: 1.75, chestTilt: 0.12, chestSide: 0.22, shift: 0.16, drop: -0.025, heel: 0.95, shrug: -0.12, pro: -0.02, hinge: -0.85, beta: 0.42 }, I);
 // full finish: belt buckle and chest past the target, weight on the lead leg, upright with a slight reverse-C
-const F: Keys = { hipTurn: 1.62, hipTilt: 0.04, hipSide: 0.0, chestTurn: 1.95, chestTilt: 0.0, chestSide: 0.13, shift: 0.17, drop: -0.035, heel: 1, shrug: -0.12, pro: 0 };
-const lerpK = (a: Keys, b: Keys, t: number, o: Keys) => { for (const k in a) (o as any)[k] = (a as any)[k] + ((b as any)[k] - (a as any)[k]) * t; return o; };
+const F: Keys = { hipTurn: 1.62, hipTilt: 0.04, hipSide: 0.0, chestTurn: 1.95, chestTilt: 0.0, chestSide: 0.18, shift: 0.17, drop: -0.035, heel: 1, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.55 };
+// where each key sits: back/follow by the hands' angle as a fraction of a full top/finish, down by fraction of this top
+const KF_BACK: [number, Keys][] = [[0, A], [0.3, TAKE], [0.55, HALF], [0.8, B3Q], [1, T]];
+const KF_DOWN: [number, Keys][] = [[0, T], [0.15, TRANS], [0.45, DOWN], [0.75, LATE], [1, I]];
+const KF_FOLLOW: [number, Keys][] = [[0, I], [0.12, REL], [0.35, THRU], [0.6, T3Q], [1, F]];
+const KEY_NAMES = Object.keys(A) as (keyof Keys)[];
+/** monotone cubic (Fritsch–Carlson) through the keys of one channel: smooth, never overshoots a key */
+function keysAt(kf: [number, Keys][], u: number, o: Keys) {
+  u = Math.min(kf[kf.length - 1][0], Math.max(kf[0][0], u));
+  let i = 0; while (i < kf.length - 2 && u > kf[i + 1][0]) i++;
+  const [x0, k0] = kf[i], [x1, k1] = kf[i + 1], h = x1 - x0, t = (u - x0) / h;
+  const h00 = 2 * t ** 3 - 3 * t ** 2 + 1, h10 = t ** 3 - 2 * t ** 2 + t, h01 = -2 * t ** 3 + 3 * t ** 2, h11 = t ** 3 - t ** 2;
+  const slope = (j: number, n: keyof Keys) => (kf[j + 1][1][n] - kf[j][1][n]) / (kf[j + 1][0] - kf[j][0]);
+  const tan = (j: number, n: keyof Keys) => {
+    if (j === 0) return slope(0, n);
+    if (j === kf.length - 1) return slope(j - 1, n);
+    const a = slope(j - 1, n), b = slope(j, n);
+    return a * b <= 0 ? 0 : (2 * a * b) / (a + b); // harmonic mean: no overshoot
+  };
+  for (const n of KEY_NAMES) o[n] = h00 * k0[n] + h10 * h * tan(i, n) + h01 * k1[n] + h11 * h * tan(i + 1, n);
+  return o;
+}
 const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 /** how each shot type swings: backswing length, finish length, stance and hinge */
@@ -125,7 +163,7 @@ export class Golfer {
       let lo = -1.2, hi = -0.1;
       for (let it = 0; it < 20; it++) {
         const z = (lo + hi) / 2;
-        this.pelvisBase.set(this.stanceX, this.body.skel.joint[BONE.pelvis].y - 0.07 * k - st.stance * 0.01, z);
+        this.pelvisBase.set(this.stanceX, this.body.skel.joint[BONE.pelvis].y - 0.04 * k - st.stance * 0.01, z);
         this.addressKeys(pos); this.rig.apply(pos);
         const sh = this.rig.P[BONE.upperL];
         // shoulder a touch outside the hands (toward the ball) — a plumb line from it hangs just inside the toes
@@ -189,7 +227,8 @@ export class Golfer {
     const k = this.k, st = SHOT_STYLE[this.mode];
     const long = (this.club.length - 0.88) / 0.3;
     const half = (0.16 + 0.1 * long) * k * st.stance;
-    const fz = this.pelvisBase.z + 0.1 * k;
+    // ankles just ahead of the hip joints (tour set-up from behind: knees over the balls of the feet, not a squat)
+    const fz = this.pelvisBase.z + 0.04 * k;
     const flareL = 0.38 + st.open, flareR = -0.12;
     const openBack = st.open * 0.12; // open stance: lead foot pulled back from the line
     const J = this.body.skel.joint, T = this.body.skel.tail;
@@ -225,53 +264,27 @@ export class Golfer {
   update(s: SwingState) {
     const st = SHOT_STYLE[this.mode], p = this.pose, k = this.k;
     const key: Keys = { ...A };
-    const topB = Math.min(1, s.topPhi / PHI_TOP);
-    const atTop = (b: number, o: Keys) => {
-      lerpK(A, T, 1, o);
-      for (const n in o) (o as any)[n] = (A as any)[n] + ((T as any)[n] - (A as any)[n]) * b;
-      return o;
-    };
-    const finishK = (): Keys => { const o = { ...F }; for (const n in o) (o as any)[n] = (I as any)[n] + ((F as any)[n] - (I as any)[n]) * st.finish; return o; };
-    let phi = s.phi, hinge = 0, beta = 0, finW = 0;
+    let phi = s.phi, finW = 0;
     const hingeTop = 2.05 * st.hinge;
     if (s.phase === 'address') {
       Object.assign(key, A);
       phi = 0;
     } else if (s.phase === 'back') {
-      const b = Math.max(0, phi / PHI_TOP);
-      const ease = (e: number) => smooth(0, 1, e);
-      Object.assign(key, atTop(1, { ...A }));
-      for (const n of Object.keys(A) as (keyof Keys)[]) {
-        const t = n === 'hipTurn' ? Math.pow(ease(b), 1.3) : ease(b);
-        key[n] = A[n] + (T[n] - A[n]) * t;
-      }
-      hinge = hingeTop * smooth(0.12, 0.85, phi / (PHI_TOP * Math.max(0.5, st.back)));
-      beta = -0.32 * smooth(0, PHI_TOP, phi);
+      keysAt(KF_BACK, Math.max(0, phi) / PHI_TOP, key);
     } else if (s.phase === 'down') {
-      const top = atTop(topB, { ...A });
-      const dd = 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi);
-      for (const n of Object.keys(A) as (keyof Keys)[]) {
-        const t = n === 'hipTurn' || n === 'shift' ? smooth(0, 0.65, dd) : n === 'chestTurn' ? smooth(0.15, 1, dd) : smooth(0, 1, dd);
-        key[n] = top[n] + (I[n] - top[n]) * t;
-      }
-      const hTop = hingeTop * smooth(0.12, 0.85, s.topPhi / (PHI_TOP * Math.max(0.5, st.back)));
-      hinge = hTop * smooth(0.0, 0.62, Math.max(0, phi) / Math.max(0.01, s.topPhi) * 1.0); // lag, released late
-      beta = -0.32 * smooth(0, PHI_TOP, Math.max(0, phi));
+      // from wherever this backswing topped out: the backswing-side difference fades out by impact
+      const u = 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi);
+      keysAt(KF_DOWN, u, key);
+      const top = keysAt(KF_BACK, Math.min(1, s.topPhi / PHI_TOP), { ...A });
+      const w = 1 - smooth(0, 0.85, u);
+      for (const n of KEY_NAMES) key[n] += (top[n] - T[n]) * w;
     } else {
-      const fin = finishK();
+      // short finishes (punch, pitch) stop part-way along the same path and hold
       const f = Math.min(1, -phi / Math.abs(PHI_FINISH));
-      const e = 1 - Math.pow(1 - f, 2);
-      for (const n of Object.keys(A) as (keyof Keys)[]) {
-        // posture (spine and hip tilt, knee flex) holds through impact and only rises late in the follow-through
-        const late = n === 'chestTilt' || n === 'hipTilt' || n === 'drop' || n === 'chestSide';
-        const t = late ? smooth(0.32, 1.0, f) : e;
-        key[n] = I[n] + (fin[n] - I[n]) * t;
-      }
-      // arms extend down the line first; the wrists re-hinge only as the club swings up
-      hinge = -1.9 * st.hinge * smooth(0.22, 0.8, f);
-      beta = 0.55 * smooth(0.1, 1, f);
+      keysAt(KF_FOLLOW, f * st.finish, key);
       finW = smooth(0.3, 0.95, f) * smooth(0.45, 0.95, st.finish);
     }
+    const hinge = key.hinge * hingeTop, beta = key.beta;
     // breathing and a little life at address
     const breathe = s.phase === 'address' ? Math.sin(s.idleT * 1.6) * 0.006 : 0;
 

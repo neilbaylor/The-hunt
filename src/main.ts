@@ -12,6 +12,8 @@ import { Tracer } from './game/tracer';
 import { Sound } from './game/audio';
 import { Hud, viewport, type CardData } from './ui/hud';
 import { ballTex, onBallTexUpdate } from './ui/balltex';
+import { AimController, aim } from './game/aim';
+import { MODES as SHOT_MODES } from './game/shot';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const smooth = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -77,8 +79,16 @@ const hud = new Hud(document.body, profile);
 hud.el.classList.add('hidden');
 const sound = new Sound();
 hud.club = 6; hud.mode = 'full'; hud.lie = 0; hud.render(null);
-hud.onClub = i => { sound.ui(); golfer.setClub(i, hud.mode); teeUp(); };
-hud.onMode = m => { sound.ui(); golfer.setClub(hud.club, m); teeUp(); };
+hud.onClub = i => { sound.ui(); golfer.setClub(i, hud.mode); teeUp(); aimCtl.clubChanged(); };
+hud.onMode = m => { sound.ui(); golfer.setClub(hud.club, m); teeUp(); aimCtl.clubChanged(); };
+// ── aiming (src/game/aim.ts): ground arrow in the swing cam, overhead aim view with a draggable ring ──
+const aimCtl = new AimController({
+  scene, camera, canvas: renderer.domElement, range, lefty: golfer.lefty,
+  ballPos: () => golfer.ballWorld(new THREE.Vector3()),
+  carry: () => { const full = SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id); return { full, min: Math.max(5, Math.round(full * 0.35)), max: Math.round(full * 1.08) }; },
+  // the golfer turns to face the aim line (he stands round the ball, which sits at the origin)
+  onChange: () => { golfer.root.rotation.y = -aim.dir; golfer.root.updateMatrixWorld(true); if (state === 'ready') teeUp(); },
+});
 hud.onLie = () => sound.ui();
 
 function teeUp() {
@@ -94,14 +104,29 @@ function teeUp() {
 type GameState = 'intro' | 'ready' | 'swinging' | 'flight' | 'result';
 let state: GameState = 'intro';
 const G = { phase: 'address' as SwingPhase, phi: 0, target: 0, arrived: null as number | null, topPhi: PHI_TOP, idleT: 0, followT0: 0, followTo: PHI_FINISH, returnT0: 0, returning: false };
-const SW = { active: false, phase: 'idle' as 'idle' | 'back' | 'down', press: [0, 0] as [number, number], trailB: [] as [number, number][], trailD: [] as [number, number][], depth: 0, deep: [0, 0] as [number, number], tTrans: 0, off: 0, driftSum: 0, driftN: 0, last: [0, 0] as [number, number] };
+const SW = { active: false, phase: 'idle' as 'idle' | 'back' | 'down', press: [0, 0] as [number, number], trailB: [] as [number, number][], trailD: [] as [number, number][], depth: 0, deep: [0, 0] as [number, number], tTrans: 0, t0: 0, tDeep: 0, tAt: 0, off: 0, driftSum: 0, driftN: 0, last: [0, 0] as [number, number] };
 let plan: ShotPlan | null = null;
 let card: CardData | null = null;
 let hitStop = 0;
 let resultT = 0;
 const style = () => SHOT_STYLE[hud.mode];
-const tTop = () => profile.swing.tempo * style().tempo;
 const fullBack = () => PHI_TOP * style().back * profile.swing.length;
+// Backswing: the golfer follows the finger with a short lag, so the top arrives about when the pull ends.
+// tTop caps how fast: a full backswing in ~0.6 s at the default profile tempo (1.1); the takeaway starts gentler.
+const tTop = () => 0.6 * (profile.swing.tempo / 1.1) * style().tempo;
+const BACK_LAG = 0.075;                                   // s: how closely the golfer trails the finger
+const arriveGap = () => Math.max(0.05, 0.05 * fullBack()); // within this of the finger = at the top
+function backStep(phi: number, target: number, dt: number, tSince: number) {
+  const gap = target - phi;
+  if (gap <= 0) return phi;
+  const vMax = fullBack() / tTop() * (0.45 + 0.55 * smooth(0, 0.2, tSince));
+  return Math.min(target, phi + Math.min(vMax, gap / BACK_LAG) * dt);
+}
+// ?debug=1: print the last swing's timing so the tempo can be tuned by feel
+const dbg = new URLSearchParams(location.search).has('debug') ? document.body.appendChild(Object.assign(document.createElement('div'), {
+  style: 'position:fixed;left:6px;bottom:6px;z-index:99;font:11px/1.3 ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.55);padding:4px 6px;border-radius:4px;pointer-events:none;white-space:pre',
+})) : null;
+let dbgRaw = 0;
 
 hud.pad.addEventListener('pointerdown', e => {
   sound.unlock();
@@ -110,7 +135,7 @@ hud.pad.addEventListener('pointerdown', e => {
   if (state !== 'ready' || SW.active || fading) return;
   hud.closePops();
   hud.pad.setPointerCapture(e.pointerId);
-  Object.assign(SW, { active: true, phase: 'back', press: hud.padLocal(e), trailB: [[0, 0]], trailD: [], depth: 0, deep: [0, 0], driftSum: 0, driftN: 0, last: [0, 0] });
+  Object.assign(SW, { active: true, phase: 'back', press: hud.padLocal(e), trailB: [[0, 0]], trailD: [], depth: 0, deep: [0, 0], driftSum: 0, driftN: 0, last: [0, 0], t0: performance.now(), tDeep: performance.now(), tAt: performance.now() });
   Object.assign(G, { phase: 'back', phi: 0, target: 0, arrived: null, returning: false });
   state = 'swinging';
   e.preventDefault();
@@ -122,20 +147,24 @@ hud.pad.addEventListener('pointermove', e => {
   if (SW.phase === 'back') {
     SW.trailB.push(p);
     if (p[1] > 0) { SW.driftSum += Math.abs(p[0]); SW.driftN++; }
-    if (p[1] > SW.depth) { if (p[1] > SW.depth + 1.5) G.arrived = null; SW.depth = p[1]; SW.deep = p; }
+    // tDeep: when the finger stopped going deeper; tAt: the last moment it sat at the bottom (the true start of the push)
+    if (p[1] > SW.depth) { if (p[1] > SW.depth + 0.15) SW.tDeep = now; SW.depth = p[1]; SW.deep = p; }
+    if (p[1] >= SW.depth - 0.8) SW.tAt = now;
     G.target = fullBack() * clamp(SW.depth / 80, 0, 1);
     if (SW.depth > 12 && p[1] < SW.depth - 10) {
       SW.phase = 'down'; SW.tTrans = now;
-      // how early/late the push was vs the golfer reaching the top. Early: time the golfer still needed,
-      // integrating the same eased approach the animation uses. The raw offset is softened so a natural
-      // pull-then-push (just as the golfer settles) reads Smooth: raw -125..+230 ms maps to the -70..+160 window.
+      // Rhythm: the pause between the top (golfer AND finger there) and the finger starting back up.
+      // Pushed before the golfer got there: minus the time it still needed (same motion law as the animation).
+      // Smooth window: raw -150..+220 ms (mapped onto planShot's -70..+160); a 0.5-0.8 s pull with a
+      // 50-150 ms pause grades Smooth (checked with a frame-by-frame replica of this code).
       let raw: number;
       if (G.arrived === null) {
-        const v0 = fullBack() / tTop() * 1.25; let gap = G.target - G.phi, t = 0;
-        while (gap > 0.03 && t < 3) { gap -= v0 * (1 / 240) * (0.3 + 0.7 * smooth(0, 0.5, gap / fullBack())); t += 1 / 240; }
-        raw = -t * 1000;
-      } else raw = now - G.arrived;
-      SW.off = raw >= 0 ? raw * 0.7 : raw * 0.56;
+        let phi = G.phi, t = 0;
+        while (G.target - phi > arriveGap() && t < 2) { phi = backStep(phi, G.target, 1 / 240, (now - SW.t0) / 1000 + t); t += 1 / 240; }
+        raw = -(t * 1000 + (now - SW.tAt));
+      } else raw = SW.tAt - Math.max(G.arrived, SW.tDeep);
+      dbgRaw = raw;
+      SW.off = raw >= 0 ? raw * (160 / 220) : raw * (70 / 150);
       G.topPhi = Math.max(0.05, G.phi); G.phase = 'down';
       SW.trailD.push(p);
       sound.swoosh(clamp(SW.depth / 80, 0.2, 1));
@@ -169,9 +198,11 @@ function strike(now: number, p: [number, number], released: boolean) {
   // the pad's left/right is the screen's left/right; for a lefty the ball still curves the way you push
   const strikePt = (hud as unknown as { strike?: { x: number; y: number } }).strike ?? { x: 0, y: 0 };
   plan = planShot({ power, offMs: SW.off, pushMs: now - SW.tTrans, angle, drift, released, strike: strikePt }, hud.club, hud.mode, LIES[hud.lie], golfer.lefty);
+  plan.launch.azimuth += aim.dir; // aimed off the straight line (aim view)
   ball.hit(plan.launch);
   tracer.clear(); tracer.push(ball.pos);
   card = { plan, power, offMs: SW.off, done: false };
+  if (dbg) dbg.textContent = `pull ${Math.round(SW.tDeep - SW.t0)} ms · pause ${Math.round(SW.tAt - SW.tDeep)} ms · push ${Math.round(now - SW.tTrans)} ms\nvs top ${dbgRaw > 0 ? '+' : ''}${Math.round(dbgRaw)} ms → graded ${Math.round(SW.off)} ms (${plan.tempoWord})`;
   hud.card(card);
   hud.toast(plan.tempoWord, plan.why, plan.tempoCls);
   sound.strike(CLUB_SPECS[hud.club].kind, 1 - plan.error);
@@ -224,6 +255,8 @@ function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
     out.set(-0.85 * side, 1.62, 5.6);
     look.set(0.45 * side, 0.92, -22);
   }
+  // turn the swing cam with the aim line (round the ball)
+  if (aim.dir !== 0) { const b = golfer.ballWorld(new THREE.Vector3()), Y = new THREE.Vector3(0, 1, 0); out.sub(b).applyAxisAngle(Y, -aim.dir).add(b); look.sub(b).applyAxisAngle(Y, -aim.dir).add(b); }
 }
 let lensShift = 0;
 function fitCamera() {
@@ -247,7 +280,7 @@ function updateCamera(dt: number, now: number) {
     want.set(head.x + Math.cos(th) * 2.7, 1.42 + Math.sin(now / 1000 * 0.15) * 0.08, head.z + Math.sin(th) * 2.7);
     wantLook.set(head.x * 0.85, 1.22, head.z);
   } else if (camMode === 'address') {
-    addressCam(want, wantLook);
+    if (aimCtl.active) aimCtl.cameraWant(want, wantLook); else addressCam(want, wantLook);
   } else if (camMode === 'chase' || camMode === 'landing' || camMode === 'rest') {
     const b = ball.pos;
     const vh = new THREE.Vector3(ball.vel.x, 0, ball.vel.z);
@@ -284,7 +317,7 @@ function updateCamera(dt: number, now: number) {
       wantLook.copy(b).add(new THREE.Vector3(0, 0.3, 0));
     }
   }
-  const wantShift = portrait() && (camMode === 'address' || camMode === 'intro' || (camMode === 'chase' && (now - chaseT0) < 550)) ? (camMode === 'intro' ? 0.0 : addressShift()) : 0;
+  const wantShift = portrait() && !aimCtl.active && (camMode === 'address' || camMode === 'intro' || (camMode === 'chase' && (now - chaseT0) < 550)) ? (camMode === 'intro' ? 0.0 : addressShift()) : 0;
   if (Math.abs(wantShift - lensShift) > 0.002) { lensShift += (wantShift - lensShift) * (1 - Math.pow(0.02, dt)); fitCamera(); }
   const kk = camMode === 'landing' || camMode === 'rest' ? 1 - Math.pow(0.02, dt) : k;
   camPos.lerp(want, camMode === 'chase' ? 1 - Math.pow(0.04, dt) : kk);
@@ -297,7 +330,7 @@ function updateCamera(dt: number, now: number) {
 // ── intro overlay ──
 const intro = document.createElement('div');
 intro.className = 'intro';
-intro.innerHTML = `<div class="intro-card"><span class="brand"><i class="crest" aria-hidden="true"></i><b>The Hunt<small>Range day</small></b></span>
+intro.innerHTML = `<div class="intro-card"><span class="brand"><i class="crest" aria-hidden="true"></i><b>The Hunt</b></span>
   <span class="kick">Player 1</span><h1>${profile.name}</h1>
   <button type="button" id="play"><span class="ball" aria-hidden="true"></span>Hit balls</button></div>`;
 document.body.appendChild(intro);
@@ -329,11 +362,9 @@ function frame(now: number) {
   // golfer
   G.idleT += dt;
   if (G.phase === 'back') {
-    // the golfer turns at their own tempo, easing into the top
-    const speed = fullBack() / tTop() * 1.25;
-    const gap = G.target - G.phi;
-    if (gap > 0) G.phi = Math.min(G.target, G.phi + speed * dt * (0.3 + 0.7 * smooth(0, 0.5, gap / fullBack())));
-    if (G.target - G.phi > 0.03) G.arrived = null; else if (G.arrived === null && SW.depth > 12) G.arrived = now;
+    // the golfer follows the finger (see backStep); 'arrived' once caught up with a full enough pull
+    G.phi = backStep(G.phi, G.target, dt, (now - SW.t0) / 1000);
+    if (G.target - G.phi > arriveGap()) G.arrived = null; else if (G.arrived === null && SW.depth > 12) G.arrived = now;
   } else if (G.phase === 'follow') {
     const k = clamp((now - G.followT0) / 820, 0, 1), e = 1 - Math.pow(1 - k, 3);
     G.phi = G.followTo * e;
@@ -350,6 +381,8 @@ function frame(now: number) {
   golfer.smileToward(state === 'intro' || good ? 1 : 0, dt);
 
   hud.setState(state === 'ready', state === 'flight', !card);
+  aimCtl.setEnabled(state === 'ready');
+  aimCtl.update(dt, state === 'ready' || state === 'swinging');
 
   // swing pad
   if (SW.active || SW.trailB.length) hud.setPad(SW.active ? SW.last : [0, 0], SW.trailB, SW.trailD, SW.active && SW.phase === 'back' && G.arrived !== null && SW.depth > 12);
@@ -408,4 +441,13 @@ addEventListener('orientationchange', () => setTimeout(onViewport, 250));
 // a tap anywhere during the result skips ahead
 renderer.domElement.addEventListener('pointerdown', () => { sound.unlock(); if (state === 'result') nextBall(); });
 requestAnimationFrame(t => { last = t; frame(t); });
-(window as any).__game = { golfer, ball, hud, get state() { return state; } };
+(window as any).__game = {
+  golfer, ball, hud, aim, aimCtl, get state() { return state; },
+  /** debug: plan and fly a shot on the real range terrain, synchronously (distances in yards) */
+  sim(club: number, mode: 'full' | 'punch' | 'pitch' | 'flop' = 'full', lie = 0, top = 0, strike = { x: 0, y: 0 }) {
+    const P = planShot({ power: 1, offMs: 0, pushMs: 200, angle: 0, drift: 0, released: false, strike }, club, mode, LIES[lie], golfer.lefty);
+    const b = new Ball(range); b.tee(golfer.ballWorld()); b.hit(P.launch);
+    for (let i = 0; i < 120 * 40 && b.phase !== 'stopped'; i++) { if (b.phase === 'flight' && b.t > 0.5) b.setAftertouch(top, 0); b.step(1 / 120); }
+    return { carry: b.carry() / YD, total: b.total() / YD, roll: b.roll() / YD, apex: b.apex / YD, surface: b.lastSurface };
+  },
+};

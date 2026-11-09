@@ -24,13 +24,16 @@ const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 let uid = 0;
 
-const modeGlyph = (m: ShotMode, w = 3) => {
-  const top = { full: 4.25, punch: 2.6, pitch: 2.2, flop: 3.7 }[m], fin = { full: -4.1, punch: -1.9, pitch: -2.5, flop: -3.9 }[m];
-  const r = 16, cx = 23, cy = 22;
-  const pt = (a: number) => [cx - r * Math.sin(a), cy + r * Math.cos(a)];
-  const arc = (a0: number, a1: number) => { let d = ''; for (let i = 0; i <= 24; i++) { const p = pt(a0 + (a1 - a0) * i / 24); d += (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); } return d; };
-  const b = Math.min(top, 4.2) * 0.62, f = Math.max(fin, -4.2) * 0.62, tp = pt(b), fp = pt(f);
-  return `<svg viewBox="0 0 46 46" aria-hidden="true"><path d="${arc(0, b)}" fill="none" stroke="var(--h-accent)" stroke-width="${w}" stroke-linecap="round"/><path d="${arc(0, f)}" fill="none" stroke="var(--h-dim)" stroke-width="${w - 1}" stroke-linecap="round" stroke-dasharray="2 3"/><circle cx="${tp[0]}" cy="${tp[1]}" r="3" fill="var(--h-accent)"/><circle cx="${cx}" cy="${cy + r}" r="3.4" fill="#fff"/><circle cx="${fp[0]}" cy="${fp[1]}" r="2.2" fill="var(--h-dim)"/></svg>`;
+/** the shot's flight in miniature: ball on the left, dotted flight, where it lands and how far it rolls */
+const modeGlyph = (m: ShotMode, _w = 3) => {
+  const [lx, ay, roll] = { full: [46, 3, 6], punch: [34, 17, 16], pitch: [32, 8, 5], flop: [24, 1, 0] }[m]; // land x, apex y, roll
+  const x0 = 6, gy = 23, cx = (x0 + lx) / 2, cy = 2 * ay - gy; // quadratic control point so the apex sits at ay
+  return `<svg viewBox="0 0 56 30" aria-hidden="true" class="flight-glyph">
+    <path d="M2 ${gy + 4} H54" stroke="#5aa83e" stroke-width="5" stroke-linecap="round"/>
+    <path d="M${x0} ${gy} Q${cx} ${cy} ${lx} ${gy}" fill="none" stroke="var(--h-accent)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0.1 5"/>
+    ${roll ? `<path d="M${lx} ${gy + 1} h${roll}" stroke="var(--h-accent)" stroke-width="3" stroke-linecap="round"/>` : ''}
+    <circle cx="${x0}" cy="${gy - 1}" r="4" fill="#fff" stroke="#13294b" stroke-width="1.6"/>
+  </svg>`;
 };
 const lieRing = (pct: number) => {
   const r = 19, C = 2 * Math.PI * r, col = pct >= 95 ? 'var(--h-good)' : pct >= 85 ? 'var(--h-warn)' : 'var(--h-bad)';
@@ -88,6 +91,14 @@ function ribbon(pts: [number, number][], w0: number, w1: number) {
 }
 const buzz = (p: number | number[]) => { try { navigator.vibrate?.(p); } catch { /* not allowed */ } };
 
+/** the swing-stick puck: a real Pro V1x, sidestamp facing the player, cached as an image */
+let puckCache = '';
+function puckURL() {
+  if (!puckCache) { const m = mat3Identity(); mat3Rotate(m, 0.18, 0); puckCache = shadeBall(160, m).toDataURL(); }
+  return puckCache;
+}
+onBallTexUpdate(() => { puckCache = ''; const u = puckURL(); document.querySelectorAll('.puck-img').forEach(i => i.setAttribute('href', u)); });
+
 export function padSVG(skin: Skin) {
   const id = 'p' + (++uid);
   const ticks = [20, 40, 60, 80].map((y, i) => `<line x1="-9" x2="9" y1="${y}" y2="${y}" class="tick"/><text x="14" y="${y + 3.5}" font-size="9" class="tlab">${(i + 1) * 25}</text>`).join('');
@@ -103,7 +114,6 @@ export function padSVG(skin: Skin) {
     <path class="trail-d" d="" fill="none" stroke="${trailD}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>`;
   if (skin === 'f') {
     // a chunky toy stick: cream bezel on a turf disc, a groove you pull the ball down, a power arc that fills
-    const dimples = Array.from({ length: 24 }, (_, i) => { const a = i * 2.39996, r = 3 + 15.5 * Math.sqrt(i / 24); return `<circle cx="${(Math.cos(a) * r).toFixed(1)}" cy="${(Math.sin(a) * r).toFixed(1)}" r="2" fill="rgba(110,124,145,.26)"/><circle cx="${(Math.cos(a) * r - 0.5).toFixed(1)}" cy="${(Math.sin(a) * r - 0.6).toFixed(1)}" r=".7" fill="rgba(255,255,255,.7)"/>`; }).join('');
     const arcPt = (f: number, r = 80) => { const a = ((262 - 150 * f) * Math.PI) / 180; return [Math.cos(a) * r, Math.sin(a) * r]; };
     const [ax0, ay0] = arcPt(0), [ax1, ay1] = arcPt(1);
     const beads = [0.25, 0.5, 0.75, 1].map((f, i) => { const [x, y] = arcPt(f); const [lx, ly] = arcPt(f, 66); return `<g class="bead" data-f="${f}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i === 3 ? 6 : 4.5}"/>${i < 3 ? `<text x="${lx.toFixed(1)}" y="${(ly + 3.5).toFixed(1)}" text-anchor="middle" class="bead-lab">${f * 100}</text>` : `<text x="${lx.toFixed(1)}" y="${(ly + 3.5).toFixed(1)}" text-anchor="middle" class="bead-lab max">MAX</text>`}</g>`; }).join('');
@@ -116,6 +126,7 @@ export function padSVG(skin: Skin) {
       <radialGradient id="${id}t" cx="45%" cy="35%"><stop offset="0" stop-color="#4fa743"/><stop offset=".7" stop-color="#2e7a32"/><stop offset="1" stop-color="#1d5526"/></radialGradient>
       <linearGradient id="${id}p" gradientUnits="userSpaceOnUse" x1="0" y1="-80" x2="0" y2="80"><stop offset="0" stop-color="#ffe066"/><stop offset=".55" stop-color="#ffb21a"/><stop offset=".85" stop-color="#ff7a1a"/><stop offset="1" stop-color="#e5352b"/></linearGradient>
       <linearGradient id="${id}g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0d1f3c"/><stop offset=".5" stop-color="#1b3561"/><stop offset="1" stop-color="#0d1f3c"/></linearGradient>
+      <linearGradient id="${id}cap" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe680"/><stop offset="1" stop-color="#f2a900"/></linearGradient>
       <clipPath id="${id}c"><circle r="82"/></clipPath>
       <filter id="${id}s" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="4" stdDeviation="3.2" flood-color="#06142b" flood-opacity=".5"/></filter>
     </defs>
@@ -130,14 +141,14 @@ export function padSVG(skin: Skin) {
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="url(#${id}g)"/>
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="3"/>
     <rect x="-15.5" y="-72.5" width="31" height="163" rx="15.5" fill="none" stroke="rgba(255,246,227,.22)" stroke-width="1.2"/>
-    <g transform="translate(-1 -90)"><line x1="0" y1="0" x2="0" y2="18" stroke="#fff6e3" stroke-width="2.6" stroke-linecap="round"/><path class="flag" d="M1.3 0 Q9 2 17 1 L13 6 L17 10 Q9 9 1.3 10 Z" fill="#ffd23f" stroke="#c98f00" stroke-width=".8"/></g>
-    <g class="hint"><path d="M-10 26 L0 36 L10 26" fill="none" stroke="#ffd23f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M-10 39 L0 49 L10 39" fill="none" stroke="#ffd23f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/><text class="pull-cue" y="66" text-anchor="middle">PULL</text></g>
+    <g class="top-cap"><rect class="cap-glow" x="-21" y="-89" width="42" height="22" rx="11" fill="#ffd23f" opacity=".0"/><rect x="-17" y="-86" width="34" height="16" rx="8" fill="url(#${id}cap)" stroke="#fff6e3" stroke-width="2"/><text y="-74.3" text-anchor="middle" class="cap-txt">PUSH</text></g>
+    <g class="hint"><path d="M-10 26 L0 36 L10 26" fill="none" stroke="#ffd23f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M-10 39 L0 49 L10 39" fill="none" stroke="#ffd23f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/></g>
     <path class="trail-b" d="" fill="#ffd23f" opacity=".95"/>
     <path class="trail-d" d="" fill="#5ff0a0" opacity=".95"/>
     <circle r="95" fill="none" stroke="#ffd23f" stroke-width="7" class="top-ring"/>
     <g class="push-cue-f" transform="translate(0 -58)"><rect x="-34" y="-15" width="68" height="28" rx="14" fill="#c8102e" stroke="#fff" stroke-width="2.5"/><text y="6" text-anchor="middle">PUSH!</text></g>
     <g class="puck-shadow"><ellipse cy="22" rx="20" ry="5" fill="rgba(0,0,0,.32)"/></g>
-    <g class="puck"><g class="burst" fill="#ffd23f">${rays}</g><g class="strike-ring"><circle r="26" fill="none" stroke="#fff" stroke-width="4"/></g><g class="puck-body"><g filter="url(#${id}s)"><circle r="24" fill="url(#${id}b)"/></g>${dimples}<ellipse cx="-8" cy="-10" rx="8" ry="4.6" fill="rgba(255,255,255,.9)" transform="rotate(-32 -8 -10)"/><path d="M-17 9 A19 19 0 0 0 9 18" fill="none" stroke="rgba(120,132,150,.25)" stroke-width="3" stroke-linecap="round"/></g></g></svg>`;
+    <g class="puck"><g class="burst" fill="#ffd23f">${rays}</g><g class="strike-ring"><circle r="26" fill="none" stroke="#fff" stroke-width="4"/></g><g class="puck-body"><g filter="url(#${id}s)"><circle r="25" fill="#fff"/></g><image class="puck-img" href="${puckURL()}" x="-25.5" y="-25.5" width="51" height="51"/></g></g></svg>`;
   }
   if (skin === 'a') return `<svg class="pad-svg" id="${id}" viewBox="-100 -100 200 200" aria-hidden="true">
     <circle r="92" fill="rgba(8,18,42,.55)"/><circle r="92" fill="none" stroke="#fff" stroke-width="2"/>
@@ -318,7 +329,7 @@ export class Hud {
 
   render(card?: CardData | null) {
     const id = CLUB_SPECS[this.club].id, M = MODES[this.mode];
-    this.q('#clubSlot').innerHTML = `<button type="button" class="hud-panel club-btn" data-act="club" aria-label="Club: ${CLUB_SPECS[this.club].name}, ${M.max(id)} yards. Change club"><span class="eyebrow-h">Club</span><span class="big">${id}</span><span class="yds">${M.max(id)}<small>yds</small></span><span class="cap">${this.skin === 'f' ? CLUB_SPECS[this.club].name : `${CLUB_SPECS[this.club].name} · ${M.label.toLowerCase()} max`}</span></button>`;
+    this.q('#clubSlot').innerHTML = `<button type="button" class="hud-panel club-btn" data-act="club" aria-label="Club: ${CLUB_SPECS[this.club].name}, ${M.max(id)} yards. Change club"><span class="eyebrow-h">Club</span><span class="big">${id}</span><span class="yds">${M.max(id)}<small>yds</small></span><span class="cap">${this.skin === 'f' ? CLUB_SPECS[this.club].name.replace('Pitching wedge', 'Pitch wedge') : `${CLUB_SPECS[this.club].name} · ${M.label.toLowerCase()} max`}</span></button>`;
     this.q('#modeSlot').innerHTML = `<button type="button" class="hud-panel mode-btn" data-act="mode" aria-label="Swing mode: ${M.label}. Change swing mode"><span class="eyebrow-h">Swing</span><span class="big">${M.label}</span>${modeGlyph(this.mode)}</button>`;
     const L = LIES[this.lie];
     const [word, q, kind] = LIE_WORD[L.name] ?? ['Okay', 'ok', 'fairway'];
@@ -326,7 +337,7 @@ export class Hud {
     this.q('#lieSlot').innerHTML = this.skin === 'f'
       ? `<button type="button" class="hud-panel lie-card lie-w" data-act="lie" aria-label="Lie: ${L.name}, ${word}, ${L.pct} percent distance, ${L.slope} degree slope, ball ${where}. Tap for another sample lie">
         ${lieScene(L.slope, L.side, kind)}
-        <span class="lie-txt"><span class="lie-name">${L.name}</span><span class="lie-q ${q}">${word} · ${L.pct}%</span>
+        <span class="lie-txt"><span class="lie-name${L.name.length > 10 ? ' long' : ''}">${L.name}</span><span class="lie-q ${q}">${word} · ${L.pct}%</span>
         <span class="lie-slope"><b>${L.slope}°</b><small>${where}</small></span></span></button>`
       : `<button type="button" class="hud-panel lie-card" data-act="lie" aria-label="Lie: ${L.name}, ${L.pct} percent, slope ${L.slope} degrees. Tap for another sample lie"><span class="eyebrow-h">Lie</span>
       <span class="lie-top">${lieRing(L.pct)}<span><span class="big" style="display:block">${L.name}</span><span class="sub">${L.pct}% distance</span></span></span>
@@ -496,7 +507,7 @@ export class Hud {
   }
 
   // ── strike point picker ──
-  private strikeM: Mat3 = (() => { const m = mat3Identity(); mat3Rotate(m, 0.5, -1.45); return m; })();
+  private strikeM: Mat3 = (() => { const m = mat3Identity(); mat3Rotate(m, 0.18, 0); return m; })();
   private initStrike() {
     const btnCv = this.q<HTMLCanvasElement>('.strike-btn canvas'), big = this.q<HTMLCanvasElement>('#spBall canvas');
     const paint = () => {

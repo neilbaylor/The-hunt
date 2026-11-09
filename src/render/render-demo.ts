@@ -27,7 +27,7 @@ const range = createRange(renderer, scene);
 range.setTimeOfDay(time);
 const post = createPost(renderer, scene, camera, { quality, grade: time, toneMapping: (qs.get('tm') as 'agx' | 'aces') ?? 'agx' });
 // depth of field like the game's address camera (?dof=0 to compare)
-post.setDof(view === 'portrait' || view === 'landscape' ? Number(qs.get('dof') ?? 1) : 0, Number(qs.get('ds') ?? 40), Number(qs.get('de') ?? 160));
+post.setDof(view === 'portrait' || view === 'landscape' ? Number(qs.get('dof') ?? 1) : 0, Number(qs.get('ds') ?? 90), Number(qs.get('de') ?? 420));
 
 // stand-in golfer at address: legs, hips, a tilted torso, head with a cap, arms and a club down to the ball
 const golfer = new THREE.Group();

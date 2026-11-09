@@ -2,11 +2,11 @@
 // gentle bloom on the sun and bright sky, ground-contact ambient occlusion on high, and a vignette.
 //
 //   low  : direct render (renderer tone mapping only) — the safe fallback for weak phones
-//   med  : render → depth of field → bloom (half res) → output (tone map + sRGB) → grade + vignette → FXAA
-//   high : MSAA render → depth of field → GTAO → bloom → output → grade + vignette
+//   med  : render → depth of field → bloom (half res) → output (tone map + sRGB) → grade + vignette → FXAA → sharpen
+//   high : MSAA render → depth of field → GTAO → bloom → output → grade + vignette → sharpen
 //
-// Depth of field is the broadcast "long lens" look: the golfer and the near turf stay sharp and the range
-// behind softens with distance. Only background pixels are blurred and only background pixels feed the blur,
+// Depth of field is the broadcast "long lens" look, kept subtle: the golfer, the turf, the flags and the side
+// trees stay sharp; only the far treeline and the hills soften a touch. Only background pixels are blurred and only background pixels feed the blur,
 // so the golfer's silhouette never smears. setDof(0) turns it off (ball-flight cameras).
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -79,6 +79,29 @@ void main() {
     sum += texture2D(tDiffuse, uv) * w; wsum += w;
   }
   gl_FragColor = sum / wsum;
+}`,
+};
+
+// contrast-adaptive sharpening (after AMD's CAS): sharpens fine detail (leaves, blades, the crest) more where the
+// local contrast is low, less at hard edges, so it does not ring or crawl. 5 taps, cheap on phones.
+const SharpenShader = {
+  name: 'SharpenShader',
+  uniforms: { tDiffuse: { value: null as THREE.Texture | null }, resolution: { value: new THREE.Vector2(1, 1) }, amount: { value: 0.55 } },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+uniform sampler2D tDiffuse; uniform vec2 resolution; uniform float amount;
+varying vec2 vUv;
+void main() {
+  vec2 px = 1.0 / resolution;
+  vec4 e4 = texture2D(tDiffuse, vUv);
+  vec3 e = e4.rgb;
+  vec3 b = texture2D(tDiffuse, vUv + vec2(0.0, -px.y)).rgb, d = texture2D(tDiffuse, vUv + vec2(-px.x, 0.0)).rgb;
+  vec3 f = texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb, h = texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb;
+  vec3 mn = min(e, min(min(b, d), min(f, h))), mx = max(e, max(max(b, d), max(f, h)));
+  vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0));
+  vec3 w = -amp * mix(0.125, 0.2, amount);
+  vec3 c = (e + (b + d + f + h) * w) / (1.0 + 4.0 * w);
+  gl_FragColor = vec4(clamp(c, 0.0, 1.0), e4.a);
 }`,
 };
 
@@ -157,7 +180,8 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
   let bloom: UnrealBloomPass | null = null;
   let gradePass: ShaderPass | null = null;
   let dofPass: DofPass | null = null;
-  const dof = { amount: 0, target: 0, start: 40, end: 160 };
+  let sharpPass: ShaderPass | null = null;
+  const dof = { amount: 0, target: 0, start: 90, end: 420 };
   let time = 0;
 
   function applyGrade() {
@@ -173,7 +197,7 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
 
   function build() {
     composer?.dispose();
-    composer = null; bloom = null; gradePass = null; dofPass = null;
+    composer = null; bloom = null; gradePass = null; dofPass = null; sharpPass = null;
     if (quality === 'low') { applyGrade(); return; }
     const pr = renderer.getPixelRatio();
     const rt = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType, samples: quality === 'high' ? 4 : 0 });
@@ -187,8 +211,8 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
     }
     composer.addPass(new RenderPass(scene, camera));
     dofPass = new DofPass(camera);
-    // blur radius in render pixels: about 0.9% of the screen height at full strength (phones: ~6–8 px)
-    dofPass.uniforms.maxRadius.value = Math.max(3, size.y * pr * 0.0065);
+    // blur radius in render pixels: a subtle ~0.45% of the screen height at full strength (phones: ~3–5 px)
+    dofPass.uniforms.maxRadius.value = Math.max(2.5, size.y * pr * 0.0045);
     dofPass.setSize(size.x * pr, size.y * pr);
     dofPass.enabled = dof.amount > 0.01;
     composer.addPass(dofPass);
@@ -208,6 +232,10 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
     gradePass.uniforms.aspect.value = size.x / size.y;
     composer.addPass(gradePass);
     if (quality === 'med') composer.addPass(new FXAAPass());
+    sharpPass = new ShaderPass(SharpenShader);
+    sharpPass.uniforms.resolution.value.set(size.x * pr, size.y * pr);
+    sharpPass.uniforms.amount.value = quality === 'high' ? 0.5 : 0.7;
+    composer.addPass(sharpPass);
     applyGrade();
   }
   build();
@@ -233,7 +261,8 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
         composer.setSize(w, h);
         if (gradePass) gradePass.uniforms.aspect.value = w / h;
         const pr = renderer.getPixelRatio();
-        if (dofPass) { dofPass.setSize(w * pr, h * pr); dofPass.uniforms.maxRadius.value = Math.max(3, h * pr * 0.0065); }
+        if (dofPass) { dofPass.setSize(w * pr, h * pr); dofPass.uniforms.maxRadius.value = Math.max(2.5, h * pr * 0.0045); }
+        if (sharpPass) sharpPass.uniforms.resolution.value.set(w * pr, h * pr);
       }
     },
     setQuality(q) { if (q !== quality) { quality = q; build(); } },

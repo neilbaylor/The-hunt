@@ -195,7 +195,7 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 .hud.skin-f .club-btn .big { grid-column: 1; grid-row: 1 / span 2; width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 35% 30%, #2c4a7c, var(--navy) 70%); color: #fff6e3; font-size: 26px; line-height: 1; box-shadow: inset 0 -3px 0 rgba(0,0,0,.25), 0 0 0 3px var(--flag); }
 .hud.skin-f .club-btn .yds { grid-column: 2; grid-row: 1; justify-self: start; align-self: end; font-size: 26px; color: var(--navy); }
 .hud.skin-f .club-btn .yds small { color: var(--h-dim); font-size: 12px; font-family: var(--h-body); font-weight: 800; }
-.hud.skin-f .club-btn .cap { grid-column: 2; grid-row: 2; margin: 0; align-self: start; line-height: 1.2; font-size: 11px; font-weight: 700; color: var(--h-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+.hud.skin-f .club-btn .cap { grid-column: 2; grid-row: 2; margin: 0; align-self: start; line-height: 1.1; font-size: 11px; font-weight: 700; color: var(--h-dim); }
 /* swing mode */
 .hud.skin-f .mode-btn { width: 96px; height: 72px; padding: 8px 10px; grid-template-rows: auto 1fr; justify-items: center; align-items: center; text-align: center; }
 .hud.skin-f .mode-btn .eyebrow-h { order: 2; }
@@ -272,7 +272,7 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
   .hud.skin-f .club-btn { width: 132px; height: 66px; grid-template-columns: 48px 1fr; padding: 7px 10px 7px 7px; }
   .hud.skin-f .club-btn .big { width: 48px; height: 48px; font-size: 22px; }
   .hud.skin-f .club-btn .yds { font-size: 22px; }
-  .hud.skin-f .club-btn .cap { display: block; max-width: 66px; font-size: 10px; }
+  .hud.skin-f .club-btn .cap { display: block; font-size: 10.5px; }
   .hud.skin-f .mode-btn { width: 78px; height: 66px; padding: 6px; }
   .hud.skin-f .toast, .hud .toast { top: 43%; }
   .hud .confetti { top: 47%; }
@@ -321,7 +321,8 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 .lie-w .lie-arrow { animation: arrowNudge 1.8s ease-in-out .6s infinite; transform-box: view-box; }
 @keyframes arrowNudge { 0%, 70%, 100% { transform: none; } 80% { transform: translateX(calc(var(--dir) * 3px)); } }
 .lie-w .lie-txt { display: grid; gap: 2px; min-width: 0; text-align: left; }
-.lie-w .lie-name { font-family: var(--h-display); font-weight: 600; font-size: 15px; line-height: 1.05; color: var(--navy); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lie-w .lie-name { font-family: var(--h-display); font-weight: 600; font-size: 15px; line-height: 1.05; color: var(--navy); white-space: nowrap; }
+.lie-w .lie-name.long { font-size: 12.5px; letter-spacing: -.01em; }
 .lie-w .lie-q { justify-self: start; white-space: nowrap; font: 800 10px/1 var(--h-body); letter-spacing: .04em; padding: 3px 7px; border-radius: 999px; color: #fff; }
 .lie-w .lie-q.good { background: #17a558; } .lie-w .lie-q.ok { background: #6bb33a; } .lie-w .lie-q.meh { background: #e98300; } .lie-w .lie-q.bad { background: #d7263d; }
 .lie-w .lie-slope { display: flex; align-items: baseline; gap: 5px; }
@@ -330,7 +331,7 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 
 /* strike point: mini ball beside the stick + picker */
 .hud .strike-btn { display: none; }
-.hud.skin-f .strike-btn { display: grid; position: absolute; left: -66px; bottom: 50px; width: 58px; justify-items: center; gap: 3px; padding: 0; border: 0; background: none; cursor: pointer; pointer-events: auto; transition: transform .12s cubic-bezier(.3,1.6,.5,1); }
+.hud.skin-f .strike-btn { display: grid; position: absolute; left: -70px; bottom: 44px; width: 58px; justify-items: center; gap: 3px; padding: 0; border: 0; background: none; cursor: pointer; pointer-events: auto; transition: transform .12s cubic-bezier(.3,1.6,.5,1); }
 .hud.skin-f .strike-btn canvas { width: 50px; height: 50px; border-radius: 50%; box-shadow: 0 0 0 3px #fffaf0, 0 4px 0 3px var(--edge), 0 8px 18px rgba(0,0,0,.3); background: #fff; }
 .hud.skin-f .strike-btn .dot { position: absolute; top: calc(25px + var(--sy, 0) * 19px - 6px); left: calc(29px + var(--sx, 0) * 19px - 6px); width: 12px; height: 12px; border-radius: 50%; border: 2.5px solid #c8102e; background: rgba(200,16,46,.25); box-sizing: border-box; transition: top .2s, left .2s; }
 .hud.skin-f .strike-btn span { font: 800 10px/1 var(--h-body); letter-spacing: .08em; text-transform: uppercase; color: var(--navy); background: rgba(255,250,240,.92); padding: 3px 7px; border-radius: 999px; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
@@ -410,3 +411,17 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 .hud.skin-f .spin-label.tick { animation: labelTick .3s cubic-bezier(.2,1.9,.4,1); }
 @keyframes labelTick { from { transform: scale(.88); } to { transform: none; } }
 .hud.skin-f .spin canvas { filter: drop-shadow(0 6px 10px rgba(0,0,0,.25)); }
+
+/* stick top: a glowing PUSH cap instead of a flag */
+.pad-f .cap-txt { font: 700 9.5px 'Fredoka', sans-serif; letter-spacing: .12em; fill: #13294b; }
+.pad-f .cap-glow { filter: blur(3px); transition: opacity .2s; }
+.pad-f.at-top .cap-glow, .pad-f.dragging .cap-glow { opacity: .85; }
+.pad-f.at-top .top-cap { animation: capPulse .45s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+@keyframes capPulse { to { scale: 1.12; } }
+.pad-f.strike .top-cap { animation: capFlash .5s ease-out; transform-box: fill-box; transform-origin: center; }
+@keyframes capFlash { 0% { scale: 1.35; filter: brightness(1.5); } 100% { scale: 1; filter: none; } }
+/* mode chip: a tiny ball-flight picture */
+.hud.skin-f .mode-btn svg.flight-glyph { width: 48px; height: 26px; }
+@media (orientation: portrait) { .hud.skin-f .mode-btn svg.flight-glyph { width: 46px; height: 25px; } }
+.list.modes button svg.flight-glyph { width: 46px; height: 25px; }
+.list.modes:has(.flight-glyph) button { grid-template-columns: 46px 1fr; }

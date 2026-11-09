@@ -67,6 +67,20 @@ function buildDimples(normal: Float32Array, ao: Float32Array) {
   }
 }
 
+/** "Pro V1" in black with a red "x", centred on (x, y) */
+function proV1x(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
+  g.save();
+  g.translate(x, y); g.scale(k, k * 1.2);
+  g.textBaseline = 'middle'; g.textAlign = 'left';
+  const big = 'italic 700 46px "Barlow Condensed", "Arial Narrow", sans-serif', small = 'italic 700 42px "Barlow Condensed", "Arial Narrow", sans-serif';
+  g.font = big; const w1 = g.measureText('Pro V1').width;
+  g.font = small; const w2 = g.measureText('x').width;
+  const x0 = -(w1 + w2 + 2) / 2;
+  g.font = big; g.fillStyle = '#111'; g.strokeStyle = '#111'; g.lineWidth = 1.6; g.strokeText('Pro V1', x0, 0); g.fillText('Pro V1', x0, 0);
+  g.font = small; g.fillStyle = '#c8102e'; g.strokeStyle = '#c8102e'; g.lineWidth = 1.2; g.strokeText('x', x0 + w1 + 2, 2); g.fillText('x', x0 + w1 + 2, 2);
+  g.restore();
+}
+
 function drawPrint(g: CanvasRenderingContext2D, align: boolean) {
   g.clearRect(0, 0, BT_W, BT_H);
   const cx = 0.25 * BT_W, cy = BT_H / 2;
@@ -79,24 +93,16 @@ function drawPrint(g: CanvasRenderingContext2D, align: boolean) {
   g.font = '66px "Yellowtail", "Brush Script MT", "Segoe Script", cursive';
   g.strokeText('Titleist', 0, 0); g.fillText('Titleist', 0, 0);
   g.restore();
+  // model mark under the sidestamp so the face you see at address reads "Pro V1x"
+  proV1x(g, cx, cy + 74, 0.9);
   if (align) {
     g.fillStyle = '#111';
     g.fillRect(cx - 120, cy + 44, 240, 3);
     g.beginPath(); g.moveTo(cx + 126, cy + 45.5); g.lineTo(cx + 112, cy + 38); g.lineTo(cx + 112, cy + 53); g.fill();
   }
-  // model mark on the other side: "Pro V1" black + red "x", with the red play number above it
+  // the other side: the "Pro V1x" model mark with the red play number above it
   const bx = 0.75 * BT_W;
-  g.save();
-  g.translate(bx, cy + 4); g.scale(1, 1.2);
-  g.textBaseline = 'middle'; g.textAlign = 'left';
-  g.font = 'italic 700 46px "Barlow Condensed", "Arial Narrow", sans-serif';
-  const w1 = g.measureText('Pro V1').width;
-  g.font = 'italic 700 40px "Barlow Condensed", "Arial Narrow", sans-serif';
-  const w2 = g.measureText('x').width;
-  const x0 = -(w1 + w2 + 2) / 2;
-  g.font = 'italic 700 46px "Barlow Condensed", "Arial Narrow", sans-serif'; g.fillStyle = '#111'; g.strokeStyle = '#111'; g.lineWidth = 1.6; g.strokeText('Pro V1', x0, 0); g.fillText('Pro V1', x0, 0);
-  g.font = 'italic 700 40px "Barlow Condensed", "Arial Narrow", sans-serif'; g.fillStyle = '#c8102e'; g.fillText('x', x0 + w1 + 2, 2);
-  g.restore();
+  proV1x(g, bx, cy + 4, 1);
   g.save();
   g.translate(bx, cy - 92); g.scale(1, 1.25);
   g.fillStyle = '#c8102e'; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -140,6 +146,7 @@ export function ballTex(align = false): BallTex {
   try {
     Promise.all(['64px "Yellowtail"', 'italic 700 46px "Barlow Condensed"', '700 58px "Barlow"'].map(f => document.fonts.load(f))).then(refresh, () => {});
     document.fonts.ready.then(refresh, () => {});
+    document.fonts.addEventListener('loadingdone', refresh);
   } catch { /* no font loading API */ }
   return shared;
 }

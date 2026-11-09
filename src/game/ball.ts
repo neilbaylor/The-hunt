@@ -75,7 +75,11 @@ export class Ball {
   setAftertouch(top: number, side: number) { this.after.top = top; this.after.side = side; }
   private applyAftertouch(dt: number) {
     const A = this.after;
-    const wantBack = (A.top < 0 ? -A.top * 3200 : -A.top * 1100) * RPM, wantSide = -A.side * 750 * RPM; // extra rad/s at full input
+    // backspin input adds spin; topspin input only trims backspin in the air (never below 70% of what's there),
+    // its real effect comes at landing (see bounce)
+    const h0 = _v.set(this.vel.x, 0, this.vel.z); const bAxis = h0.lengthSq() > 1e-6 ? _w.crossVectors(h0.normalize(), new THREE.Vector3(0, 1, 0)).normalize() : null;
+    const curBack = bAxis ? this.spin.dot(bAxis) - A.appliedBack : 0;
+    const wantBack = A.top < 0 ? -A.top * 3200 * RPM : -A.top * 0.3 * Math.max(0, curBack), wantSide = -A.side * 750 * RPM; // extra rad/s at full input
     const rate = 2200 * RPM * dt;
     const dB = Math.max(-rate, Math.min(rate, wantBack - A.appliedBack)), dS = Math.max(-rate, Math.min(rate, wantSide - A.appliedSide));
     if (!dB && !dS) return;
@@ -171,7 +175,9 @@ export class Ball {
     // hard, steep landings sink into the turf and pop up less
     const e = F.e * (1 - 0.35 * smooth01((Math.abs(vn) - 6) / 8));
     const Jmax = F.mu * (1 + e) * Math.abs(vn);
-    const rw = BALL.r * wRoll;                      // surface speed from spin (+ = topspin)
+    let rw = BALL.r * wRoll;                        // surface speed from spin (+ = topspin)
+    // topspin aftertouch: on the first touchdown the ball comes off the turf running (up to ~12% more total)
+    if (this.bounces === 1 && this.after.top > 0) rw += this.after.top * 0.45 * vtl;
     const slip = vIn - rw;
     let vt2: number, rw2: number;
     if (3.5 * Jmax >= Math.abs(slip)) { vt2 = (5 * vIn + 2 * rw) / 7; rw2 = vt2; }   // grips: rolls cleanly

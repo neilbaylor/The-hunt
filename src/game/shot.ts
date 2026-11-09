@@ -16,7 +16,7 @@ export const CLUB_DATA: Record<string, { full: number; launch: number; spin: num
   '6i': { full: 178, launch: 16, spin: 5600, curve: 0.95 },
   '7i': { full: 165, launch: 18, spin: 6200, curve: 0.9 },
   '8i': { full: 152, launch: 20, spin: 7000, curve: 0.85 },
-  '9i': { full: 140, launch: 23, spin: 8500, curve: 0.8 },
+  '9i': { full: 140, launch: 24, spin: 9200, curve: 0.8 },
   'PW': { full: 128, launch: 26, spin: 9100, curve: 0.75, pitch: 1 },
   '50°': { full: 113, launch: 29, spin: 9500, curve: 0.7, pitch: 0.9 },
   '56°': { full: 96, launch: 32, spin: 9900, curve: 0.65, pitch: 0.8, flop: 1 },

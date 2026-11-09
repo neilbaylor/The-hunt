@@ -454,11 +454,12 @@ float inside(float d, float e) { float w = max(fwidth(d), 1e-4) * 0.75; return 1
 float stripes(float x) { float w = max(fwidth(x), 1e-4); float t = abs(fract(x * 0.5) - 0.5) * 2.0; return smoothstep(0.5 - w, 0.5 + w, t); }
 float gRough = 1.0;
 float gBump = 1.0;
+vec3 gSandB = vec3(0.0);
 // turf detail: two rotated scales so the tile never shows; returns a colour factor around 1.0
 vec4 turfAt(vec2 p, float scale) {
   vec2 a = p * scale;
   vec2 b = mat2(0.799, -0.602, 0.602, 0.799) * p * (scale * 0.43) + 0.37;
-  vec4 t1 = texture2D(uTurf, a), t2 = texture2D(uTurf, b);
+  vec4 t1 = texture2D(uTurf, a, -0.5), t2 = texture2D(uTurf, b, -0.5);
   return mix(t1, t2, 0.42) * vec4(vec3(1.0 / 0.47), 1.0);
 }
 // tee box divots: elongated scars along the target line, denser in the hitting area, none under the ball or the feet
@@ -546,6 +547,10 @@ vec3 groundColor(vec2 p) {
     vec3 gc = mix(${v3(COL.green)}, ${v3(COL.greenLight)}, 0.35);
     gc *= 1.0 + 0.11 * mowSheen(stripes(p.y / 2.8), vec2(0.0, 1.0)) + 0.05 * mowSheen(stripes(p.x / 2.8), vec2(1.0, 0.0));
     gc *= 0.95 + 0.08 * n1;
+    // the cut edge of the turf right round the hole, and a crisp darker line where the putting surface meets the fringe
+    float hr = length(d);
+    gc *= 1.0 - 0.35 * (1.0 - smoothstep(0.054, 0.066, hr));
+    gc *= 1.0 - 0.12 * smoothstep(0.93, 1.0, gd) * gm;
     col = mix(col, gc, gm);
     gRough = mix(gRough, 0.82, gm);
     gBump = mix(gBump, 0.28, gm);
@@ -560,8 +565,18 @@ vec3 groundColor(vec2 p) {
     if (bd > 1.4) continue;
     col = mix(col, ${v3(COL.lip)} * (0.9 + 0.2 * n1), inside(bd, 1.13) * 0.85);
     float sm = inside(bd, 1.0);
-    vec3 sc = mix(${v3(COL.sand)}, ${v3(COL.sandDark)}, smoothstep(0.75, 1.0, bd) * 0.7);
-    sc *= 0.86 + 0.1 * n4 + 0.08 * n1 + 0.035 * sin(dot(p, vec2(0.8, 2.4)) * 7.0);
+    vec3 sc = mix(${v3(COL.sand)}, ${v3(COL.sandDark)}, smoothstep(0.78, 1.0, bd) * 0.55);
+    // rake lines along the bunker's long axis, wandering a little; faded out where they would alias
+    vec2 luv = uv * b.zw;
+    float rakeF = luv.y * 14.0 + 0.7 * sin(luv.x * 0.8 + bb.y) + 0.25 * sin(luv.x * 2.7 + bb.y * 3.0);
+    float rakeFade = (1.0 - smoothstep(0.2, 0.5, fwidth(rakeF))) * (1.0 - smoothstep(0.82, 0.97, bd));
+    float rk = sin(rakeF * 6.2832);
+    sc *= 0.88 + 0.08 * n4 + 0.07 * n1 + 0.06 * rk * rakeFade;
+    // footprints and scuffs: soft darker dents
+    sc *= 1.0 - 0.07 * smoothstep(0.7, 0.85, texture2D(uNoise, p * 0.6 + bb.y).g);
+    // the grass lip overhangs the sand: a thin dark band of shadow just inside the edge
+    sc *= 1.0 - 0.32 * smoothstep(0.9, 1.0, bd);
+    gSandB += vec3(-s, 0.0, c) * cos(rakeF * 6.2832) * 0.16 * rakeFade * sm;
     col = mix(col, sc, sm);
     gRough = mix(gRough, 1.0, sm);
     gBump = mix(gBump, 0.5, sm);
@@ -603,7 +618,7 @@ vec3 groundColor(vec2 p) {
     vec2 q = vWPos.xz;
     float e = 0.004;
     float h0 = turfAt(q, 0.7).a, hx = turfAt(q + vec2(e, 0.0), 0.7).a, hz = turfAt(q + vec2(0.0, e), 0.7).a;
-    vec3 wb = vec3(h0 - hx, 0.0, h0 - hz) * 2.2 * fadeB * gBump;
+    vec3 wb = vec3(h0 - hx, 0.0, h0 - hz) * 2.2 * fadeB * gBump + gSandB;
     normal = normalize(normal + (viewMatrix * vec4(wb, 0.0)).xyz);
   }
 }`)
@@ -611,7 +626,7 @@ vec3 groundColor(vec2 p) {
       // turf is a poor mirror: damp the sky sheen that makes grass look plastic at grazing angles
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular *= 0.3;\nreflectedLight.indirectSpecular *= 0.25;');
   };
-  m.customProgramCacheKey = () => 'range-ground-v6';
+  m.customProgramCacheKey = () => 'range-ground-v7';
   return m;
 }
 
@@ -761,8 +776,10 @@ const UV_PINE: [number, number, number, number] = [0.504, 0.51, 0.996, 0.99];
 const UV_SMALL: [number, number, number, number] = [0.504, 0.008, 0.746, 0.49];
 const UV_BARK_RECT: [number, number, number, number] = [778 / 1024, 1 - 500 / 512, 852 / 1024, 1 - 268 / 512]; // u0, v0, u1, v1
 function makeFoliageAtlas(renderer: THREE.WebGLRenderer): THREE.CanvasTexture {
-  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 512;
+  // drawn in 1024×512 units at 2× resolution so leaf clusters stay crisp up close
+  const cv = document.createElement('canvas'); cv.width = 2048; cv.height = 1024;
   const g = cv.getContext('2d')!;
+  g.scale(2, 2);
   const R = () => rand();
   const leaf = (x: number, y: number, len: number, wid: number, ang: number, light: number, hue: number) => {
     g.save(); g.translate(x, y); g.rotate(ang);
@@ -820,7 +837,7 @@ function makeFoliageAtlas(renderer: THREE.WebGLRenderer): THREE.CanvasTexture {
   g.fillStyle = '#2f4a20'; g.fillRect(880, 280, 64, 64);
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
   return t;
 }
@@ -969,7 +986,7 @@ function pineCards(hi: boolean): THREE.BufferGeometry {
   return B.build();
 }
 function foliageMaterial(atlas: THREE.Texture, U: { uSunView: { value: THREE.Vector3 }; uSunCol: { value: THREE.Color }; uTrans: { value: number }; uTime: { value: number } }) {
-  const m = new THREE.MeshStandardMaterial({ map: atlas, alphaTest: 0.45, side: THREE.DoubleSide, vertexColors: true, roughness: 1, metalness: 0 });
+  const m = new THREE.MeshStandardMaterial({ map: atlas, alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true, roughness: 1, metalness: 0 });
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader
@@ -996,7 +1013,11 @@ transformed.x += (sin(uTime * 1.1 + wph) * 0.6 + sin(uTime * 2.3 + wph * 1.7 + p
 transformed.z += sin(uTime * 0.9 + wph * 1.3) * 0.016 * wk;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 uSunView;\nuniform vec3 uSunCol;\nuniform float uTrans;\nvarying float vAutumn;\nvarying float vHue;')
-      .replace('#include <map_fragment>', `#include <map_fragment>
+      .replace('#include <map_fragment>', `
+vec4 sampledDiffuseColor = texture2D(map, vMapUv, -0.6);
+// keep leaf edges crisp at every distance: rescale alpha around the cutoff by its screen-space rate of change
+sampledDiffuseColor.a = clamp((sampledDiffuseColor.a - 0.42) / max(fwidth(sampledDiffuseColor.a), 1e-4) * 0.5 + 0.5, 0.0, 1.0);
+diffuseColor *= sampledDiffuseColor;
 if (vAutumn > 0.0) {
   vec3 dc = diffuseColor.rgb;
   float leafy = smoothstep(0.0, 0.04, dc.g - max(dc.r, dc.b) * 0.9);
@@ -1014,7 +1035,7 @@ reflectedLight.directDiffuse += diffuseColor.rgb * uSunCol * uTrans * (0.03 + 0.
 reflectedLight.directSpecular *= 0.15;
 reflectedLight.indirectSpecular *= 0.1;`);
   };
-  m.customProgramCacheKey = () => 'range-foliage-v3';
+  m.customProgramCacheKey = () => 'range-foliage-v4';
   return m;
 }
 
@@ -1098,6 +1119,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
     const terrain = new THREE.Mesh(g, gmat);
     terrain.receiveShadow = true;
     terrain.name = 'terrain';
+    terrain.renderOrder = -3; // before the hole mask
     scene.add(terrain);
   }
   const teeBox = new THREE.Mesh(teeBoxGeometry(), gmat);
@@ -1158,7 +1180,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
   const flagUniforms = { uTime: { value: 0 } };
   const signSpots: { x: number; z: number; w: number }[] = [];
   {
-    const poles: THREE.BufferGeometry[] = [], tips: THREE.BufferGeometry[] = [], flags: THREE.BufferGeometry[] = [], cups: THREE.BufferGeometry[] = [], holes: THREE.BufferGeometry[] = [];
+    const poles: THREE.BufferGeometry[] = [], tips: THREE.BufferGeometry[] = [], flags: THREE.BufferGeometry[] = [], cups: THREE.BufferGeometry[] = [], holes: THREE.BufferGeometry[] = [], ferrules: THREE.BufferGeometry[] = [];
     const boards: THREE.BufferGeometry[] = [], posts: THREE.BufferGeometry[] = [];
     const cellUV = (cell: number) => [(cell % 4) * 0.25, 1 - (Math.floor(cell / 4) + 1) * 0.25] as const;
     const mapFace = (geo: THREE.BufferGeometry, face: number, cell: number, inset = 0.004) => {
@@ -1170,7 +1192,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
       // a touch bigger far away so they still read from the tee; the cloth more so, so the crest reads on a phone
       const k = 1.1 + g.yards / 300, kf = 1.75 + g.yards / 160;
       const H = 2.3 * k, fw = 0.56 * kf, fh = 0.4 * kf, pr = 0.0095 * k * 1.25;
-      const pole = new THREE.CylinderGeometry(pr, pr * 1.15, H, 10, 1, false); pole.translate(g.x, y0 + H / 2 - 0.08, g.z);
+      const pole = new THREE.CylinderGeometry(pr, pr * 1.08, H, 16, 1, false); pole.translate(g.x, y0 + H / 2 - 0.08, g.z);
       poles.push(pole);
       const ferrule = new THREE.CylinderGeometry(pr * 1.5, pr * 1.3, 0.05 * k, 10); ferrule.translate(g.x, y0 + H - 0.08 + 0.02 * k, g.z);
       tips.push(ferrule);
@@ -1184,8 +1206,24 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
       flag.setAttribute('aLen', new THREE.BufferAttribute(sz, 1));
       flags.push(flag);
       // cup: white liner ring and the dark hole
-      const ring = new THREE.RingGeometry(0.054, 0.066, 28); ring.rotateX(-Math.PI / 2); ring.translate(g.x, y0 + 0.006, g.z); cups.push(ring);
-      const hole = new THREE.CircleGeometry(0.055, 28); hole.rotateX(-Math.PI / 2); hole.translate(g.x, y0 + 0.004, g.z); holes.push(hole);
+      // the cup: 108 mm hole; 25 mm of soil and roots, then the white liner's rim, the liner, a dark bottom
+      const HR = 0.054, LIP = 0.025, DEEP = 0.102;
+      const lip = new THREE.CylinderGeometry(HR, HR, LIP, 32, 1, true); lip.translate(0, -LIP / 2, 0);
+      const liner = new THREE.CylinderGeometry(HR - 0.002, HR - 0.002, DEEP - LIP, 32, 1, true); liner.translate(0, -LIP - (DEEP - LIP) / 2, 0);
+      const rim = new THREE.RingGeometry(HR - 0.0075, HR, 32); rim.rotateX(-Math.PI / 2); rim.translate(0, -LIP, 0);
+      const bottom = new THREE.CircleGeometry(HR, 32); bottom.rotateX(-Math.PI / 2); bottom.translate(0, -DEEP, 0);
+      for (const w of [lip, liner]) { const n = w.getAttribute('normal') as THREE.BufferAttribute; for (let v = 0; v < n.count; v++) n.setXYZ(v, -n.getX(v), -n.getY(v), -n.getZ(v)); }
+      const ao = (y: number) => 0.3 + 0.7 * Math.pow(clamp(1 + y / DEEP, 0, 1), 1.6); // darker toward the bottom
+      cups.push(
+        paint(lip, (x, y, z, _a, _b, _c, c) => c.copy(lin('#4a3826')).lerp(lin('#3f5a22'), clamp(1 + y / 0.008, 0, 1) * 0.8).multiplyScalar(ao(y) * (0.8 + 0.4 * hash2(Math.round(Math.atan2(z, x) * 30), 3)))),
+        paint(liner, (_x, y, _z, _a, _b, _c, c) => c.copy(lin('#efefea')).multiplyScalar(ao(y))),
+        paint(rim, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#f6f6f2'))),
+        paint(bottom, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#2a2a26')).multiplyScalar(0.35)),
+      );
+      cups.slice(-4).forEach(c => c.translate(g.x, y0, g.z));
+      const hole = new THREE.CircleGeometry(HR, 32); hole.rotateX(-Math.PI / 2); hole.translate(g.x, y0 + 0.001, g.z); holes.push(hole);
+      // the flagstick's base ferrule, seated in the bottom of the cup
+      const fer = new THREE.CylinderGeometry(pr * 1.35, pr * 1.2, 0.045, 12); fer.translate(g.x, y0 - DEEP + 0.0225, g.z); ferrules.push(fer);
       // yardage board beside the green on the outside, turned to face the tee
       const side = g.x < 0 ? -1 : 1;
       const W = 2.0 + g.yards * 0.012, BH = W * 0.5, T = 0.08, lift = 0.5 + W * 0.1;
@@ -1210,12 +1248,21 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
         posts.push(cap);
       }
     });
-    const pinMat = new THREE.MeshPhysicalMaterial({ color: FLAG_YELLOW, roughness: 0.32, clearcoat: 0.8, clearcoatRoughness: 0.2 });
+    // glossy painted fibreglass: a crisp clear-coat highlight running up the stick
+    const pinMat = new THREE.MeshPhysicalMaterial({ color: FLAG_YELLOW, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.4 });
     const poleMesh = new THREE.Mesh(mergeGeometries(poles.map(p => p.toNonIndexed()), false)!, pinMat);
     poleMesh.castShadow = true;
     const tipMesh = new THREE.Mesh(mergeGeometries(tips.map(p => p.toNonIndexed()), false)!, new THREE.MeshStandardMaterial({ color: '#2a2a2a', roughness: 0.4, metalness: 0.6 }));
-    const cupMesh = new THREE.Mesh(mergeGeometries(cups, false)!, new THREE.MeshStandardMaterial({ color: '#f4f4f0', roughness: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-    const holeMesh = new THREE.Mesh(mergeGeometries(holes, false)!, new THREE.MeshBasicMaterial({ color: '#0b0f08', polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    // draw order: terrain (-3), the hole mask (-2), the cup inside (-1), then everything else
+    const cupMesh = new THREE.Mesh(finish(cups), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, side: THREE.DoubleSide }));
+    cupMesh.renderOrder = -1;
+    const holeMesh = new THREE.Mesh(mergeGeometries(holes, false)!, new THREE.ShaderMaterial({
+      vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'void main() { gl_FragColor = vec4(0.0); gl_FragDepth = 1.0; }',
+      colorWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    }));
+    holeMesh.renderOrder = -2;
+    const ferMesh = new THREE.Mesh(mergeGeometries(ferrules, false)!, new THREE.MeshStandardMaterial({ color: '#b9bcc0', roughness: 0.3, metalness: 0.9 }));
     // flag cloth: a wave travelling from the pole to the free edge, growing toward the fly end, with matching normals;
     // the crest reads the right way round from both sides; the cloth glows a little when the sun is behind it
     const flagMat = new THREE.MeshStandardMaterial({ map: makeFlagTexture(renderer), roughness: 0.88, side: THREE.DoubleSide });
@@ -1267,7 +1314,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
     boardMesh.castShadow = true; boardMesh.receiveShadow = true;
     const postMesh = new THREE.Mesh(mergeGeometries(posts.map(p => p.index ? p.toNonIndexed() : p), false)!, signMat);
     postMesh.castShadow = true; postMesh.receiveShadow = true;
-    scene.add(poleMesh, tipMesh, cupMesh, holeMesh, flagMesh, boardMesh, postMesh);
+    scene.add(poleMesh, tipMesh, cupMesh, holeMesh, ferMesh, flagMesh, boardMesh, postMesh);
   }
 
   // trees
