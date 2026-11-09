@@ -13,12 +13,12 @@ export const SHOTCAM = {
   faceRadius: 2.35,      // m from the head at the end of the arc (push-in from ~3.6)
   faceDrop: 0.28,        // m: aim this far below the head so the face sits in the upper third (portrait)
   catch: 1.6,            // s: crane up off the golfer and fly after the ball
-  crane: 9,              // m: how high the fly-by arcs over the golfer
+  crane: 6,              // m: how high the fly-by arcs over the golfer
   chaseBack: 17,         // m behind the ball while following
-  chaseSide: 4,          // m off the line (to the golfer's back side) so the tracer reads as an arc
+  chaseSide: 3,          // m off the line (to the golfer's back side) so the tracer reads as an arc
   chaseUp: 2.5,          // m above the ground ...
   chaseUpK: 0.6,         // ... plus this share of the ball's height: a touch below the ball, so it flies against the sky
-  lookAhead: 8,          // m: look this far ahead of the ball (room for it to fly into)
+  lookAhead: 3,          // m: look this far ahead of the ball (room for it to fly into)
   apexZoom: 9,           // deg: fov punch-in at the apex (the camera backs off to match: a soft dolly-zoom)
   apexWidth: 7,          // m/s of vertical speed over which the apex zoom fades
   fallTilt: 3,           // deg: camera roll as the ball falls
@@ -87,7 +87,7 @@ export class ShotCam {
       const u = 1 - s;
       o.pos.copy(fp).multiplyScalar(u * u).addScaledVector(mid, 2 * u * s).addScaledVector(f.pos, s * s);
       // the look point rises off the golfer up the tracer to the ball (keeps the turn slow and readable)
-      const lookMid = fl.clone().lerp(b.pos, 0.5); lookMid.y += 6;
+      const lookMid = fl.clone().lerp(b.pos, 0.6); lookMid.y = Math.max(lookMid.y, b.pos.y) + 8;   // swing the eye up to the sky, not down at the turf
       o.look.copy(fl).multiplyScalar(u * u).addScaledVector(lookMid, 2 * u * s).addScaledVector(f.look, s * s);
       o.dFov = f.dFov * s; o.roll = f.roll * s; o.dof = 1 - s;
       if (s >= 1) { this.phase = 'follow'; this.t0Phase = this.t; }
