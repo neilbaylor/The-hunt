@@ -15,7 +15,9 @@
   #app { position: fixed; left: 0; right: 0; top: var(--app-top, 0px); height: var(--app-h, 100dvh); }
   #app canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; display: block; touch-action: none; }
   .intro { position: fixed; left: 0; right: 0; top: var(--app-top, 0px); height: var(--app-h, 100dvh); box-sizing: border-box; display: grid; align-items: end; justify-items: center; padding: 24px max(20px, env(safe-area-inset-right)) max(22px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: linear-gradient(180deg, rgba(11,26,51,.0) 45%, rgba(11,26,51,.55) 78%, rgba(11,26,51,.82) 100%); transition: opacity .6s; font-family: 'Nunito', system-ui, sans-serif; color: #fff; }
-  .intro.gone { opacity: 0; pointer-events: none; }
+  .intro.gone { opacity: 0; pointer-events: none; transition: opacity .8s .25s; background: none; }
+  .intro.gone .brand { transform: translateY(-60px); opacity: 0; transition: transform .6s cubic-bezier(.5,0,.7,.4), opacity .5s; animation: none; }
+  .intro.gone .intro-card { transform: translateY(90px); opacity: 0; transition: transform .6s cubic-bezier(.5,0,.7,.4), opacity .5s; animation: none; }
   .intro-card { display: grid; justify-items: center; gap: 10px; text-align: center; animation: introIn .9s cubic-bezier(.2,1.4,.4,1) both; }
   @keyframes introIn { from { opacity: 0; transform: translateY(40px) scale(.94); } to { opacity: 1; transform: none; } }
   .intro .brand { display: inline-flex; align-items: center; gap: 10px; padding: 5px 16px 5px 5px; border-radius: 999px; background: rgba(255,250,240,.94); color: #13294b; box-shadow: 0 3px 0 #e6cd94, 0 10px 24px rgba(0,0,0,.3); }

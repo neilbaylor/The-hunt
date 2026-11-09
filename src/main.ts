@@ -14,6 +14,7 @@ import { ShotCam, isLongShot, type ShotCamCtx } from './game/shotcam';
 import { Sound } from './game/audio';
 import { Hud, viewport, type CardData } from './ui/hud';
 import { tourBallMaterial } from './ui/ballmat';
+import { FaceBadge, AVATAR_LAYER, type Outcome } from './ui/facebadge';
 import { AimController, aim } from './game/aim';
 import { MODES as SHOT_MODES } from './game/shot';
 
@@ -162,6 +163,7 @@ hud.pad.addEventListener('pointerdown', e => {
   hud.pad.setPointerCapture(e.pointerId);
   Object.assign(SW, { active: true, phase: 'back', press: hud.padLocal(e), trailB: [[0, 0]], trailD: [], depth: 0, deep: [0, 0], driftSum: 0, driftN: 0, last: [0, 0], t0: performance.now(), tDeep: performance.now(), tAt: performance.now() });
   Object.assign(G, { phase: 'back', phi: 0, target: 0, arrived: null, returning: false });
+  faceBadge.clearWord();
   state = 'swinging';
   e.preventDefault();
 });
@@ -229,7 +231,7 @@ function strike(now: number, p: [number, number], released: boolean) {
   card = { plan, power, offMs: SW.off, done: false };
   if (dbg) dbg.textContent = `pull ${Math.round(SW.tDeep - SW.t0)} ms · pause ${Math.round(SW.tAt - SW.tDeep)} ms · push ${Math.round(now - SW.tTrans)} ms\nvs top ${dbgRaw > 0 ? '+' : ''}${Math.round(dbgRaw)} ms → graded ${Math.round(SW.off)} ms (${plan.tempoWord})`;
   hud.card(card);
-  hud.toast(plan.tempoWord, '', plan.tempoCls);   // the why lives in Shot details
+  faceBadge.setWord(plan.tempoWord, plan.tempoCls);   // the swing word sits under the face (the why lives in Shot details)
   sound.strike(CLUB_SPECS[hud.club].kind, 1 - plan.error);
   try { navigator.vibrate?.(18); } catch { /* not allowed */ }
   hitStop = 0.09;
@@ -256,6 +258,7 @@ function nextBall() {
 }
 function resetBall() {
   shadowsOnGolfer(true);
+  windShot();
   state = 'ready';
   Object.assign(G, { phase: 'address', phi: 0, target: 0, arrived: null, returning: false, idleT: 0 });
   teeUp();
@@ -264,7 +267,7 @@ function resetBall() {
 }
 
 // ── cameras ──
-type CamMode = 'intro' | 'address' | 'chase' | 'landing' | 'rest' | 'cine';
+type CamMode = 'intro' | 'introFly' | 'address' | 'chase' | 'landing' | 'rest' | 'cine';
 let camMode: CamMode = 'intro';
 let chaseT0 = 0, shake = 0;
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
@@ -317,6 +320,26 @@ function startShotCam() {
   camMode = 'cine';
 }
 /** tap during the flight: run the ball on to just before it lands and show the landing */
+// ── wind: per session, 0–15 mph from a random direction; it shifts a little every few shots and gusts ±20%.
+// deg = where it blows TOWARD, clockwise from straight down the range (0 = helping, 180 = into you, 90 = left→right).
+// ?wind=mph,deg fixes it for testing. Real flights feel WIND (ball.ts); the planning sims don't, so players allow for it.
+const MPH = 0.44704;
+const windQ = QS.get('wind')?.split(',').map(Number);
+const wind = windQ ? { mph: windQ[0] || 0, deg: windQ[1] || 0, fixed: true } : { mph: Math.round(Math.random() * 15), deg: Math.random() * 360, fixed: false };
+let windShots = 0, windGust = 1;
+function windShot() {
+  if (wind.fixed || ++windShots % 4) return;
+  wind.deg += (Math.random() - 0.5) * 70; wind.mph = clamp(wind.mph + (Math.random() - 0.5) * 6, 0, 15);
+}
+function updateWind(now: number) {
+  const t = now / 1000;
+  windGust = 1 + 0.2 * (0.6 * Math.sin(t * 0.7) + 0.4 * Math.sin(t * 1.9 + 1.3));
+  const d = THREE.MathUtils.degToRad(wind.deg + 6 * Math.sin(t * 0.23)), v = wind.mph * MPH * windGust;
+  WIND.set(Math.sin(d) * v, 0, -Math.cos(d) * v);
+  hud.setWind(wind.mph * windGust, wind.deg - THREE.MathUtils.radToDeg(aim.dir), windGust);
+  aimCtl.setWind(WIND);
+}
+
 // swing view ⇄ aim view camera flight
 const CAM_FLY_S = 0.75;
 const camFly = { aim: false, t0: -1e9, pos: new THREE.Vector3(), look: new THREE.Vector3() };
@@ -349,12 +372,23 @@ function updateCamera(dt: number, now: number) {
     return;
   }
   if (cineLens) { cineLens = false; shotcam.stop(); fitCamera(); hud.setCine(null); }
-  if (camMode === 'intro') {
-    // circle slowly in front of the golfer
-    const th = (golfer.lefty ? Math.PI : 0) + 0.6 * Math.sin(now / 1000 * 0.22) + 0.35 * side;
-    const head = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(head);
-    want.set(head.x + Math.cos(th) * 2.7, 1.42 + Math.sin(now / 1000 * 0.15) * 0.08, head.z + Math.sin(th) * 2.7);
-    wantLook.set(head.x * 0.85, 1.22, head.z);
+  if (camMode === 'intro' || camMode === 'introFly') {
+    introCam(want, wantLook, now);
+    if (camMode === 'introFly') {
+      // tap: orbit from the front, round his trail side, up and over to the swing cam (ease in-out, a slight rise)
+      const k = Math.min(1, (now - introFly.t0) / 1000 / INTRO_FLY_S), e = k * k * k * (k * (k * 6 - 15) + 10);
+      const piv = golfer.ballWorld(new THREE.Vector3()).add(new THREE.Vector3(0.45 * side, 0, 0));
+      const end = new THREE.Vector3(), endLook = new THREE.Vector3(); addressCam(end, endLook);
+      const a0 = Math.atan2(introFly.pos.z - piv.z, introFly.pos.x - piv.x), a1 = Math.atan2(end.z - piv.z, end.x - piv.x);
+      let da = a1 - a0; da = Math.atan2(Math.sin(da), Math.cos(da));
+      if (Math.sign(da) !== -side && Math.abs(da) > 0.2) da -= Math.sign(da) * Math.PI * 2;   // go round the trail side
+      const r0 = Math.hypot(introFly.pos.x - piv.x, introFly.pos.z - piv.z), r1 = Math.hypot(end.x - piv.x, end.z - piv.z);
+      const a = a0 + da * e, r = r0 + (r1 - r0) * e;
+      want.set(piv.x + Math.cos(a) * r, introFly.pos.y + (end.y - introFly.pos.y) * e + Math.sin(Math.PI * e) * 0.7, piv.z + Math.sin(a) * r);
+      wantLook.lerpVectors(introFly.look, endLook, e * e * (3 - 2 * e));
+      camFlying = true;
+      if (k >= 1) { camMode = 'address'; state = 'ready'; hud.el.classList.remove('hidden'); camFly.t0 = -1e9; }
+    }
   } else if (camMode === 'address') {
     if (aimCtl.active) aimCtl.cameraWant(want, wantLook); else addressCam(want, wantLook);
     // swing view ⇄ aim view: a timed camera flight through the world (ease in-out), not an exponential snap
@@ -397,7 +431,7 @@ function updateCamera(dt: number, now: number) {
       wantLook.copy(b).add(new THREE.Vector3(0, 0.3, 0));
     }
   }
-  const wantShift = portrait() && !aimCtl.active && (camMode === 'address' || camMode === 'intro' || (camMode === 'chase' && (now - chaseT0) < 550)) ? (camMode === 'intro' ? 0.0 : addressShift()) : 0;
+  const wantShift = portrait() && !aimCtl.active && (camMode === 'address' || camMode === 'intro' || camMode === 'introFly' || (camMode === 'chase' && (now - chaseT0) < 550)) ? (camMode === 'intro' ? 0.0 : camMode === 'introFly' ? addressShift() * Math.min(1, (now - introFly.t0) / 1000 / INTRO_FLY_S) : addressShift()) : 0;
   if (Math.abs(wantShift - lensShift) > 0.002) { lensShift += (wantShift - lensShift) * (1 - Math.pow(0.02, dt)); fitCamera(); }
   const kk = camFlying ? 1 : camMode === 'landing' || camMode === 'rest' ? 1 - Math.pow(0.02, dt) : k;
   camFlying = false;
@@ -422,12 +456,22 @@ document.body.appendChild(intro);
 // a tap anywhere starts (no button)
 intro.addEventListener('click', () => { sound.unlock(); startPlay(); });
 intro.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sound.unlock(); startPlay(); } });
+// intro: a front ¾ view of Neil framed between the title and his name; a tap flies the camera round to the swing cam
+const INTRO_FLY_S = 1.9;
+const introFly = { t0: 0, pos: new THREE.Vector3(), look: new THREE.Vector3() };
+function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
+  const head = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(head);
+  const piv = golfer.ballWorld(new THREE.Vector3()).add(new THREE.Vector3(0.5 * side, 0, 0));
+  const th = (golfer.lefty ? Math.PI : 0) + 0.55 * side + 0.06 * Math.sin(now / 1000 * 0.25);   // in front of him, a quarter round
+  pos.set(piv.x + Math.cos(th) * 3.3, 1.38 + Math.sin(now / 1000 * 0.18) * 0.04, piv.z + Math.sin(th) * 3.3);
+  look.set(piv.x * 0.9 + head.x * 0.1, 1.08, piv.z);
+}
 function startPlay() {
-  if (state !== 'intro') return;
+  if (state !== 'intro' || camMode !== 'intro') return;
   intro.classList.add('gone');
-  setTimeout(() => intro.remove(), 600);
-  state = 'ready'; camMode = 'address';
-  hud.el.classList.remove('hidden');
+  setTimeout(() => intro.remove(), 900);
+  introFly.t0 = last; introFly.pos.copy(camPos); introFly.look.copy(camLook);
+  camMode = 'introFly';   // state turns 'ready' and the HUD fades in as the camera arrives
 }
 
 // ── loop ──
@@ -435,7 +479,7 @@ teeUp();
 golfer.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
 shadowsOnGolfer(true);
 camMode = 'intro';
-camPos.set(3, 1.5, 3); camLook.set(0, 1, 0);
+introCam(camPos, camLook, performance.now());
 let last = performance.now();
 let manualClock = false;
 const frameTimes: number[] = [];
@@ -471,7 +515,8 @@ function frame(now: number) {
 
   // face: smile on the intro, and after a good shot
   const good = state === 'result' && !!plan && plan.tempoWord === 'Smooth' && Math.abs(ball.offline() / YD) < 10;
-  golfer.smileToward(state === 'intro' || good ? 1 : 0, dt);
+  faceBadge.update(dt);
+  golfer.smileToward(Math.max(state === 'intro' || good ? 1 : 0, faceBadge.smile), dt);
 
   hud.setState(state === 'ready', state === 'flight', !card);
   aimCtl.setEnabled(state === 'ready');
@@ -498,9 +543,14 @@ function frame(now: number) {
       const tot = ball.total() / YD, off = ball.offline() / YD;
       const near = range?.targets.reduce((b, t) => { const d = Math.hypot(t.pos.x - ball.pos.x, t.pos.z - ball.pos.z); return d < b.d ? { d, t } : b; }, { d: Infinity, t: null as any });
       const msg = near && near.t && near.d < near.t.radius ? `On the ${near.t.yards} green · ${(near.d / YD).toFixed(0)} yds from the pin` : `${tot.toFixed(0)} yds · ${Math.abs(off) < 1 ? 'online' : `${Math.abs(off).toFixed(0)} ${off < 0 ? 'left' : 'right'}`}`;
-      // one friendly line; the numbers wait behind 'Shot details'
+      // Neil reacts (face, word under the badge, a one-liner); the numbers wait behind 'Shot details'
       const onGreen = !!(near && near.t && near.d < near.t.radius), pured = !!plan && plan.tempoWord === 'Smooth' && Math.abs(off) < 8;
-      hud.shotLine(onGreen ? `On the green! ${tot.toFixed(0)} yds` : pured ? `Pured it — ${tot.toFixed(0)} yds` : `${tot.toFixed(0)} · ${plan?.tempoWord ?? ''}`, onGreen || pured ? 'good' : 'warn');
+      const expect = plan?.targetCarryYds ?? tot;
+      const outcome: Outcome = onGreen && near!.d / YD < 1 ? 'holed' : onGreen && near!.d / YD < 5 ? 'near' : Math.abs(off) > 28 || tot < expect * 0.45 ? 'shank'
+        : pured ? 'pure' : plan?.tempoCls === 'bad' ? 'bad' : onGreen || plan?.tempoCls === 'good' ? 'good' : 'ok';
+      if (outcome === 'pure') faceBadge.setWord('Pured it', 'good'); else if (outcome === 'shank') faceBadge.setWord('Ouch', 'bad');
+      faceBadge.react(outcome, `${tot.toFixed(0)} yds${onGreen ? ', on the green' : ''}.`);
+      if (outcome === 'pure' || outcome === 'near' || outcome === 'holed') hud.celebrate(outcome === 'pure' ? 18 : 34);
       void msg;
     }
   }
@@ -520,6 +570,7 @@ function frame(now: number) {
   { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? 2.4 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   tracer.update(camera, state === 'ready' ? 0.6 : 1);
   focus.copy(state === 'flight' || state === 'result' ? ball.pos : golfer.ballWorld(tmp));
+  updateWind(now);
   range?.setWind(WIND); // the flags stream with the ball's wind (a light breeze when there is none)
   range?.update(dt, camera, focus);
 
@@ -527,6 +578,7 @@ function frame(now: number) {
   perf.frame(frameTimes[frameTimes.length - 1]);
   const r0 = performance.now();
   post.render(dt);
+  faceBadge.draw(state !== 'intro' && !aimCtl.active && !document.hidden);
   (window as any).__frameMs = performance.now() - r0;
   if (!manualClock) requestAnimationFrame(frame);
 }
@@ -545,8 +597,12 @@ renderer.domElement.addEventListener('pointerdown', e => {
 let pressT = 0;
 renderer.domElement.addEventListener('pointerup', () => { if (state === 'flight' && pressT && performance.now() - pressT < 230) skipToLanding(); pressT = 0; });
 for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) renderer.domElement.addEventListener(ev, () => { ff.held = false; });
+// the live face badge: the head (and the lights) also live on the badge camera's layer
+const faceBadge = new FaceBadge(renderer, scene, () => golfer.body.bones[5] ?? null, () => (golfer.body as { face?: import('./ui/facebadge').FaceLike }).face, document.getElementById('who')!, profile.name);
+golfer.root.traverse(o => o.layers.enable(AVATAR_LAYER));
+scene.traverse(o => { if ((o as THREE.Light).isLight) o.layers.enable(AVATAR_LAYER); });
 requestAnimationFrame(t => { last = t; frame(t); });
-(window as any).__game = {
+(window as any).__game = { faceBadge, wind,
   golfer, ball, hud, aim, aimCtl, shotcam, get state() { return state; }, skipToLanding, skipToLandingNow,
   /** debug (storyboards): stop the RAF loop and step the game by hand: manual(true); tick(ms) */
   manual(on: boolean) { manualClock = on; if (!on) requestAnimationFrame(t => { last = t; frame(t); }); },

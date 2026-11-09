@@ -287,7 +287,7 @@ export class Hud {
     this.el = document.createElement('div'); this.el.className = 'hud skin-a';
     this.el.innerHTML = `
       <div class="corner tl"><div class="row"><div id="clubSlot"></div><div id="modeSlot"></div></div><div class="who" id="who"></div><div class="pop hud-panel" id="clubPop" hidden></div><div class="pop hud-panel" id="modePop" hidden></div></div>
-      <div class="corner tr"><div id="lieSlot"></div></div>
+      <div class="corner tr"><div id="lieSlot"></div><div class="wind-chip" id="wind" role="img" aria-label="No wind"><svg viewBox="-12 -12 24 24" aria-hidden="true"><circle r="11" class="wc-ring"/><g class="wc-arrow"><path d="M0 -8 L5 -1 L1.8 -1 L1.8 7 L-1.8 7 L-1.8 -1 L-5 -1 Z"/></g></svg><b>0</b><small>mph</small></div></div>
       <div class="corner bl"><div id="cardSlot"><div class="card-wrap" id="cardWrap"><button type="button" class="hud-panel card-mini" data-act="card-open" aria-expanded="false"></button><div class="card-body" id="cardBody"></div></div></div></div>
       <div class="corner br"><button type="button" class="strike-btn" data-act="strike" aria-label="Strike point: centre. Choose where to hit the ball"><canvas width="112" height="112" aria-hidden="true"></canvas><i class="dot" aria-hidden="true"></i><span>Strike</span></button><div class="pad" id="pad" aria-label="Swing pad: press, pull down, push up"></div></div>
       <div class="corner bc"><div class="spin off" id="spin"><canvas width="272" height="272" aria-label="Spin ball: swipe to add spin"></canvas><div class="spin-label" id="spinLabel">Swipe the ball to add spin</div></div></div>
@@ -373,7 +373,7 @@ export class Hud {
       <span class="lie-top">${lieRing(L.pct)}<span><span class="big" style="display:block">${L.name}</span><span class="sub">${L.pct}% distance</span></span></span>
       <span class="slope">${slopeIcon(L.slope, L.side)}<span class="deg">${L.slope}°</span><span class="sub">${L.txt}</span></span></button>`;
     const p = this.profile;
-    this.q('#who').innerHTML = `<button type="button" class="hud-panel who-chip" data-act="skin" aria-label="Player: ${p.name}"><i class="avatar" aria-hidden="true"></i><b>${p.name}</b></button>`;
+    if (!this.q('#who').querySelector('.face-wrap')) this.q('#who').innerHTML = `<button type="button" class="hud-panel who-chip" data-act="skin" aria-label="Player: ${p.name}"><i class="avatar" aria-hidden="true"></i><b>${p.name}</b></button>`;
     if (card !== undefined) this.card(card);
     else if (!this.cardInit) this.card(null);
     const cp = this.q('#clubPop'), mp = this.q('#modePop');
@@ -610,6 +610,17 @@ export class Hud {
     if (on) (this.q('#spRet') as HTMLButtonElement).focus({ preventScroll: true }); else (this.q('.strike-btn') as HTMLButtonElement).focus({ preventScroll: true });
   }
 
+  /** wind: speed (mph, with the gust) and where it blows toward relative to the aim line (deg, 0 = helping, clockwise) */
+  setWind(mph: number, relDeg: number, gust: number) {
+    const el = this.q('#wind'); if (!el) return;
+    const m = Math.round(mph);
+    if (el.dataset.m !== String(m)) { el.dataset.m = String(m); el.querySelector('b')!.textContent = String(m); }
+    (el.querySelector('.wc-arrow') as SVGGElement).setAttribute('transform', `rotate(${relDeg.toFixed(1)}) scale(${(0.92 + 0.12 * (gust - 0.8) / 0.4).toFixed(3)})`);
+    el.classList.toggle('calm', m < 1);
+    const dir = Math.abs(((relDeg % 360) + 540) % 360 - 180);   // 180 = helping, 0 = into
+    const word = m < 1 ? 'No wind' : `${m} mph ${dir > 135 ? 'helping' : dir < 45 ? 'into you' : 'across'}`;
+    if (el.getAttribute('aria-label') !== word) el.setAttribute('aria-label', 'Wind: ' + word);
+  }
   /** the cinematic shot cam's phase (null when off): the spin ball steps aside for the face shot */
   setCine(phase: string | null) { this.el.classList.toggle('cine-face', phase === 'face'); }
 

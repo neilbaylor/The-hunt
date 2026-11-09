@@ -93,6 +93,12 @@ function makeRing() {
   return { group: g, chevron: holder };
 }
 
+function makeWindArrow() {
+  const sh = new THREE.Shape(); sh.moveTo(0, -1); sh.lineTo(0.6, -0.2); sh.lineTo(0.22, -0.2); sh.lineTo(0.22, 0.9); sh.lineTo(-0.22, 0.9); sh.lineTo(-0.22, -0.2); sh.lineTo(-0.6, -0.2); sh.closePath();
+  const m = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshBasicMaterial({ color: '#cfeaff', transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }));
+  m.rotation.x = -Math.PI / 2; m.renderOrder = 9;
+  const g = new THREE.Group(); g.add(m); g.visible = false; return g;
+}
 function makeHandle() {
   const g = new THREE.Group();
   const m = (c: THREE.Color) => new THREE.MeshBasicMaterial({ color: c, transparent: true, depthWrite: false, depthTest: false });
@@ -145,6 +151,8 @@ export class AimController {
   private pathLine = new Ribbon(96, CYAN, { opacity: 0.95, edge: new THREE.Color('#0b3a52') });
   private ring = makeRing();
   private handle = makeHandle();
+  private windArrow = makeWindArrow();
+  private wind = new THREE.Vector3();
   private rail: HTMLDivElement; private label: HTMLDivElement; private tip: HTMLDivElement;
   private tap: { id: number; x: number; y: number; t: number } | null = null;
   private pan = new THREE.Vector3(); private pan0 = new THREE.Vector3(); private panAt: THREE.Vector3 | null = null;
@@ -155,7 +163,7 @@ export class AimController {
   private t = 0;
 
   constructor(private o: AimOptions) {
-    o.scene.add(this.guide.mesh, this.marker.group, this.aimLine.mesh, this.pathLine.mesh, this.ring.group, this.handle);
+    o.scene.add(this.guide.mesh, this.marker.group, this.aimLine.mesh, this.pathLine.mesh, this.ring.group, this.handle, this.windArrow);
     const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
     this.rail = document.createElement('div'); this.rail.className = 'aim-rail off';
     this.rail.innerHTML = `
@@ -194,6 +202,8 @@ export class AimController {
   /** club or mode changed: keep the direction, reset distance to the new club's full carry */
   clubChanged() { const c = this.o.carry(); aim.distanceYds = c.full; aim.distanceYds = clamp(aim.distanceYds, c.min, c.max); this.changed(); }
   private changed() { this.o.onChange?.(); }
+  /** the session wind (world m/s): shown as a subtle arrow beside the target ring in the aim view */
+  setWind(w: THREE.Vector3) { this.wind.copy(w); }
 
   dirVec(out = new THREE.Vector3()) { return out.set(Math.sin(aim.dir), 0, -Math.cos(aim.dir)); }
   targetPos(out = new THREE.Vector3()) {
@@ -327,7 +337,17 @@ export class AimController {
       this.label.classList.toggle('off', !s.ok);
       this.label.style.transform = `translate(${s.x}px, ${s.y - 10}px) translate(-50%, -100%)`;
       this.label.innerHTML = `${Math.round(aim.distanceYds)} yds · <b>${this.shapeName()}</b>`;
-    } else this.label.classList.add('off');
+      // a subtle wind arrow beside the ring, pointing where it blows
+      const ws = Math.hypot(this.wind.x, this.wind.z);
+      this.windArrow.visible = ws > 0.3;
+      if (ws > 0.3) {
+        const side = new THREE.Vector3(Math.cos(aim.dir), 0, Math.sin(aim.dir));
+        this.windArrow.position.copy(T).addScaledVector(side, disp * 1.9); this.windArrow.position.y = this.ground(this.windArrow.position.x, this.windArrow.position.z) + 0.08;
+        this.windArrow.rotation.y = Math.atan2(this.wind.x, this.wind.z);
+        this.windArrow.scale.setScalar(w * (2.4 + ws * 0.25));
+        (this.windArrow.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>).material.opacity = 0.45 + 0.25 * Math.sin(this.t * 3);
+      }
+    } else { this.label.classList.add('off'); this.windArrow.visible = false; }
     void D;
   }
 }
