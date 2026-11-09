@@ -27,6 +27,20 @@ const golfer = new Golfer(NEIL, await loadNeil());
 golfer.setClub(6, 'full');
 const st = pose === 'top' ? { phase: 'back' as const, phi: PHI_TOP } : pose === 'finish' ? { phase: 'follow' as const, phi: PHI_FINISH } : { phase: 'address' as const, phi: 0 };
 golfer.update({ ...st, topPhi: PHI_TOP, idleT: 0 });
+// front three-quarter head-and-shoulders, like the intro: he looks up at the camera with a friendly smile
+let faceCam: THREE.Vector3 | null = null;
+if (view === 'face') {
+  golfer.body.setSmile(Number(qs.get('smile') ?? 0.6));
+  for (let pass = 0; pass < 3; pass++) {
+    const head = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(head);
+    const eye = golfer.char.localToWorld(golfer.body.skel.eye.clone());
+    const fwd = eye.clone().sub(head); fwd.y = 0; fwd.normalize();
+    // swing the view 35° toward the camera side (the range behind him), lift slightly
+    fwd.applyAxisAngle(new THREE.Vector3(0, 1, 0), Number(qs.get('turn') ?? 0.6));
+    faceCam = eye.clone().addScaledVector(fwd, 1.05).add(new THREE.Vector3(0, 0.08, 0));
+    golfer.update({ ...st, topPhi: PHI_TOP, idleT: 0, lookAt: faceCam });
+  }
+}
 scene.add(golfer.root);
 const ball = new THREE.Mesh(new THREE.SphereGeometry(0.0214, 24, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }));
 ball.position.copy(golfer.ballWorld()); ball.castShadow = true; scene.add(ball);
@@ -34,7 +48,10 @@ ball.position.copy(golfer.ballWorld()); ball.castShadow = true; scene.add(ball);
 const fill = new THREE.DirectionalLight('#fff3e6', 0.9); scene.add(fill, fill.target);
 
 const feet = new THREE.Vector3(0.9, 0, 0);
-if (view === 'close') {
+if (view === 'face' && faceCam) {
+  const head = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(head);
+  camera.fov = 26; camera.position.copy(faceCam); camera.lookAt(head.x, head.y - 0.1, head.z);
+} else if (view === 'close') {
   // head and upper body, from the camera side
   const h = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(h);
   camera.fov = 30; camera.position.set(h.x + 0.9, h.y + 0.05, h.z + 1.3); camera.lookAt(h.x - 0.05, h.y - 0.22, h.z);

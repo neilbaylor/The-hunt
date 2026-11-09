@@ -1270,8 +1270,8 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
     cupMesh.renderOrder = -1;
     const holeMesh = new THREE.Mesh(mergeGeometries(holes, false)!, new THREE.ShaderMaterial({
       vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'void main() { gl_FragColor = vec4(0.0); gl_FragDepth = 1.0; }',
-      colorWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+      fragmentShader: 'void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); gl_FragDepth = 1.0; }',
+      colorWrite: location.search.includes('holedbg'), polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
     }));
     holeMesh.renderOrder = -2;
     const ferMesh = new THREE.Mesh(mergeGeometries(ferrules, false)!, new THREE.MeshStandardMaterial({ color: '#b9bcc0', roughness: 0.3, metalness: 0.9 }));

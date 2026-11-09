@@ -8,15 +8,18 @@
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 
-export type StyleId = 0 | 1 | 2 | 3 | 4 | 5;
+export type StyleId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 export interface StyleInfo { id: StyleId; name: string; desc: string; hides: string }
 
 export const STYLES: StyleInfo[] = [
   { id: 0, name: 'Realistic (current)', desc: 'The game as it renders today: tone-mapped and graded, no illustration.', hides: 'Nothing. Every texture and modelling flaw shows.' },
+  { id: 7, name: 'Graphic Realism · Light', desc: 'The realistic render with a light hand-drawn finish: fine ink contours with weight variation, a touch of hatching in the deepest shadows, faint paper grain.', hides: 'Blotchy fabric shading and texture noise; edges read cleaner. Faces stay photographic.' },
+  { id: 8, name: 'Graphic Realism · Medium', desc: 'Same, pushed further: stronger contours and interior lines, cross-hatching in shadows, crisper highlights, visible paper.', hides: 'Most fabric and turf texture flaws and some modelling softness; the face reads as a drawn portrait.' },
   { id: 1, name: 'Ink & Wash', desc: 'Real lighting with a soft watercolour wash, warm brown ink lines that thicken up close, and paper grain.', hides: 'Fine skin and fabric texture, small seams and tiling. The ink defines the face and body shapes.' },
   { id: 2, name: 'Painterly', desc: 'Oil-paint brushwork over the whole frame, crisp ink edges on the golfer so he stays sharp.', hides: 'Almost all surface detail: cloth weave, hair strands, turf noise and tree cards become paint.' },
   { id: 3, name: 'Sports Poster', desc: 'Three-tone cel shading with soft band edges, bold navy outlines and halftone dots in the shadows.', hides: 'Texture detail and subtle shape errors. Needs clean silhouettes, which we have.' },
   { id: 4, name: 'Gouache', desc: 'Flat opaque paint regions, visible brush direction, a warm palette and outlines tinted from the paint.', hides: 'Most texture and lighting noise. Faces read as a few planes of colour, which is forgiving.' },
+  { id: 6, name: 'Cover Art', desc: 'Sports-game cover illustration: flat, saturated colour in a few clean bands, crisp black contours and a bright rim on the edges.', hides: 'Almost all texture; the face reads from its big features (hair shape, nose, jaw, smile), not skin detail.' },
   { id: 5, name: 'Graphic Novel', desc: 'Near-photoreal colour with cross-hatching in the shadows and thin ink contours.', hides: 'Shadow noise and flat-looking cloth; hatching adds form. Lit faces still show detail.' },
 ];
 
@@ -71,132 +74,160 @@ float localL(vec2 uv, float r) { vec2 o = r / res; float s = 0.0;
   for (int i = 0; i < 8; i++) { float a = float(i) * 0.785398; s += luma(texture2D(tColor, uv + vec2(cos(a), sin(a)) * o).rgb); }
   return s / 8.0; }
 vec3 sat(vec3 c, float s) { return mix(vec3(luma(c)), c, s); }
+// 4-sector Kuwahara (7x7 taps, spacing r px): flattens texture into paint-like regions, keeps edges
+vec3 kuwa(vec2 uv, float r) {
+  vec2 o = r / res; vec3 m0 = vec3(0.0), m1 = vec3(0.0), m2 = vec3(0.0), m3 = vec3(0.0), s0 = vec3(0.0), s1 = vec3(0.0), s2 = vec3(0.0), s3 = vec3(0.0);
+  for (int j = -3; j <= 3; j++) for (int i = -3; i <= 3; i++) {
+    vec3 c = texture2D(tColor, uv + vec2(float(i), float(j)) * o).rgb, c2 = c * c;
+    if (i <= 0 && j <= 0) { m0 += c; s0 += c2; } if (i >= 0 && j <= 0) { m1 += c; s1 += c2; }
+    if (i <= 0 && j >= 0) { m2 += c; s2 += c2; } if (i >= 0 && j >= 0) { m3 += c; s3 += c2; }
+  }
+  m0 /= 16.0; m1 /= 16.0; m2 /= 16.0; m3 /= 16.0;
+  vec3 v0 = abs(s0 / 16.0 - m0 * m0), v1 = abs(s1 / 16.0 - m1 * m1), v2 = abs(s2 / 16.0 - m2 * m2), v3 = abs(s3 / 16.0 - m3 * m3);
+  float a = v0.r + v0.g + v0.b, b = v1.r + v1.g + v1.b, c = v2.r + v2.g + v2.b, d = v3.r + v3.g + v3.b;
+  vec3 outc = m0; float best = a;
+  if (b < best) { best = b; outc = m1; } if (c < best) { best = c; outc = m2; } if (d < best) { outc = m3; }
+  return outc;
+}
+// paper grain
+float paper(vec2 p) { return 0.9 + 0.07 * fbm(p * 0.7) + 0.04 * vnoise(p * vec2(6.0, 0.6)) + 0.03 * hash(p); }
+// silhouettes for the graphic-realism styles: only the near subject and big breaks (trees against sky),
+// so gentle terrain steps like the tee-box edge never draw a line
+float silhouette(vec2 uv, float r) {
+  vec2 o = r / res; float c = viewZ(uv);
+  float a = viewZ(uv + vec2(o.x, 0.0)), b = viewZ(uv - vec2(o.x, 0.0)), d = viewZ(uv + vec2(0.0, o.y)), e = viewZ(uv - vec2(0.0, o.y));
+  float m = min(min(a, b), min(d, e)), jump = (c - m) / max(m, 0.3);
+  float gate = max(smoothstep(7.5, 5.0, m), smoothstep(0.5, 0.9, jump));
+  return smoothstep(0.1, 0.28, jump) * gate;
+}
+float skinMask(vec3 c) { // warm skin tones: r > g > b with moderate saturation
+  float r = c.r, g = c.g, b = c.b;
+  return smoothstep(0.03, 0.09, r - g) * smoothstep(0.0, 0.05, g - b) * smoothstep(0.15, 0.3, r);
+}
+vec3 graphicRealism(vec2 uv, float S, float cross) {
+  vec2 p = uv * res / px;
+  float z = viewZ(uv), nw = nearW(z), near = smoothstep(14.0, 3.0, z);
+  vec3 c0 = texture2D(tColor, uv).rgb;
+  // de-blotch: edge-preserving smoothing on the near subject removes noisy fabric shading
+  vec3 c = mix(c0, kuwa(uv, 0.9 * px), near * (0.45 + 0.35 * S));
+  float L = luma(c);
+  // lift crushed shadows (no black blotches in folds), crisp highlights, a little contrast
+  c += (1.0 - c) * (0.05 + 0.05 * S) * (1.0 - smoothstep(0.0, 0.3, L));
+  c = sat(c, 1.0 - 0.06 * S);
+  c = (c - 0.5) * (1.0 + 0.1 * S) + 0.5;
+  c += 0.07 * S * smoothstep(0.72, 0.95, L);
+  // hatching in shadows, relative to the surroundings; light on skin so faces stay clean
+  float shade = luma(blur5(uv, 1.5 * px)) / max(localL(uv, 16.0 * px), 0.03);
+  float sk = skinMask(c0);
+  vec2 d1 = vec2(0.7071, 0.7071), d2 = vec2(0.7071, -0.7071);
+  float wob = 0.3 * vnoise(p * 0.05);
+  float h1 = 1.0 - smoothstep(0.12, 0.3, abs(fract(dot(p, d1) / 3.2 + wob) - 0.5) * 2.0);
+  float h2 = 1.0 - smoothstep(0.12, 0.3, abs(fract(dot(p, d2) / 3.2 + wob) - 0.5) * 2.0);
+  float t1 = 1.0 - smoothstep(0.55, 0.82, shade), t2 = (1.0 - smoothstep(0.35, 0.58, shade)) * cross;
+  float h = max(h1 * t1, h2 * t2) * (1.0 - smoothstep(25.0, 90.0, z)) * (1.0 - 0.7 * sk);
+  c = mix(c, c * 0.35, h * (0.35 + 0.4 * S));
+  // ink: contour weight swells and tapers; interior lines only where tone breaks sharply
+  float w = (0.9 + 0.9 * S + 0.8 * near) * px * (0.75 + 0.5 * vnoise(p * 0.07));
+  float de = silhouette(uv, w);
+  float le = smoothstep(0.3 - 0.08 * S, 0.62 - 0.1 * S, lumaEdge(uv, px)) * near * (0.35 + 0.5 * S) * (1.0 - 0.5 * sk);
+  float ink = clamp(max(de, le), 0.0, 1.0) * (0.8 + 0.2 * vnoise(p * 0.4));
+  c = mix(c, vec3(0.07, 0.06, 0.06), ink * (0.7 + 0.25 * S));
+  c *= mix(1.0, paper(p), 0.35 + 0.45 * S);
+  return c;
+}
 // paper: fibres and tooth
-float paper(vec2 p) { return 0.93 + 0.05 * fbm(p * 0.9) + 0.03 * vnoise(p * vec2(6.0, 0.6)) + 0.02 * hash(p); }
 // how much line weight a pixel gets: heavy on the near golfer, light far away
 float nearW(float z) { return 1.0 - smoothstep(6.0, 60.0, z); }
 `;
 
 const STYLE_FRAG: Record<Exclude<StyleId, 0>, string> = {
-  // ── 1. Ink & Wash ──
+  // ── 1. Ink & Wash: transparent wash, misregistered colour, bold nib lines, cold-press paper ──
   1: /* glsl */`
 void main() {
   vec2 uv = vUv; vec2 p = uv * res / px;
   float z = viewZ(uv), nw = nearW(z);
-  // wash: soften texture, slightly desaturate and pool pigment at edges of tone changes
-  vec3 c = mix(texture2D(tColor, uv).rgb, blur5(uv, 2.5 * px), 0.75);
-  c = sat(c, 0.82);
-  c = 1.0 - (1.0 - c) * 0.9; // watercolour is transparent: lift toward the paper
-  float bleed = fbm(p * 0.035 + 3.1);
-  c *= 0.94 + 0.12 * bleed;
-  // pigment pools darker at tone boundaries
-  c *= 1.0 - 0.18 * smoothstep(0.08, 0.35, lumaEdge(uv, 3.0 * px));
-  c = mix(c, vec3(0.98, 0.95, 0.88), 0.07 + 0.15 * smoothstep(80.0, 600.0, z)); // distance fades into the paper
-  // ink: silhouettes + interior lines, line width wobbles like a nib
-  float w = (1.0 + 0.6 * nw) * px * (0.85 + 0.3 * vnoise(p * 0.08));
+  // colour floats a little off the line work, like a wash laid over an ink drawing
+  vec2 drift = (vec2(fbm(p * 0.02), fbm(p * 0.02 + 7.0)) - 0.5) * 6.0 * px / res;
+  vec3 c = kuwa(uv + drift, 1.2 * px);
+  c = sat(c, 0.8);
+  c = 1.0 - (1.0 - c) * 0.82;
+  c *= 0.9 + 0.2 * fbm(p * 0.03 + 3.1);                        // uneven pigment
+  c *= 1.0 - 0.3 * smoothstep(0.06, 0.3, lumaEdge(uv, 3.0 * px)); // pigment pools at tone edges
+  c = mix(c, vec3(0.97, 0.94, 0.86), 0.1 + 0.3 * smoothstep(60.0, 500.0, z));
+  float w = (1.5 + 1.6 * nw) * px * (0.75 + 0.5 * vnoise(p * 0.06));
   float de = depthEdge(uv, w);
-  float le = smoothstep(0.22, 0.55, lumaEdge(uv, w)) * (0.25 + 0.75 * nw);
-  float ink = clamp(max(de * (0.35 + 0.65 * nw), le * 0.8), 0.0, 1.0);
-  ink *= 0.7 + 0.3 * vnoise(p * 0.35);
-  c = mix(c, vec3(0.17, 0.12, 0.09), ink * 0.9);
-  c *= paper(p);
+  float le = smoothstep(0.18, 0.45, lumaEdge(uv, w * 0.8)) * (0.2 + 0.8 * nw);
+  float ink = clamp(max(de * (0.35 + 0.65 * nw), le), 0.0, 1.0) * (0.75 + 0.25 * vnoise(p * 0.4));
+  c = mix(c, vec3(0.16, 0.1, 0.07), ink * 0.95);
+  c *= paper(p * 0.8);
   gl_FragColor = vec4(c, 1.0);
 }`,
-  // ── 2. Painterly (Kuwahara + crisp near outlines) ──
+  // ── 2. Painterly: big oil strokes, canvas, crisp edge on the near subject ──
   2: /* glsl */`
-vec3 kuwa(vec2 uv, float r) {
-  vec2 o = 1.0 / res;
-  vec3 m[4]; vec3 s[4];
-  for (int k = 0; k < 4; k++) { m[k] = vec3(0.0); s[k] = vec3(0.0); }
-  for (int j = -3; j <= 3; j++) for (int i = -3; i <= 3; i++) {
-    vec3 c = texture2D(tColor, uv + vec2(float(i), float(j)) * o * r).rgb;
-    vec3 c2 = c * c;
-    if (i <= 0 && j <= 0) { m[0] += c; s[0] += c2; }
-    if (i >= 0 && j <= 0) { m[1] += c; s[1] += c2; }
-    if (i <= 0 && j >= 0) { m[2] += c; s[2] += c2; }
-    if (i >= 0 && j >= 0) { m[3] += c; s[3] += c2; }
-  }
-  float best = 1e9; vec3 outc = vec3(0.0);
-  for (int k = 0; k < 4; k++) {
-    vec3 mu = m[k] / 16.0; vec3 v = abs(s[k] / 16.0 - mu * mu);
-    float sv = v.r + v.g + v.b;
-    if (sv < best) { best = sv; outc = mu; }
-  }
-  return outc;
-}
 void main() {
   vec2 uv = vUv; vec2 p = uv * res / px;
   float z = viewZ(uv), nw = nearW(z);
-  // brush size: bigger strokes far away, finer on the golfer
-  float r = px * mix(2.6, 1.15, nw);
+  float r = px * mix(3.2, 1.7, nw);
   vec3 c = kuwa(uv, r);
-  c = sat(c, 1.08);
-  // canvas weave
-  float weave = 0.5 + 0.5 * sin(p.x * 1.9) * sin(p.y * 1.9);
-  c *= 0.965 + 0.045 * weave;
-  // impasto: lighten stroke ridges a touch along the paint's luminance gradient
-  float le = lumaEdge(uv, r);
-  c += 0.025 * smoothstep(0.05, 0.3, le) * (vnoise(p * 0.5) - 0.5);
-  // crisp dark edge only on near objects (the golfer, ball, club)
-  float de = depthEdge(uv, px) * smoothstep(12.0, 5.0, z);
-  c = mix(c, vec3(0.12, 0.1, 0.09), de * 0.85);
-  gl_FragColor = vec4(c, 1.0);
-}`,
-  // ── 3. Sports Poster: cel bands + halftone + bold outlines ──
-  3: /* glsl */`
-void main() {
-  vec2 uv = vUv; vec2 p = uv * res / px;
-  float z = viewZ(uv), nw = nearW(z);
-  vec3 base = blur5(uv, 1.5 * px);
-  float L = luma(base);
-  vec3 chroma = base / max(L, 0.02);
-  // three soft-edged value bands (shadow / mid / light) plus a highlight band
-  float q = 0.18 + 0.32 * smoothstep(0.24, 0.3, L) + 0.28 * smoothstep(0.5, 0.56, L) + 0.18 * smoothstep(0.8, 0.86, L);
-  float keep = smoothstep(200.0, 1500.0, z); // sky and far hills stay smooth gradients
-  vec3 c = mix(mix(chroma * q, base, 0.35), base, keep * 0.85);
-  // halftone dots where it's in shadow relative to its surroundings (cast shadows, folds, under the arms)
-  vec2 hp = mat2(0.7071, -0.7071, 0.7071, 0.7071) * p / 3.6;
-  float shade = L / max(localL(uv, 14.0 * px), 0.03);
-  float dotR = (1.0 - smoothstep(0.55, 0.85, shade)) * 0.4;
-  float dotv = 1.0 - smoothstep(dotR - 0.08, dotR, length(fract(hp) - 0.5));
-  c = mix(c, c * 0.45, dotv * (1.0 - keep));
-  // bold outlines, heavier near
-  float w = (1.2 + 1.3 * nw) * px;
-  float de = depthEdge(uv, w);
-  float le = smoothstep(0.35, 0.7, lumaEdge(uv, px)) * nw;
-  c = mix(c, vec3(0.06, 0.09, 0.2), clamp(max(de * (0.3 + 0.7 * nw), le * 0.7), 0.0, 1.0));
-  gl_FragColor = vec4(c, 1.0);
-}`,
-  // ── 4. Gouache: flat opaque paint, brush direction, warm palette, tinted outlines ──
-  4: /* glsl */`
-void main() {
-  vec2 uv = vUv; vec2 p = uv * res / px;
-  float z = viewZ(uv), nw = nearW(z);
-  // flatten: average a small cross then pull values toward 6 soft steps
-  vec3 b = (blur5(uv, 2.5 * px) + blur5(uv, 5.0 * px) + blur5(uv, 1.2 * px)) / 3.0;
-  float L = luma(b);
-  float steps = 5.0, Lq = (floor(L * steps) + smoothstep(0.35, 0.65, fract(L * steps))) / steps;
-  vec3 c = b / max(L, 0.02) * mix(L, Lq, 0.75);
-  // warm palette: shadows toward plum-brown, lights toward cream
-  c = mix(c, c * vec3(0.92, 0.82, 0.86), 1.0 - smoothstep(0.15, 0.5, L));
-  c = mix(c, c * vec3(1.06, 1.02, 0.9), smoothstep(0.55, 0.9, L));
-  c = sat(c, 1.05);
-  // brush strokes: short streaks, direction follows the screen-space value gradient's normal
+  c = sat(c, 1.12);
+  // stroke direction from the paint's own gradient, streaked texture along it
   vec2 o = 2.0 * px / res;
   vec2 g = vec2(luma(texture2D(tColor, uv + vec2(o.x, 0.0)).rgb) - luma(texture2D(tColor, uv - vec2(o.x, 0.0)).rgb),
                 luma(texture2D(tColor, uv + vec2(0.0, o.y)).rgb) - luma(texture2D(tColor, uv - vec2(0.0, o.y)).rgb));
   vec2 dir = length(g) > 1e-3 ? normalize(vec2(-g.y, g.x)) : vec2(0.7071, 0.7071);
   vec2 bp = vec2(dot(p, dir), dot(p, vec2(-dir.y, dir.x)));
-  float stroke = vnoise(bp * vec2(0.06, 0.55));
-  c *= 0.9 + 0.2 * stroke;
-  // outlines tinted from the paint (a darker, richer version of the local colour)
-  float de = depthEdge(uv, (1.0 + nw) * px);
-  c = mix(c, sat(c, 1.4) * 0.35, de * (0.25 + 0.6 * nw));
-  // paper showing through at the frame edges
-  c *= paper(p) + 0.02;
+  c *= 0.9 + 0.2 * vnoise(bp * vec2(0.08, 0.9));
+  c *= 0.94 + 0.08 * (0.5 + 0.5 * sin(p.x * 1.6) * sin(p.y * 1.6)); // canvas weave
+  float de = depthEdge(uv, 1.3 * px) * smoothstep(14.0, 4.0, z);
+  c = mix(c, vec3(0.1, 0.08, 0.07), de * 0.85);
   gl_FragColor = vec4(c, 1.0);
 }`,
-  // ── 5. Graphic Novel: photoreal colour, cross-hatched shadows, thin ink ──
+  // ── 3. Sports Poster: flat cel bands, heavy navy outline, big halftone ──
+  3: /* glsl */`
+void main() {
+  vec2 uv = vUv; vec2 p = uv * res / px;
+  float z = viewZ(uv), nw = nearW(z);
+  vec3 base = kuwa(uv, 1.0 * px);
+  float L = luma(base);
+  vec3 chroma = base / max(L, 0.02);
+  float q = 0.2 + 0.36 * smoothstep(0.26, 0.29, L) + 0.3 * smoothstep(0.52, 0.55, L) + 0.16 * smoothstep(0.82, 0.85, L);
+  float keep = smoothstep(200.0, 1500.0, z);
+  vec3 c = mix(mix(chroma * q, base, 0.15), base, keep * 0.85);
+  vec2 hp = mat2(0.7071, -0.7071, 0.7071, 0.7071) * p / 4.6;
+  float shade = L / max(localL(uv, 14.0 * px), 0.03);
+  float dotR = max(1.0 - smoothstep(0.55, 0.85, shade), 1.0 - smoothstep(0.1, 0.3, L)) * 0.45;
+  float dotv = 1.0 - smoothstep(dotR - 0.07, dotR, length(fract(hp) - 0.5));
+  c = mix(c, vec3(0.08, 0.12, 0.28), dotv * 0.55 * (1.0 - keep));
+  float w = (1.6 + 2.2 * nw) * px;
+  float de = depthEdge(uv, w);
+  float le = smoothstep(0.3, 0.6, lumaEdge(uv, 1.2 * px)) * nw;
+  c = mix(c, vec3(0.05, 0.08, 0.2), clamp(max(de * (0.35 + 0.65 * nw), le * 0.8), 0.0, 1.0));
+  gl_FragColor = vec4(c, 1.0);
+}`,
+  // ── 4. Gouache: flat opaque paint in 4 values, visible brush, warm palette, tinted outlines ──
+  4: /* glsl */`
+void main() {
+  vec2 uv = vUv; vec2 p = uv * res / px;
+  float z = viewZ(uv), nw = nearW(z);
+  vec3 b = kuwa(uv, mix(2.4, 1.4, nw) * px);
+  float L = luma(b);
+  float steps = 4.0, Lq = (floor(L * steps) + smoothstep(0.3, 0.7, fract(L * steps))) / steps;
+  vec3 c = b / max(L, 0.02) * mix(L, Lq, 0.9);
+  c = mix(c, c * vec3(0.9, 0.78, 0.86), 1.0 - smoothstep(0.15, 0.5, L));
+  c = mix(c, c * vec3(1.08, 1.03, 0.88), smoothstep(0.55, 0.9, L));
+  c = sat(c, 1.1);
+  vec2 o = 2.0 * px / res;
+  vec2 g = vec2(luma(texture2D(tColor, uv + vec2(o.x, 0.0)).rgb) - luma(texture2D(tColor, uv - vec2(o.x, 0.0)).rgb),
+                luma(texture2D(tColor, uv + vec2(0.0, o.y)).rgb) - luma(texture2D(tColor, uv - vec2(0.0, o.y)).rgb));
+  vec2 dir = length(g) > 1e-3 ? normalize(vec2(-g.y, g.x)) : vec2(0.7071, 0.7071);
+  vec2 bp = vec2(dot(p, dir), dot(p, vec2(-dir.y, dir.x)));
+  c *= 0.84 + 0.3 * vnoise(bp * vec2(0.05, 0.5));
+  float de = depthEdge(uv, (1.2 + 1.2 * nw) * px);
+  c = mix(c, sat(c, 1.5) * 0.3, de * (0.3 + 0.6 * nw));
+  c *= paper(p) + 0.03;
+  gl_FragColor = vec4(c, 1.0);
+}`,
+  // ── 5. Graphic Novel: high-contrast colour, heavy cross-hatching, thick ink ──
   5: /* glsl */`
 float hatch(vec2 p, float ang, float spacing, float width) {
   vec2 d = vec2(cos(ang), sin(ang));
@@ -206,21 +237,46 @@ float hatch(vec2 p, float ang, float spacing, float width) {
 void main() {
   vec2 uv = vUv; vec2 p = uv * res / px;
   float z = viewZ(uv), nw = nearW(z);
-  vec3 c = texture2D(tColor, uv).rgb;
-  c = mix(c, blur5(uv, 1.2 * px), 0.5);
-  c = sat(c, 0.95);
-  c = (c - 0.5) * 1.08 + 0.5; // a little contrast
+  vec3 c = mix(texture2D(tColor, uv).rgb, blur5(uv, 1.2 * px), 0.5);
+  c = sat(c, 0.82);
+  c = (c - 0.5) * 1.18 + 0.5;
   float L = luma(blur5(uv, 1.5 * px));
   float keep = smoothstep(150.0, 900.0, z);
   float shade = L / max(localL(uv, 16.0 * px), 0.03);
-  float h1 = hatch(p, 0.785, 3.4, 0.2) * (1.0 - smoothstep(0.7, 0.92, shade));
-  float h2 = hatch(p, -0.785, 3.4, 0.2) * (1.0 - smoothstep(0.45, 0.7, shade));
-  float h3 = hatch(p, 0.2, 2.8, 0.2) * (1.0 - smoothstep(0.08, 0.16, L));
+  float h1 = hatch(p, 0.785, 3.2, 0.24) * (1.0 - smoothstep(0.72, 0.95, shade));
+  float h2 = hatch(p, -0.785, 3.2, 0.24) * (1.0 - smoothstep(0.5, 0.75, shade));
+  float h3 = hatch(p, 0.2, 2.6, 0.24) * (1.0 - smoothstep(0.1, 0.2, L));
   float h = max(max(h1, h2), h3) * (1.0 - keep);
-  c = mix(c, c * 0.25 + vec3(0.02, 0.02, 0.04), h * 0.85);
-  float de = depthEdge(uv, px * (0.9 + 0.5 * nw));
-  float le = smoothstep(0.3, 0.65, lumaEdge(uv, px)) * nw;
-  c = mix(c, vec3(0.05, 0.05, 0.07), clamp(max(de * (0.4 + 0.6 * nw), le * 0.55), 0.0, 1.0));
+  c = mix(c, c * 0.2 + vec3(0.02, 0.02, 0.04), h * 0.9);
+  float de = silhouette(uv, px * (1.3 + 1.2 * nw));
+  float le = smoothstep(0.25, 0.55, lumaEdge(uv, px)) * nw;
+  c = mix(c, vec3(0.04, 0.04, 0.06), clamp(max(de * (0.45 + 0.55 * nw), le * 0.7), 0.0, 1.0));
+  gl_FragColor = vec4(c, 1.0);
+}`,
+  7: /* glsl */`void main() { gl_FragColor = vec4(graphicRealism(vUv, 0.35, 0.0), 1.0); }`,
+  8: /* glsl */`void main() { gl_FragColor = vec4(graphicRealism(vUv, 0.75, 1.0), 1.0); }`,
+  // ── 6. Cover Art: clean illustrated likeness — flat colour, black contours, rim light ──
+  6: /* glsl */`
+void main() {
+  vec2 uv = vUv; vec2 p = uv * res / px;
+  float z = viewZ(uv), nw = nearW(z);
+  vec3 b = kuwa(uv, mix(2.2, 1.1, nw) * px);
+  float L = luma(b);
+  vec3 chroma = b / max(L, 0.02);
+  // shadow / mid / light / highlight, soft but distinct
+  float q = 0.24 + 0.3 * smoothstep(0.2, 0.25, L) + 0.28 * smoothstep(0.46, 0.51, L) + 0.18 * smoothstep(0.76, 0.8, L);
+  float keep = smoothstep(80.0, 600.0, z);
+  vec3 c = mix(chroma * q, b, 0.2 + 0.6 * keep);
+  c = sat(c, 1.2);
+  // shadows lean cool, lights warm — the cover-art colour script
+  c = mix(c, c * vec3(0.85, 0.9, 1.1), 1.0 - smoothstep(0.2, 0.45, L));
+  c = mix(c, c * vec3(1.06, 1.0, 0.92), smoothstep(0.5, 0.85, L));
+  // bright rim just inside the silhouette of the near subject
+  float rim = depthEdge(uv, 3.0 * px) * (1.0 - depthEdge(uv, 1.0 * px)) * smoothstep(12.0, 3.0, z);
+  c += rim * 0.18;
+  float de = depthEdge(uv, (1.4 + 1.6 * nw) * px);
+  float le = smoothstep(0.22, 0.5, lumaEdge(uv, 1.1 * px)) * smoothstep(20.0, 2.0, z);
+  c = mix(c, vec3(0.06, 0.05, 0.06), clamp(max(de * (0.3 + 0.7 * nw), le * 0.85), 0.0, 1.0));
   gl_FragColor = vec4(c, 1.0);
 }`,
 };

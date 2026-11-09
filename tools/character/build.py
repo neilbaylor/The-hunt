@@ -743,6 +743,7 @@ if F:
 else:
     skin_rgb = np.array([0.86, 0.66, 0.56])
 
+SMILE_BAKE = False
 def skin_fn(p, n):
     base = np.tile(skin_rgb, (len(p), 1)).astype(np.float32)
     # subtle variation: blotchy noise and pores
@@ -774,8 +775,11 @@ def skin_fn(p, n):
             w = facing * yband * near * inside * v['weight'] * skinlike
             if v is not views[0]:  # side views never paint the nose/mouth/chin strip (avoids double features)
                 w *= np.clip((np.abs(d[:, 0]) - 0.022) / 0.02, 0, 1)
-            if v['noMouth']:  # a smiling photo: use its cheeks, temples and jaw, not its mouth
-                w *= np.clip((np.linalg.norm((p - mouth_c) * [1.0, 1.3, 1.0], axis=1) - 0.03) / 0.02, 0, 1)
+            mouthzone = 1 - np.clip((np.linalg.norm((p - mouth_c) * [1.0, 1.3, 1.0], axis=1) - 0.03) / 0.02, 0, 1)
+            if SMILE_BAKE:   # smile texture: the mouth comes from the smiling photos only
+                w *= (mouthzone * 3.0 + (1 - mouthzone)) if v['noMouth'] else (1 - mouthzone)
+            elif v['noMouth']:  # neutral texture: a smiling photo gives cheeks, temples and jaw, not its mouth
+                w *= 1 - mouthzone
             acc += col * w[:, None]; wsum += w
         cov = np.clip(wsum / 0.35, 0, 1)[:, None]
         ph = acc / np.maximum(wsum, 1e-6)[:, None]
@@ -790,8 +794,15 @@ def skin_fn(p, n):
     return np.clip(base, 0, 1)
 
 print('baking skin texture…')
+SMILE_BAKE = False
 skin_img = raster(meshes['skin'], skin_fn, T)
 Image.fromarray((skin_img * 255).astype(np.uint8)).save(f'{OUT}/skin.jpg', quality=86)
+if any(v['noMouth'] for v in views):
+    print('baking smile texture…')
+    SMILE_BAKE = True
+    smile_img = raster(meshes['skin'], skin_fn, T)
+    Image.fromarray((smile_img * 255).astype(np.uint8)).save(f'{OUT}/skin_smile.jpg', quality=86)
+    SMILE_BAKE = False
 
 # eyes: iris colour from the profile, a little radial detail
 iris = np.array(P['eyes']) / 255.0

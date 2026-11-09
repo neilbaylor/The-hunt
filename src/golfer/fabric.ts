@@ -106,6 +106,7 @@ const BODY: Record<FabricKind, string> = {
 };
 
 export interface FabricUniforms { kneeY: number; ankleY: number; beltY: number; backZ: number;
+  /** skin only: a second face texture blended in by smile amount */ smile?: { map: THREE.Texture; amount: { value: number } };
   /** chest crest: texture, centre (bind space), size (m), mirror for left-handers */ crest?: { tex: THREE.Texture; c: THREE.Vector3; size: number; flip: boolean };
   tipping?: THREE.Color }
 
@@ -114,13 +115,15 @@ export function applyFabric(mat: THREE.MeshPhysicalMaterial | THREE.MeshStandard
     sh.uniforms.uKneeY = { value: u.kneeY }; sh.uniforms.uAnkleY = { value: u.ankleY };
     sh.uniforms.uBeltY = { value: u.beltY }; sh.uniforms.uBackZ = { value: u.backZ };
     sh.uniforms.uCrest = { value: u.crest?.tex ?? null }; sh.uniforms.uCrestC = { value: u.crest?.c ?? new THREE.Vector3(0, -9, 0) };
+    sh.uniforms.uSmileMap = { value: u.smile?.map ?? null }; sh.uniforms.uSmileAmt = u.smile?.amount ?? { value: 0 };
     sh.uniforms.uCrestS = { value: u.crest ? u.crest.size * (u.crest.flip ? -1 : 1) : 1 }; sh.uniforms.uTip = { value: u.tipping ?? new THREE.Color('#ffffff') };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 cloth;\nvarying vec3 vB;\nvarying vec4 vC;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvB = position; vC = cloth;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vB;\nvarying vec4 vC;\nuniform float uKneeY, uAnkleY, uBeltY, uBackZ;\nuniform sampler2D uCrest; uniform vec3 uCrestC; uniform float uCrestS; uniform vec3 uTip;\n${NOISE}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vB;\nvarying vec4 vC;\nuniform float uKneeY, uAnkleY, uBeltY, uBackZ;\nuniform sampler2D uCrest; uniform vec3 uCrestC; uniform float uCrestS; uniform vec3 uTip; uniform sampler2D uSmileMap; uniform float uSmileAmt;\n${NOISE}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
+        ${kind === 'skin' && u.smile ? '#ifdef USE_MAP\n diffuseColor.rgb = mix(diffuseColor.rgb, texture2D(uSmileMap, vMapUv).rgb, uSmileAmt);\n#endif' : ''}
         float h = 0.0; vec3 col = diffuseColor.rgb;
         ${BODY[kind]}
         diffuseColor.rgb = col;
@@ -133,5 +136,5 @@ export function applyFabric(mat: THREE.MeshPhysicalMaterial | THREE.MeshStandard
         reflectedLight.indirectSpecular *= mix(1.0, bakedAO, 0.7);
         reflectedLight.directDiffuse *= mix(1.0, bakedAO, 0.35);`);
   };
-  mat.customProgramCacheKey = () => 'fabric-' + kind;
+  mat.customProgramCacheKey = () => 'fabric-' + kind + (u.smile ? '-smile' : '');
 }

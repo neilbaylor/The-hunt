@@ -18,25 +18,25 @@ export interface HumanData {
     meshes: Record<string, Record<string, { offset: number; count: number; type: string }>>;
   };
   buf: ArrayBuffer; blobStart: number;
-  skin: HTMLImageElement; eyes: HTMLImageElement;
+  skin: HTMLImageElement; eyes: HTMLImageElement; skinSmile?: HTMLImageElement;
 }
 
 const loadImage = (url: string) => new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
 
-export async function loadHuman(binUrl: string, skinUrl: string, eyesUrl: string): Promise<HumanData> {
+export async function loadHuman(binUrl: string, skinUrl: string, eyesUrl: string, smileUrl?: string): Promise<HumanData> {
   // inlined builds carry the file as a data: URL; decode it directly (some sandboxes block fetch of data: URLs)
   const getBin = async () => {
     if (binUrl.startsWith('data:')) { const b = atob(binUrl.slice(binUrl.indexOf(',') + 1)); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u.buffer; }
     return fetch(binUrl).then(r => r.arrayBuffer());
   };
-  const [buf, skin, eyes] = await Promise.all([getBin(), loadImage(skinUrl), loadImage(eyesUrl)]);
+  const [buf, skin, eyes, skinSmile] = await Promise.all([getBin(), loadImage(skinUrl), loadImage(eyesUrl), smileUrl ? loadImage(smileUrl) : Promise.resolve(undefined)]);
   const dv = new DataView(buf);
   const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
   if (magic !== 'GOLF') throw new Error('bad character file');
   const len = dv.getUint32(4, true);
   const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, len)));
   const blobStart = (8 + len + 3) & ~3;
-  return { meta, buf, blobStart, skin, eyes };
+  return { meta, buf, blobStart, skin, eyes, skinSmile };
 }
 
 export interface HumanExtras {
@@ -121,7 +121,8 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const O = p.outfit;
   const fu = { kneeY: J[M.bones.indexOf('calf_l')].y, ankleY: J[M.bones.indexOf('foot_l')].y, beltY: M.belt.y, backZ: M.belt.cz };
   const skinMat = new THREE.MeshPhysicalMaterial({ map: tex(data.skin), roughness: 0.5, sheen: 0.4, sheenColor: new THREE.Color('#ff8e6e'), sheenRoughness: 0.5, clearcoat: 0.06, clearcoatRoughness: 0.45 });
-  applyFabric(skinMat, 'skin', fu);
+  const smileAmt = { value: 0 };
+  applyFabric(skinMat, 'skin', data.skinSmile ? { ...fu, smile: { map: tex(data.skinSmile), amount: smileAmt } } : fu);
   const skin = add('skin', skinMat)!;
   const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.72, sheen: 0.9, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.45), sheenRoughness: 0.42, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
@@ -488,6 +489,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const v = 0.22 + 0.78 * v0; // a hint of a smile at rest
     if (skin.morphTargetInfluences) skin.morphTargetInfluences[0] = v;
     if (teeth?.morphTargetInfluences) teeth.morphTargetInfluences[0] = v;
+    smileAmt.value = Math.min(1, Math.max(0, (v - 0.15) * 1.3));
     if (teeth) teeth.visible = v > 0.08; // closed mouth: keep teeth from showing through the lips
   };
   return { root, bones, skel, meshes, materials: { skin: skinMat, glove }, setSmile, extras };
