@@ -27,11 +27,11 @@ export class FaceBadge {
   readonly el: HTMLDivElement;
   private badge: HTMLDivElement; private word: HTMLSpanElement; private bubble: HTMLDivElement;
   private rt = new THREE.WebGLRenderTarget(192, 192, { samples: 4 });
-  private cam = new THREE.PerspectiveCamera(30, 1, 0.05, 2);
+  private cam = new THREE.PerspectiveCamera(30, 1, 0.4, 2);   // near clip just short of the face: an arm or club in front never blocks it
   private up = new THREE.Vector3(0, 1, 0); private fwdInit = false;
-  private key = new THREE.DirectionalLight('#fff4e6', 2.4); private fill = new THREE.DirectionalLight('#dbe9ff', 1.1);
+  private key = new THREE.DirectionalLight('#fff4e6', 1.8); private fill = new THREE.DirectionalLight('#dbe9ff', 0.6);
   private blitScene = new THREE.Scene(); private blitCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  private bg = new THREE.Color('#bfe0f2');
+  private bg = new THREE.Color('#7fb3d6');
   private frame = 0;
   private fwd = new THREE.Vector3(0, 0, 1);
   private t = 0;
