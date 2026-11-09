@@ -340,6 +340,8 @@ function updateCamera(dt: number, now: number) {
   camera.position.copy(camPos);
   if (shake > 0) { camera.position.x += (Math.random() - 0.5) * 0.01 * shake; camera.position.y += (Math.random() - 0.5) * 0.01 * shake; shake = Math.max(0, shake - dt * 3); }
   camera.lookAt(camLook);
+  // broadcast long-lens look on the golfer cams only: the far treeline and hills soften a touch (eased in post)
+  post.setDof((camMode === 'address' || camMode === 'intro') && !aimCtl.active ? 1 : 0);
 }
 
 // ── intro overlay ──
