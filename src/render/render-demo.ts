@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { createRange, YD, type TimeOfDay } from '../world/range';
 import { createPost, type Quality } from './post';
 import { TIERS, type Tier } from './perf';
+import { createDivots } from '../world/divots';
 import { Golfer, PHI_TOP } from '../golfer/golfer';
 import { NEIL } from '../golfer/profile';
 import { loadNeil } from '../golfer/assets';
@@ -75,6 +76,9 @@ if (view === 'portrait') {
     camera.position.set(bx * 0.55, t.pos.y + 1.7, bz + 9); camera.lookAt(bx, t.pos.y + 1.1, bz);
   }
   focus.copy(t.pos);
+} else if (view === 'divot') {
+  // impact divots, side on from the target-left: ?view=divot renders a strip (clubs x moments) into __strip
+  camera.position.set(-2.3, 0.55, -0.95); camera.lookAt(0, 0.2, -0.95); focus.set(0, 0, -1);
 } else if (view === 'flagcam') {
   // close on the featured flag (frame strips of the waving cloth: ?t0= seconds of simulated time before the shot)
   const t = range.featured ?? range.targets[1];
@@ -107,6 +111,26 @@ const stats = document.getElementById('stats')!;
 if (qs.get('stats') === '0') stats.style.display = 'none';
 let last = performance.now(), frames = 0;
 if (qs.get('t0')) range.update(Number(qs.get('t0')), camera, focus);
+// the divot strip: after a few warm-up frames, render each club at several moments after impact into one canvas
+async function divotStrip() {
+  const d = createDivots(scene, (x, z) => range.heightAt(x, z));
+  const clubs = (qs.get('clubs') ?? '56°,8i,7i').split(','), times = [0.03, 0.1, 0.2, 0.35, 0.6, 1.5];
+  const w = renderer.domElement.width, h = renderer.domElement.height;
+  const strip = document.createElement('canvas'); strip.width = w * times.length; strip.height = h * clubs.length;
+  const g = strip.getContext('2d')!;
+  clubs.forEach((club, r) => {
+    d.divot(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1), club, qs.get('lie') ?? 'Fairway', qs.get('mode') ?? 'full', 1);
+    let t = 0;
+    times.forEach((tt, i) => {
+      while (t < tt) { d.update(1 / 60); t += 1 / 60; }
+      range.update(1 / 60, camera, focus); post.render(1 / 60);
+      g.drawImage(renderer.domElement, i * w, r * h);
+      g.fillStyle = '#fff'; g.font = `${Math.round(h / 22)}px sans-serif`; g.fillText(`${club} · ${tt.toFixed(2)} s`, i * w + 6, r * h + h / 18);
+    });
+  });
+  (window as unknown as { __strip: string }).__strip = strip.toDataURL('image/png');
+}
+
 function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   renderer.info.reset();
@@ -117,7 +141,7 @@ function frame(now: number) {
   const i = renderer.info.render;
   stats.textContent = `${view} · ${quality} · ${time} · calls ${i.calls} · tris ${(i.triangles / 1000).toFixed(0)}k`;
   (window as unknown as { __stats: object }).__stats = { calls: i.calls, triangles: i.triangles, cpuMs: performance.now() - t0 };
-  if (maxFrames && frames >= maxFrames) { (window as unknown as { __done: boolean }).__done = true; return; }
+  if (maxFrames && frames >= maxFrames) { if (view === 'divot') divotStrip(); (window as unknown as { __done: boolean }).__done = true; return; }
   requestAnimationFrame(frame);
 }
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); post.setSize(innerWidth, innerHeight); });

@@ -1,6 +1,7 @@
 // The driving range: Neil on the tee, the swing pad, the ball in flight, the spin ball, the cameras.
 import * as THREE from 'three';
 import { createRange, type Range } from './world/range';
+import { createDivots } from './world/divots';
 import { createPost } from './render/post';
 import { PerfGovernor, initialTier } from './render/perf';
 import { Golfer, PHI_TOP, PHI_FINISH, SHOT_STYLE, type SwingPhase } from './golfer/golfer';
@@ -73,6 +74,8 @@ const ballGlow = new THREE.Sprite(new THREE.SpriteMaterial({
 ballGlow.visible = false; ballGlow.renderOrder = 4; scene.add(ballGlow);
 // a white painted wooden tee: pointed shank, flared neck and a shallow cup with a rolled rim (origin = old centre,
 // so the ball's bottom sits in the cup at y = +0.022); most of the shank is pushed into the turf by teeUp()
+// impact divots (src/world/divots.ts): turf strip, scar and clippings on iron shots; cleared with the next ball
+const divots = createDivots(scene, (x, z) => range?.heightAt(x, z) ?? 0);
 const tee = new THREE.Mesh(new THREE.LatheGeometry([
   [0.0002, -0.031], [0.0013, -0.027], [0.002, -0.017], [0.0022, 0.006], [0.0027, 0.012], [0.0046, 0.018], [0.0066, 0.0214],
   [0.0074, 0.0231], [0.0068, 0.0236], [0.0058, 0.0226], [0.0036, 0.0212], [0.0, 0.0207],
@@ -229,6 +232,8 @@ function strike(now: number, p: [number, number], released: boolean) {
   plan = planShot({ power, offMs: SW.off, pushMs: now - SW.tTrans, angle, drift, released, strike: strikePt, aim: { curve: aim.curve, loft: aim.loft } }, hud.club, hud.mode, LIES[hud.lie], golfer.lefty);
   plan.launch.azimuth += aim.dir; // aimed off the straight line (aim view)
   ball.hit(plan.launch);
+  { const b = golfer.ballWorld(new THREE.Vector3()); b.y -= BALL.r; const spec = CLUB_SPECS[hud.club];
+    divots.divot(b, new THREE.Vector3(Math.sin(aim.dir), 0, -Math.cos(aim.dir)), spec.id, LIES[hud.lie]?.name ?? 'Fairway', hud.mode, power, tee.visible || spec.kind === 'driver' || spec.kind === 'wood'); }
   tracer.clear(); tracer.push(ball.pos);
   shotPath.length = 0; shotPath.push(ball.pos.clone()); shotLand = -1;
   card = { plan, power, offMs: SW.off, done: false };
@@ -260,6 +265,7 @@ function nextBall() {
   setTimeout(() => { resetBall(); fader.style.opacity = '0'; fading = false; }, 240);
 }
 function resetBall() {
+  divots.clear();
   shadowsOnGolfer(true);
   windShot();
   state = 'ready';
@@ -595,6 +601,7 @@ function frame(now: number) {
   updateWind(now);
   range?.setWind(WIND); // the flags stream with the ball's wind (a light breeze when there is none)
   range?.update(dt, camera, focus);
+  divots.update(dt);
 
   // dynamic resolution: keep frames under ~20 ms
   perf.frame(frameTimes[frameTimes.length - 1]);
