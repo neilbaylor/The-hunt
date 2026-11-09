@@ -7,11 +7,14 @@
 <title>Range Day</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@0,600;0,700;1,700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Russo+One&family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@0,600;0,700;1,700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Russo+One&family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&family=Yellowtail&display=swap">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0e1613; touch-action: none; overscroll-behavior: none; }
-  #app, #app canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
-  .intro { position: fixed; inset: 0; display: grid; align-items: end; justify-items: center; padding: 24px max(20px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: linear-gradient(180deg, rgba(11,26,51,.0) 45%, rgba(11,26,51,.55) 78%, rgba(11,26,51,.82) 100%); transition: opacity .6s; font-family: 'Nunito', system-ui, sans-serif; color: #fff; }
+  /* phone browsers: size everything to the VISIBLE viewport (address bar and toolbar showing). --app-h / --app-top come from visualViewport (src/ui/hud.ts) */
+  html, body { margin: 0; height: 100%; height: 100dvh; overflow: hidden; background: #0e1613; touch-action: none; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+  body { position: fixed; inset: 0; }
+  #app { position: fixed; left: 0; right: 0; top: var(--app-top, 0px); height: var(--app-h, 100dvh); }
+  #app canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; display: block; touch-action: none; }
+  .intro { position: fixed; left: 0; right: 0; top: var(--app-top, 0px); height: var(--app-h, 100dvh); box-sizing: border-box; display: grid; align-items: end; justify-items: center; padding: 24px max(20px, env(safe-area-inset-right)) max(22px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: linear-gradient(180deg, rgba(11,26,51,.0) 45%, rgba(11,26,51,.55) 78%, rgba(11,26,51,.82) 100%); transition: opacity .6s; font-family: 'Nunito', system-ui, sans-serif; color: #fff; }
   .intro.gone { opacity: 0; pointer-events: none; }
   .intro-card { display: grid; justify-items: center; gap: 10px; text-align: center; animation: introIn .9s cubic-bezier(.2,1.4,.4,1) both; }
   @keyframes introIn { from { opacity: 0; transform: translateY(40px) scale(.94); } to { opacity: 1; transform: none; } }

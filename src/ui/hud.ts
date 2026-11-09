@@ -2,6 +2,7 @@
 // Plain DOM over the WebGL canvas. The default look ('f', Clubhouse Candy) is playful and tactile:
 // cream toy-like chips in Toronto Hunt navy, red and gold. The older looks (A Broadcast, B Clubhouse,
 // C Y2K Pro Tour) are still there (tap the player chip to cycle). Corner groups scale with the screen.
+import { shadeBall, mat3Identity, mat3Rotate, onBallTexUpdate, type Mat3 } from './balltex';
 import { CLUB_SPECS } from '../golfer/club';
 import type { ShotMode } from '../golfer/golfer';
 import { CLUB_DATA, LIES, MODES, type ShotPlan } from '../game/shot';
@@ -10,8 +11,14 @@ import crestUrl from '../assets/brand/toronto-hunt-crest.png';
 import css from './hud.css?inline';
 
 export type Skin = 'f' | 'a' | 'b' | 'c';
-const SKINS: Skin[] = ['f', 'a', 'b', 'c'];
+export const SKINS: Skin[] = ['f', 'a', 'b', 'c'];
 /** phones: the swing card pops in for a few seconds then leaves; elsewhere it shrinks to a pill */
+/** the visible viewport (excludes the browser's address bar and toolbar on phones) */
+export function viewport() {
+  const vv = window.visualViewport;
+  const w = Math.round(vv?.width ?? innerWidth), h = Math.round(vv?.height ?? innerHeight);
+  return { w: Math.max(1, w), h: Math.max(1, h), top: Math.round(vv?.offsetTop ?? 0) };
+}
 const isPhone = () => matchMedia('(pointer: coarse)').matches || (innerHeight > innerWidth && innerWidth < 700);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -29,11 +36,57 @@ const lieRing = (pct: number) => {
   const r = 19, C = 2 * Math.PI * r, col = pct >= 95 ? 'var(--h-good)' : pct >= 85 ? 'var(--h-warn)' : 'var(--h-bad)';
   return `<svg viewBox="0 0 46 46" aria-hidden="true"><circle cx="23" cy="23" r="${r}" fill="none" stroke="var(--h-track)" stroke-width="5"/><circle cx="23" cy="23" r="${r}" fill="none" stroke="${col}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${C * pct / 100} ${C}" transform="rotate(-90 23 23)"/><text x="23" y="27.5" text-anchor="middle" font-size="12" font-weight="700" fill="var(--h-ink)" style="font-family:var(--h-display)">${pct}</text></svg>`;
 };
+/** friendly words for each lie */
+const LIE_WORD: Record<string, [string, 'good' | 'ok' | 'meh' | 'bad', 'tee' | 'fairway' | 'cut' | 'rough' | 'sand']> = {
+  'Tee box': ['Perfect', 'good', 'tee'], 'Fairway': ['Clean', 'good', 'fairway'], 'First cut': ['Good', 'ok', 'cut'],
+  'Rough': ['Heavy', 'bad', 'rough'], 'Fairway bunker': ['Sandy', 'meh', 'sand'],
+};
+/** a tiny illustrated scene: ball sitting on a tilted strip of turf, an arrow for where it will start */
+const lieScene = (slope: number, side: number, kind: string) => {
+  const tilt = (-side * Math.min(20, slope * 4.5)).toFixed(1);
+  const turf = kind === 'sand' ? ['#f3dfae', '#d9bd7c'] : kind === 'rough' ? ['#4f9a3a', '#2f6d27'] : kind === 'tee' ? ['#8fd468', '#5aa83e'] : ['#7cc95a', '#4c9a35'];
+  let tufts = '';
+  const n = kind === 'rough' ? 14 : kind === 'sand' ? 0 : 9;
+  for (let i = 0; i < n; i++) { const x = -6 + i * (84 / n) + (i % 2) * 2, h = kind === 'rough' ? 5 + (i % 3) * 2 : 3 + (i % 2); tufts += `<path d="M${x} 34 l1.5 -${h} l1.2 ${h}" fill="${turf[1]}"/>`; }
+  const ripples = kind === 'sand' ? '<path d="M6 40 q6 -2 12 0 t12 0 M30 46 q6 -2 12 0 t12 0" stroke="#c9a862" stroke-width="1.2" fill="none"/>' : '';
+  const arrow = side ? `<g class="lie-arrow" style="--dir:${side}"><path d="M36 ${13} q${side * 13} -5 ${side * 22} 2" fill="none" stroke="#c8102e" stroke-width="3.2" stroke-linecap="round"/><path d="M${36 + side * 26} 16 l${-side * 8} -6 l${-side * 1} 8 z" fill="#c8102e"/></g>`
+    : `<g class="lie-level"><rect x="23" y="7" width="26" height="9" rx="4.5" fill="#fff" stroke="#13294b" stroke-width="1.6"/><circle cx="36" cy="11.5" r="2.6" fill="#17a558"/></g>`;
+  return `<svg class="lie-scene" viewBox="0 0 72 52" aria-hidden="true">
+    <defs><linearGradient id="lsky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9f0ff"/><stop offset="1" stop-color="#fff6e0"/></linearGradient>
+    <linearGradient id="lturf${kind}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${turf[0]}"/><stop offset="1" stop-color="${turf[1]}"/></linearGradient>
+    <radialGradient id="lball" cx="38%" cy="32%"><stop offset="0" stop-color="#fff"/><stop offset=".7" stop-color="#eef1f4"/><stop offset="1" stop-color="#c3cbd4"/></radialGradient></defs>
+    <rect width="72" height="52" rx="12" fill="url(#lsky)"/>
+    <g class="lie-tilt" style="--tilt:${tilt}deg">
+      <rect x="-14" y="31" width="100" height="32" fill="url(#lturf${kind})"/>${ripples}${tufts}
+      <ellipse cx="36" cy="33.5" rx="7" ry="1.6" fill="rgba(0,0,0,.25)"/>
+      <circle cx="36" cy="27" r="6.6" fill="url(#lball)"/>
+      <circle cx="34" cy="25" r=".8" fill="#b9c2cc"/><circle cx="37.5" cy="24.4" r=".8" fill="#b9c2cc"/><circle cx="38.6" cy="28" r=".8" fill="#b9c2cc"/><circle cx="34.6" cy="28.8" r=".8" fill="#b9c2cc"/>
+    </g>
+    ${arrow}
+  </svg>`;
+};
 const slopeIcon = (slope: number, side: number) => {
   const tilt = -side * Math.min(18, slope * 4);
   const arrow = side ? `<g transform="translate(36 9)"><path d="M${side * 14} 0 L${-side * 10} 0" stroke="var(--h-accent)" stroke-width="3" stroke-linecap="round"/><path d="M${side * 18} 0 L${side * 9} -6 L${side * 9} 6 Z" fill="var(--h-accent)"/></g>` : `<text x="36" y="13" text-anchor="middle" font-size="10" fill="var(--h-dim)">LEVEL</text>`;
   return `<svg viewBox="0 0 72 40" aria-hidden="true">${arrow}<g transform="rotate(${tilt} 36 30)"><rect x="6" y="30" width="60" height="7" rx="2" fill="var(--h-good)" opacity=".85"/><circle cx="36" cy="26" r="4" fill="#fff"/></g></svg>`;
 };
+
+/** a tapered ribbon outline along a stroke, thin at the start, wide at the end */
+function ribbon(pts: [number, number][], w0: number, w1: number) {
+  const P = pts.filter((p, i) => i === 0 || Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) > 0.8);
+  if (P.length < 2) return '';
+  const L: string[] = [], R: string[] = [];
+  for (let i = 0; i < P.length; i++) {
+    const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)];
+    let nx = -(b[1] - a[1]), ny = b[0] - a[0]; const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+    const w = (w0 + (w1 - w0) * (i / (P.length - 1))) / 2;
+    L.push(`${(P[i][0] + nx * w).toFixed(1)} ${(P[i][1] + ny * w).toFixed(1)}`); R.push(`${(P[i][0] - nx * w).toFixed(1)} ${(P[i][1] - ny * w).toFixed(1)}`);
+  }
+  const w = w1 / 2;
+  const end = R[R.length - 1];
+  return `M${L.join(' L')} A${w} ${w} 0 0 1 ${end} L${R.reverse().join(' L')} Z`;
+}
+const buzz = (p: number | number[]) => { try { navigator.vibrate?.(p); } catch { /* not allowed */ } };
 
 export function padSVG(skin: Skin) {
   const id = 'p' + (++uid);
@@ -49,29 +102,42 @@ export function padSVG(skin: Skin) {
     <path class="trail-b" d="" fill="none" stroke="${trailB}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
     <path class="trail-d" d="" fill="none" stroke="${trailD}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>`;
   if (skin === 'f') {
-    const dimples = Array.from({ length: 19 }, (_, i) => { const a = i * 2.39996, r = 4 + 13 * Math.sqrt(i / 19); return `<circle cx="${(Math.cos(a) * r).toFixed(1)}" cy="${(Math.sin(a) * r).toFixed(1)}" r="2.1" fill="rgba(120,132,150,.22)"/>`; }).join('');
-    const tees = [20, 40, 60, 80].map((y, i) => `<g class="tee-mark" transform="translate(0 ${y})"><rect x="-17" y="-1.6" width="34" height="3.2" rx="1.6" fill="rgba(255,246,227,${i === 3 ? 0.95 : 0.5})"/>${i < 3 ? `<text x="22" y="4" font-size="10" class="tlab">${(i + 1) * 25}</text>` : ''}</g>`).join('');
+    // a chunky toy stick: cream bezel on a turf disc, a groove you pull the ball down, a power arc that fills
+    const dimples = Array.from({ length: 24 }, (_, i) => { const a = i * 2.39996, r = 3 + 15.5 * Math.sqrt(i / 24); return `<circle cx="${(Math.cos(a) * r).toFixed(1)}" cy="${(Math.sin(a) * r).toFixed(1)}" r="2" fill="rgba(110,124,145,.26)"/><circle cx="${(Math.cos(a) * r - 0.5).toFixed(1)}" cy="${(Math.sin(a) * r - 0.6).toFixed(1)}" r=".7" fill="rgba(255,255,255,.7)"/>`; }).join('');
+    const arcPt = (f: number, r = 80) => { const a = ((262 - 150 * f) * Math.PI) / 180; return [Math.cos(a) * r, Math.sin(a) * r]; };
+    const [ax0, ay0] = arcPt(0), [ax1, ay1] = arcPt(1);
+    const beads = [0.25, 0.5, 0.75, 1].map((f, i) => { const [x, y] = arcPt(f); const [lx, ly] = arcPt(f, 66); return `<g class="bead" data-f="${f}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i === 3 ? 6 : 4.5}"/>${i < 3 ? `<text x="${lx.toFixed(1)}" y="${(ly + 3.5).toFixed(1)}" text-anchor="middle" class="bead-lab">${f * 100}</text>` : `<text x="${lx.toFixed(1)}" y="${(ly + 3.5).toFixed(1)}" text-anchor="middle" class="bead-lab max">MAX</text>`}</g>`; }).join('');
+    const stripes = Array.from({ length: 7 }, (_, i) => `<rect x="${-90 + i * 26}" y="-90" width="13" height="180" fill="rgba(255,255,255,.045)"/>`).join('');
+    const rays = Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * Math.PI * 2; return `<path d="M${(Math.cos(a) * 30).toFixed(1)} ${(Math.sin(a) * 30).toFixed(1)} L${(Math.cos(a + 0.08) * 46).toFixed(1)} ${(Math.sin(a + 0.08) * 46).toFixed(1)} L${(Math.cos(a - 0.08) * 46).toFixed(1)} ${(Math.sin(a - 0.08) * 46).toFixed(1)} Z"/>`; }).join('');
     return `<svg class="pad-svg pad-f" id="${id}" viewBox="-100 -100 200 200" aria-hidden="true">
     <defs>
-      <radialGradient id="${id}b" cx="36%" cy="30%"><stop offset="0" stop-color="#ffffff"/><stop offset=".65" stop-color="#f1f3f6"/><stop offset="1" stop-color="#c6ccd6"/></radialGradient>
-      <linearGradient id="${id}r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff8e6"/><stop offset="1" stop-color="#f0d9a0"/></linearGradient>
-      <linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(19,41,75,.75)"/><stop offset="1" stop-color="rgba(19,41,75,.45)"/></linearGradient>
-      <filter id="${id}s" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#0b1a33" flood-opacity=".45"/></filter>
+      <radialGradient id="${id}b" cx="36%" cy="30%"><stop offset="0" stop-color="#ffffff"/><stop offset=".6" stop-color="#f3f5f8"/><stop offset="1" stop-color="#b9c1cc"/></radialGradient>
+      <linearGradient id="${id}r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffdf5"/><stop offset=".55" stop-color="#fbeccc"/><stop offset="1" stop-color="#e2c27c"/></linearGradient>
+      <radialGradient id="${id}t" cx="45%" cy="35%"><stop offset="0" stop-color="#4fa743"/><stop offset=".7" stop-color="#2e7a32"/><stop offset="1" stop-color="#1d5526"/></radialGradient>
+      <linearGradient id="${id}p" gradientUnits="userSpaceOnUse" x1="0" y1="-80" x2="0" y2="80"><stop offset="0" stop-color="#ffe066"/><stop offset=".55" stop-color="#ffb21a"/><stop offset=".85" stop-color="#ff7a1a"/><stop offset="1" stop-color="#e5352b"/></linearGradient>
+      <linearGradient id="${id}g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0d1f3c"/><stop offset=".5" stop-color="#1b3561"/><stop offset="1" stop-color="#0d1f3c"/></linearGradient>
+      <clipPath id="${id}c"><circle r="82"/></clipPath>
+      <filter id="${id}s" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="4" stdDeviation="3.2" flood-color="#06142b" flood-opacity=".5"/></filter>
     </defs>
-    <circle r="91" fill="rgba(19,41,75,.32)"/>
-    <circle r="88" fill="none" stroke="url(#${id}r)" stroke-width="7"/>
-    <circle r="84" fill="none" stroke="rgba(19,41,75,.35)" stroke-width="1.5"/>
-    <rect x="-15" y="-74" width="30" height="164" rx="15" fill="url(#${id}g)"/>
-    <rect x="-15" y="-74" width="30" height="164" rx="15" fill="none" stroke="rgba(255,246,227,.35)" stroke-width="1.5"/>
-    ${tees}
-    <g transform="translate(-2 -84)"><line x1="0" y1="0" x2="0" y2="20" stroke="#fff6e3" stroke-width="2.4" stroke-linecap="round"/><path d="M1 0 L16 4.5 L1 9 Z" fill="#ffd23f"/></g>
-    <path d="M-8 -40 L0 -49 L8 -40" fill="none" stroke="#fff6e3" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
-    <g class="hint"><path d="M-10 32 L0 42 L10 32" fill="none" stroke="#ffd23f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M-10 45 L0 55 L10 45" fill="none" stroke="#ffd23f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".55"/></g>
+    <circle cy="5" r="95" fill="rgba(6,20,43,.35)"/>
+    <circle r="94" fill="#d4b064"/>
+    <circle r="91" fill="url(#${id}r)"/>
+    <circle r="82" fill="url(#${id}t)"/>
+    <g clip-path="url(#${id}c)">${stripes}<circle r="82" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="6"/></g>
+    <path d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="rgba(6,20,43,.45)" stroke-width="9" stroke-linecap="round"/>
+    <path class="power-arc" d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="url(#${id}p)" stroke-width="9" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
+    ${beads}
+    <rect x="-17" y="-74" width="34" height="166" rx="17" fill="url(#${id}g)"/>
+    <rect x="-17" y="-74" width="34" height="166" rx="17" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="3"/>
+    <rect x="-15.5" y="-72.5" width="31" height="163" rx="15.5" fill="none" stroke="rgba(255,246,227,.22)" stroke-width="1.2"/>
+    <g transform="translate(-1 -90)"><line x1="0" y1="0" x2="0" y2="18" stroke="#fff6e3" stroke-width="2.6" stroke-linecap="round"/><path class="flag" d="M1.3 0 Q9 2 17 1 L13 6 L17 10 Q9 9 1.3 10 Z" fill="#ffd23f" stroke="#c98f00" stroke-width=".8"/></g>
+    <g class="hint"><path d="M-10 26 L0 36 L10 26" fill="none" stroke="#ffd23f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M-10 39 L0 49 L10 39" fill="none" stroke="#ffd23f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/><text class="pull-cue" y="66" text-anchor="middle">PULL</text></g>
+    <path class="trail-b" d="" fill="#ffd23f" opacity=".95"/>
+    <path class="trail-d" d="" fill="#5ff0a0" opacity=".95"/>
     <circle r="95" fill="none" stroke="#ffd23f" stroke-width="7" class="top-ring"/>
-    <text class="push-cue" y="-56" text-anchor="middle">PUSH!</text>
-    <path class="trail-b" d="" fill="none" stroke="#ffd23f" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>
-    <path class="trail-d" d="" fill="none" stroke="#5ff0a0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>
-    <g class="puck"><g filter="url(#${id}s)"><circle r="23" fill="url(#${id}b)"/></g>${dimples}<ellipse cx="-7" cy="-9" rx="7" ry="4.5" fill="rgba(255,255,255,.85)" transform="rotate(-30 -7 -9)"/></g></svg>`;
+    <g class="push-cue-f" transform="translate(0 -58)"><rect x="-34" y="-15" width="68" height="28" rx="14" fill="#c8102e" stroke="#fff" stroke-width="2.5"/><text y="6" text-anchor="middle">PUSH!</text></g>
+    <g class="puck-shadow"><ellipse cy="22" rx="20" ry="5" fill="rgba(0,0,0,.32)"/></g>
+    <g class="puck"><g class="burst" fill="#ffd23f">${rays}</g><g class="strike-ring"><circle r="26" fill="none" stroke="#fff" stroke-width="4"/></g><g class="puck-body"><g filter="url(#${id}s)"><circle r="24" fill="url(#${id}b)"/></g>${dimples}<ellipse cx="-8" cy="-10" rx="8" ry="4.6" fill="rgba(255,255,255,.9)" transform="rotate(-32 -8 -10)"/><path d="M-17 9 A19 19 0 0 0 9 18" fill="none" stroke="rgba(120,132,150,.25)" stroke-width="3" stroke-linecap="round"/></g></g></svg>`;
   }
   if (skin === 'a') return `<svg class="pad-svg" id="${id}" viewBox="-100 -100 200 200" aria-hidden="true">
     <circle r="92" fill="rgba(8,18,42,.55)"/><circle r="92" fill="none" stroke="#fff" stroke-width="2"/>
@@ -96,37 +162,52 @@ export function padSVG(skin: Skin) {
 }
 
 // ── spin ball ──
-const DIMPLES = (() => { const n = 180, out: number[][] = [], g = Math.PI * (3 - Math.sqrt(5)); for (let i = 0; i < n; i++) { const y = 1 - (i + 0.5) / n * 2, r = Math.sqrt(1 - y * y), t = g * i; out.push([Math.cos(t) * r, y, Math.sin(t) * r]); } return out; })();
 const SKIN_COL: Record<Skin, { ring: string; acc: string; acc2: string; back: string }> = {
   f: { ring: 'rgba(255,246,227,.55)', acc: '#ffd23f', acc2: '#5ff0a0', back: 'rgba(19,41,75,.6)' },
   a: { ring: 'rgba(255,255,255,.25)', acc: '#ffc72c', acc2: '#2fd3ff', back: 'rgba(8,18,42,.72)' },
   b: { ring: 'rgba(244,236,216,.3)', acc: '#d4ad57', acc2: '#9fd38a', back: 'rgba(13,44,29,.82)' },
   c: { ring: 'rgba(255,255,255,.4)', acc: '#ffe234', acc2: '#5cff8a', back: 'rgba(11,31,138,.82)' },
 };
-function rotPts(pts: number[][], ax: number, ay: number) {
-  const cx = Math.cos(ax), sx = Math.sin(ax), cy = Math.cos(ay), sy = Math.sin(ay);
-  for (const p of pts) { let [x, y, z] = p; const y2 = y * cx - z * sx, z2 = y * sx + z * cx; y = y2; z = z2; const x2 = x * cy + z * sy; z = -x * sy + z * cy; p[0] = x2; p[1] = y; p[2] = z; }
-}
-function drawSpinBall(cv: HTMLCanvasElement, pts: number[][], spin: { x: number; y: number }, skin: Skin, active: boolean) {
+function drawSpinBall(cv: HTMLCanvasElement, m: Mat3, spin: { x: number; y: number }, skin: Skin, active: boolean) {
   const ctx = cv.getContext('2d')!, k = cv.width / 136, c = SKIN_COL[skin];
   ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, 136, 136);
-  const cx = 68, cy = 68, R = 44;
-  ctx.beginPath(); ctx.arc(cx, cy, 62, 0, Math.PI * 2); ctx.fillStyle = c.back; ctx.fill();
-  ctx.lineWidth = 5; ctx.strokeStyle = c.ring; ctx.beginPath(); ctx.arc(cx, cy, 56, 0, Math.PI * 2); ctx.stroke();
-  const mag = Math.hypot(spin.x, spin.y);
-  if (mag > 0.01) { ctx.strokeStyle = c.acc; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, cy, 56, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * mag); ctx.stroke(); }
-  const g = ctx.createRadialGradient(cx - 14, cy - 16, 4, cx, cy, R); g.addColorStop(0, '#ffffff'); g.addColorStop(0.7, '#e9edf0'); g.addColorStop(1, '#b5bec6');
-  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
-  for (const p of pts) { if (p[2] <= 0.05) continue; const r = 3.1 * (0.35 + 0.65 * p[2]); ctx.beginPath(); ctx.ellipse(cx + p[0] * (R - 3), cy + p[1] * (R - 3), r, r * (0.45 + 0.55 * p[2]), Math.atan2(p[1], p[0]), 0, Math.PI * 2); ctx.fillStyle = `rgba(120,132,142,${0.18 + 0.35 * p[2]})`; ctx.fill(); }
-  if (mag > 0.03) {
-    const ang = Math.atan2(-spin.y, spin.x), L = 18 + 22 * mag;
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang); ctx.strokeStyle = c.acc; ctx.fillStyle = c.acc; ctx.lineWidth = 5; ctx.lineCap = 'round';
-    ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 4;
-    ctx.beginPath(); ctx.moveTo(-L * 0.4, 0); ctx.lineTo(L, 0); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(L + 9, 0); ctx.lineTo(L - 3, -8); ctx.lineTo(L - 3, 8); ctx.closePath(); ctx.fill(); ctx.restore();
-  } else if (active) {
-    ctx.strokeStyle = c.acc2; ctx.lineWidth = 2; ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.arc(cx, cy, R + 4, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  const cx = 68, cy = 67, R = 43, mag = Math.hypot(spin.x, spin.y);
+  // tactile bezel: cream ring with a toy bottom edge
+  ctx.fillStyle = 'rgba(6,20,43,.35)'; ctx.beginPath(); ctx.arc(cx, cy + 3, 64, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#d4b064'; ctx.beginPath(); ctx.arc(cx, cy + 1.5, 63, 0, Math.PI * 2); ctx.fill();
+  const bz = ctx.createLinearGradient(0, cy - 62, 0, cy + 62); bz.addColorStop(0, '#fffdf5'); bz.addColorStop(0.6, '#fbeccc'); bz.addColorStop(1, '#e2c27c');
+  ctx.fillStyle = bz; ctx.beginPath(); ctx.arc(cx, cy, 62, 0, Math.PI * 2); ctx.fill();
+  const well = ctx.createRadialGradient(cx, cy - 6, 30, cx, cy, 54); well.addColorStop(0, '#24467a'); well.addColorStop(1, '#0f2140');
+  ctx.fillStyle = well; ctx.beginPath(); ctx.arc(cx, cy, 53, 0, Math.PI * 2); ctx.fill();
+  // spin amount: the groove fills from the top with colour (mint → gold → red as you load it up)
+  ctx.lineCap = 'round'; ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(6,20,43,.5)'; ctx.beginPath(); ctx.arc(cx, cy, 57.5, 0, Math.PI * 2); ctx.stroke();
+  if (mag > 0.01) {
+    const col = mag < 0.45 ? '#5ff0a0' : mag < 0.8 ? '#ffc21a' : '#ff5a3c';
+    ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.arc(cx, cy, 57.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * mag); ctx.stroke(); ctx.shadowBlur = 0;
   }
+  for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; ctx.fillStyle = 'rgba(19,41,75,.35)'; ctx.beginPath(); ctx.arc(cx + Math.cos(a) * 57.5, cy + Math.sin(a) * 57.5, 1.1, 0, 7); ctx.fill(); }
+  // the ball
+  const sh = ctx.createRadialGradient(cx + 3, cy + 7, R * 0.5, cx + 3, cy + 7, R * 1.1);
+  sh.addColorStop(0, 'rgba(0,0,0,.45)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sh; ctx.beginPath(); ctx.arc(cx + 3, cy + 7, R * 1.1, 0, Math.PI * 2); ctx.fill();
+  const px = Math.round(R * 2 * k);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(shadeBall(px, m), Math.round((cx - R) * k), Math.round((cy - R) * k)); ctx.restore();
+  if (mag > 0.03) {
+    // a comet sweeping across the ball's face in the spin direction, curving with the surface
+    const ang = Math.atan2(-spin.y, spin.x), len = 0.5 + 0.45 * mag;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang);
+    const x0 = -R * 0.55 * len, x1 = R * 0.62 * len, bow = R * 0.22;
+    const g = ctx.createLinearGradient(x0, 0, x1, 0); g.addColorStop(0, 'rgba(255,210,63,0)'); g.addColorStop(1, 'rgba(255,190,30,.95)');
+    ctx.strokeStyle = g; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x0, bow * 0.6); ctx.quadraticCurveTo(0, -bow, x1, bow * 0.15); ctx.stroke();
+    ctx.fillStyle = '#ffb21a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x1 + 10, bow * 0.1); ctx.lineTo(x1 - 4, -8 + bow * 0.1); ctx.lineTo(x1 - 2, 8 + bow * 0.25); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  } else if (active) {
+    ctx.strokeStyle = 'rgba(255,246,227,.7)'; ctx.lineWidth = 2; ctx.setLineDash([2, 6]); ctx.beginPath(); ctx.arc(cx, cy, R + 5, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  }
+  void c;
 }
 export const spinWords = (s: { x: number; y: number }) => {
   const parts: string[] = [];
@@ -147,7 +228,11 @@ export class Hud {
   readonly pad: HTMLDivElement;
   readonly spinCv: HTMLCanvasElement;
   spin = { x: 0, y: 0 };
-  private spinPts = DIMPLES.map(p => p.slice());
+  private spinM: Mat3 = mat3Identity();
+  /** where the club meets the ball: x +1 = outer half (fades), -1 = inner half (draws); y +1 = top (flies lower), -1 = bottom (flies higher) */
+  strike = { x: 0, y: 0 };
+  onStrike: (s: { x: number; y: number }) => void = () => {};
+  private strikeUsed = false;
   private spinOn = false;
   private spinDrag: [number, number] | null = null;
   private toastT = 0;
@@ -166,16 +251,25 @@ export class Hud {
       <div class="corner tl"><div class="row"><div id="clubSlot"></div><div id="modeSlot"></div></div><div class="who" id="who"></div><div class="pop hud-panel" id="clubPop" hidden></div><div class="pop hud-panel" id="modePop" hidden></div></div>
       <div class="corner tr"><div id="lieSlot"></div></div>
       <div class="corner bl"><div id="cardSlot"><div class="card-wrap" id="cardWrap"><button type="button" class="hud-panel card-mini" data-act="card-open" aria-expanded="false"></button><div class="card-body" id="cardBody"></div></div></div></div>
-      <div class="corner br"><div class="pad" id="pad" aria-label="Swing pad: press, pull down, push up"></div><div class="pad-label"><span>Pull <b>back</b></span><i></i><span>push <b>through</b></span></div></div>
+      <div class="corner br"><button type="button" class="strike-btn" data-act="strike" aria-label="Strike point: centre. Choose where to hit the ball"><canvas width="112" height="112" aria-hidden="true"></canvas><i class="dot" aria-hidden="true"></i><span>Strike</span></button><div class="pad" id="pad" aria-label="Swing pad: press, pull down, push up"></div><div class="pad-label"><span>Pull <b>back</b></span><i></i><span>push <b>through</b></span></div></div>
       <div class="corner bc"><div class="spin off" id="spin"><canvas width="272" height="272" aria-label="Spin ball: swipe to add spin"></canvas><div class="spin-label" id="spinLabel">Swipe the ball to add spin</div></div></div>
       <div class="toast" id="toast"></div>
-      <div class="confetti" id="confetti" aria-hidden="true"></div>`;
+      <div class="confetti" id="confetti" aria-hidden="true"></div>
+      <div class="strike-pop" id="strikePop" hidden><div class="sp-card" role="dialog" aria-modal="true" aria-labelledby="spTitle">
+        <div class="sp-head"><b id="spTitle">Strike point</b><small id="spRead">Dead centre</small></div>
+        <div class="sp-ball" id="spBall"><canvas width="440" height="440" aria-hidden="true"></canvas>
+          <span class="sp-lab t">Lower</span><span class="sp-lab b">Higher</span><span class="sp-lab l">Fade</span><span class="sp-lab r">Draw</span>
+          <i class="sp-cross" aria-hidden="true"></i><button type="button" class="sp-ret" id="spRet" aria-label="Strike target. Drag, or use the arrow keys"></button></div>
+        <div class="sp-btns"><button type="button" class="sp-btn ghost" data-act="strike-centre">Centre</button><button type="button" class="sp-btn" data-act="strike-done">Done</button></div>
+      </div></div>`;
     document.documentElement.style.setProperty('--crest', `url("${crestUrl}")`);
     parent.appendChild(this.el);
     this.pad = this.el.querySelector('#pad')!;
     this.spinCv = this.el.querySelector('#spin canvas')!;
-    try { const s = localStorage.getItem('golf-skin-v2') as Skin | null; if (s && SKINS.includes(s)) this.skin = s; } catch { /* storage blocked */ }
+    // one look for players: the playful 'f' skin (older a/b/c looks stay in code for the concept board only)
+    this.skin = 'f';
     this.el.addEventListener('click', e => this.click(e));
+    this.initStrike();
     this.spinCv.addEventListener('pointerdown', e => { if (!this.spinOn) return; this.spinCv.setPointerCapture(e.pointerId); this.spinDrag = [e.clientX, e.clientY]; e.preventDefault(); });
     this.spinCv.addEventListener('pointermove', e => {
       if (!this.spinDrag || !this.spinOn) return;
@@ -183,21 +277,31 @@ export class Hud {
       const dx = (e.clientX - this.spinDrag[0]) * k, dy = (e.clientY - this.spinDrag[1]) * k; this.spinDrag = [e.clientX, e.clientY];
       let sx = this.spin.x + dx / 150, sy = this.spin.y - dy / 150; const m = Math.hypot(sx, sy); if (m > 1) { sx /= m; sy /= m; }
       this.spin = { x: sx, y: sy };
-      this.el.querySelector('#spinLabel')!.textContent = spinWords(this.spin) || 'Swipe the ball to add spin';
+      this.spinLabel();
     });
     const end = () => { this.spinDrag = null; };
     this.spinCv.addEventListener('pointerup', end); this.spinCv.addEventListener('pointercancel', end);
     this.setSkin(this.skin);
+    onBallTexUpdate(() => drawSpinBall(this.spinCv, this.spinM, this.spin, this.skin, this.spinOn));
     this.fit(); addEventListener('resize', () => this.fit());
+    window.visualViewport?.addEventListener('resize', () => this.fit());
+    window.visualViewport?.addEventListener('scroll', () => this.fit());
+    addEventListener('orientationchange', () => setTimeout(() => this.fit(), 250));
   }
 
   /** state classes for layout: ready (waiting for a swing), flying (ball in the air), idle (no shot yet) */
-  setState(ready: boolean, flying: boolean, idle: boolean) { this.el.classList.toggle('ready', ready); this.el.classList.toggle('flying', flying); this.el.classList.toggle('idle', idle); }
+  setState(ready: boolean, flying: boolean, idle: boolean) {
+    if (ready && this.strikeUsed) { this.strikeUsed = false; if (this.strike.x || this.strike.y) this.setStrike(0, 0); } this.el.classList.toggle('ready', ready); this.el.classList.toggle('flying', flying); this.el.classList.toggle('idle', idle); }
 
   fit() {
-    const portrait = innerHeight > innerWidth * 1.05;
+    const { w: W, h: H, top } = viewport();
+    const root = document.documentElement.style;
+    root.setProperty('--app-h', H + 'px'); root.setProperty('--app-top', top + 'px');
+    const portrait = H > W * 1.05;
     this.el.classList.toggle('phone', isPhone());
-    const s = portrait ? clamp(innerWidth / 430, 0.72, 1.25) : clamp(Math.min(innerWidth / 960, innerHeight / 540), 0.42, 1.35);
+    this.el.classList.toggle('short', portrait && H / W < 1.62);   // phones with browser bars showing (SE, 13 + Chrome)
+    // portrait: fit by width AND height so the chips, the golfer and the stick all fit on screen
+    const s = portrait ? clamp(Math.min(W / 430, H / 800), 0.62, 1.15) : clamp(Math.min(W / 960, H / 540), 0.42, 1.35);
     this.el.style.setProperty('--s', String(s));
   }
 
@@ -206,7 +310,7 @@ export class Hud {
     this.skin = k; this.el.className = ['hud', 'skin-' + k, ...keep].join(' ');
     this.pad.innerHTML = padSVG(k);
     this.render();
-    drawSpinBall(this.spinCv, this.spinPts, this.spin, k, this.spinOn);
+    drawSpinBall(this.spinCv, this.spinM, this.spin, k, this.spinOn);
     try { localStorage.setItem('golf-skin-v2', k); } catch { /* storage blocked */ }
   }
 
@@ -214,14 +318,21 @@ export class Hud {
 
   render(card?: CardData | null) {
     const id = CLUB_SPECS[this.club].id, M = MODES[this.mode];
-    this.q('#clubSlot').innerHTML = `<button type="button" class="hud-panel club-btn" data-act="club" aria-label="Club: ${CLUB_SPECS[this.club].name}, ${M.max(id)} yards. Change club"><span class="eyebrow-h">Club</span><span class="big">${id}</span><span class="yds">${M.max(id)}<small>yds</small></span><span class="cap">${CLUB_SPECS[this.club].name} · ${M.label.toLowerCase()} max</span></button>`;
+    this.q('#clubSlot').innerHTML = `<button type="button" class="hud-panel club-btn" data-act="club" aria-label="Club: ${CLUB_SPECS[this.club].name}, ${M.max(id)} yards. Change club"><span class="eyebrow-h">Club</span><span class="big">${id}</span><span class="yds">${M.max(id)}<small>yds</small></span><span class="cap">${this.skin === 'f' ? CLUB_SPECS[this.club].name : `${CLUB_SPECS[this.club].name} · ${M.label.toLowerCase()} max`}</span></button>`;
     this.q('#modeSlot').innerHTML = `<button type="button" class="hud-panel mode-btn" data-act="mode" aria-label="Swing mode: ${M.label}. Change swing mode"><span class="eyebrow-h">Swing</span><span class="big">${M.label}</span>${modeGlyph(this.mode)}</button>`;
     const L = LIES[this.lie];
-    this.q('#lieSlot').innerHTML = `<button type="button" class="hud-panel lie-card" data-act="lie" aria-label="Lie: ${L.name}, ${L.pct} percent, slope ${L.slope} degrees. Tap for another sample lie"><span class="eyebrow-h">Lie</span>
+    const [word, q, kind] = LIE_WORD[L.name] ?? ['Okay', 'ok', 'fairway'];
+    const where = L.side ? (L.side < 0 ? 'starts left' : 'starts right') : 'flat';
+    this.q('#lieSlot').innerHTML = this.skin === 'f'
+      ? `<button type="button" class="hud-panel lie-card lie-w" data-act="lie" aria-label="Lie: ${L.name}, ${word}, ${L.pct} percent distance, ${L.slope} degree slope, ball ${where}. Tap for another sample lie">
+        ${lieScene(L.slope, L.side, kind)}
+        <span class="lie-txt"><span class="lie-name">${L.name}</span><span class="lie-q ${q}">${word} · ${L.pct}%</span>
+        <span class="lie-slope"><b>${L.slope}°</b><small>${where}</small></span></span></button>`
+      : `<button type="button" class="hud-panel lie-card" data-act="lie" aria-label="Lie: ${L.name}, ${L.pct} percent, slope ${L.slope} degrees. Tap for another sample lie"><span class="eyebrow-h">Lie</span>
       <span class="lie-top">${lieRing(L.pct)}<span><span class="big" style="display:block">${L.name}</span><span class="sub">${L.pct}% distance</span></span></span>
       <span class="slope">${slopeIcon(L.slope, L.side)}<span class="deg">${L.slope}°</span><span class="sub">${L.txt}</span></span></button>`;
     const p = this.profile;
-    this.q('#who').innerHTML = `<button type="button" class="hud-panel who-chip" data-act="skin" aria-label="${p.name}. Tap to change the HUD look"><i class="crest" aria-hidden="true"></i><b>${p.name}</b></button>`;
+    this.q('#who').innerHTML = `<button type="button" class="hud-panel who-chip" data-act="skin" aria-label="Player: ${p.name}"><i class="crest" aria-hidden="true"></i><b>${p.name}</b></button>`;
     if (card !== undefined) this.card(card);
     else if (!this.cardInit) this.card(null);
     const cp = this.q('#clubPop'), mp = this.q('#modePop');
@@ -316,16 +427,43 @@ export class Hud {
     if (act === 'club') { mp.hidden = true; cp.hidden = !cp.hidden; cp.innerHTML = this.clubList(); }
     if (act === 'mode') { cp.hidden = true; mp.hidden = !mp.hidden; mp.innerHTML = this.modeList(); }
     if (act === 'lie') { this.closePops(); this.lie = (this.lie + 1) % LIES.length; this.render(); this.onLie(this.lie); }
-    if (act === 'skin') { this.setSkin(SKINS[(SKINS.indexOf(this.skin) + 1) % SKINS.length]); }
+    if (act === 'skin') { a.classList.remove('wiggle'); void a.offsetWidth; a.classList.add('wiggle'); }
     if (act === 'card-open') { if (this.cardMode === 'open') this.collapse(); else { this.setCard('open'); this.later(isPhone() ? 4000 : 8000, () => this.collapse()); } }
+    if (act === 'strike') { this.closePops(); this.openStrike(true); }
+    if (act === 'strike-centre') { this.setStrike(0, 0); }
+    if (act === 'strike-done') { this.openStrike(false); }
     if (act === 'card-min') { clearTimeout(this.cardTimer); this.collapse(); }
   }
 
   // ── swing pad drawing ──
+  private padTop = false; private padStruck = false;
   setPad(pt: [number, number], trailB: [number, number][], trailD: [number, number][], atTop: boolean) {
     const svg = this.pad.querySelector('svg'); if (!svg) return;
+    const puck = svg.querySelector('.puck') as SVGGElement;
+    const px = clamp(pt[0], -80, 80), py = clamp(pt[1], -95, 95);
+    if (svg.classList.contains('pad-f')) {
+      const dragging = trailB.length > 0 && (px !== 0 || py !== 0);
+      svg.classList.toggle('dragging', dragging);
+      // CSS transforms on SVG use user units: the spring-back on release comes from the transition
+      puck.style.transform = `translate(${px}px, ${py}px)`;
+      (svg.querySelector('.puck-shadow') as SVGGElement).style.transform = `translate(${px}px, ${py}px)`;
+      svg.querySelector('.trail-b')!.setAttribute('d', ribbon(trailB, 3, 11));
+      svg.querySelector('.trail-d')!.setAttribute('d', ribbon(trailD, 5, 13));
+      const depth = trailB.reduce((m, p) => Math.max(m, p[1]), 0), f = clamp(depth / 80, 0, 1);
+      svg.querySelector('.power-arc')!.setAttribute('stroke-dasharray', `${(f * 100).toFixed(1)} 100`);
+      svg.querySelectorAll<SVGGElement>('.bead').forEach(b => b.classList.toggle('lit', f >= +b.dataset.f! - 0.02));
+      svg.classList.toggle('maxed', f >= 0.98);
+      if (atTop && !this.padTop) buzz(12);
+      this.padTop = atTop;
+      const hit = trailD.length > 0 && trailD[trailD.length - 1][1] < -45;
+      if (hit && !this.padStruck) { svg.classList.remove('strike'); void (svg as unknown as HTMLElement).getBoundingClientRect(); svg.classList.add('strike'); buzz([8, 30, 16]); setTimeout(() => svg.classList.remove('strike'), 650); }
+      this.padStruck = hit || (trailD.length > 0 && this.padStruck);
+      if (!trailB.length && !trailD.length) this.padStruck = false;
+      svg.classList.toggle('at-top', atTop);
+      return;
+    }
     const d = (pts: [number, number][]) => pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('');
-    svg.querySelector('.puck')!.setAttribute('transform', `translate(${clamp(pt[0], -80, 80)} ${clamp(pt[1], -95, 95)})`);
+    puck.setAttribute('transform', `translate(${px} ${py})`);
     svg.querySelector('.trail-b')!.setAttribute('d', d(trailB));
     svg.querySelector('.trail-d')!.setAttribute('d', d(trailD));
     svg.classList.toggle('at-top', atTop);
@@ -333,22 +471,80 @@ export class Hud {
   padLocal(e: PointerEvent): [number, number] { const r = this.pad.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * 200 - 100, (e.clientY - r.top) / r.height * 200 - 100]; }
 
   // ── spin ball ──
+  private spinLabel(prefix = '') {
+    const el = this.q('#spinLabel'), w = spinWords(this.spin), mag = Math.hypot(this.spin.x, this.spin.y);
+    el.textContent = w ? prefix + w : prefix ? 'No spin added' : 'Swipe the ball to add spin';
+    el.dataset.lvl = !w ? '' : mag < 0.45 ? 'lo' : mag < 0.8 ? 'mid' : 'hi';
+    el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick');
+  }
   showSpin(on: boolean) {
     this.spinOn = on;
     this.q('#spin').classList.toggle('off', !on);
     this.el.classList.toggle('spin-on', on);
-    if (on) { this.spin = { x: 0, y: 0 }; this.q('#spinLabel').textContent = 'Swipe the ball to add spin'; }
+    if (on) { this.strikeUsed = true; this.spin = { x: 0, y: 0 }; this.spinM = mat3Identity(); this.q('#spinLabel').textContent = 'Swipe the ball to add spin'; }
   }
   spinDone() {
     this.spinOn = false;
-    const w = spinWords(this.spin); this.q('#spinLabel').textContent = w ? 'Spin: ' + w : 'No spin added';
+    this.spinLabel('Spin: ');
     setTimeout(() => { if (!this.spinOn) { this.q('#spin').classList.add('off'); this.el.classList.remove('spin-on'); } }, 1800);
   }
   tickSpin(dt: number, flying: boolean) {
     if (this.q('#spin').classList.contains('off')) return;
     const rate = flying ? 1 : 0.15;
-    rotPts(this.spinPts, (-1.2 - this.spin.y * 4) * dt * rate * 3, this.spin.x * 4 * dt * rate * 3);
-    drawSpinBall(this.spinCv, this.spinPts, this.spin, this.skin, flying);
+    mat3Rotate(this.spinM, (-1.2 - this.spin.y * 4) * dt * rate * 3, this.spin.x * 4 * dt * rate * 3);
+    drawSpinBall(this.spinCv, this.spinM, this.spin, this.skin, flying);
+  }
+
+  // ── strike point picker ──
+  private strikeM: Mat3 = (() => { const m = mat3Identity(); mat3Rotate(m, 0.5, -1.45); return m; })();
+  private initStrike() {
+    const btnCv = this.q<HTMLCanvasElement>('.strike-btn canvas'), big = this.q<HTMLCanvasElement>('#spBall canvas');
+    const paint = () => {
+      btnCv.getContext('2d')!.clearRect(0, 0, 112, 112); btnCv.getContext('2d')!.drawImage(shadeBall(112, this.strikeM), 0, 0);
+      big.getContext('2d')!.clearRect(0, 0, 440, 440); big.getContext('2d')!.drawImage(shadeBall(440, this.strikeM), 0, 0);
+    };
+    paint(); onBallTexUpdate(paint);
+    const ball = this.q('#spBall');
+    let drag = false;
+    const move = (e: PointerEvent) => {
+      const r = big.getBoundingClientRect(), R = r.width / 2;
+      const px = (e.clientX - r.left - R) / R, py = (e.clientY - r.top - R) / R;
+      // screen right = toward the golfer (inner half) for this left-hander's camera; screen up = top of the ball
+      this.setStrike(-px, -py);
+    };
+    ball.addEventListener('pointerdown', e => { drag = true; ball.setPointerCapture(e.pointerId); move(e); e.preventDefault(); });
+    ball.addEventListener('pointermove', e => { if (drag) move(e); });
+    const end = () => { drag = false; };
+    ball.addEventListener('pointerup', end); ball.addEventListener('pointercancel', end);
+    this.q('#spRet').addEventListener('keydown', e => {
+      const k = (e as KeyboardEvent).key, d = 0.1;
+      if (k === 'ArrowLeft') this.setStrike(this.strike.x + d, this.strike.y); else if (k === 'ArrowRight') this.setStrike(this.strike.x - d, this.strike.y);
+      else if (k === 'ArrowUp') this.setStrike(this.strike.x, this.strike.y + d); else if (k === 'ArrowDown') this.setStrike(this.strike.x, this.strike.y - d);
+      else if (k === 'Escape' || k === 'Enter') this.openStrike(false); else return;
+      e.preventDefault();
+    });
+    this.q('#strikePop').addEventListener('click', e => { if (e.target === this.q('#strikePop')) this.openStrike(false); });
+    this.setStrike(0, 0);
+  }
+  /** set the strike point (clamped to the ball's face) and redraw the markers */
+  setStrike(x: number, y: number) {
+    const lim = 0.78, l = Math.hypot(x, y); if (l > lim) { x *= lim / l; y *= lim / l; }
+    if (Math.abs(x) < 0.06) x = 0; if (Math.abs(y) < 0.06) y = 0; // gentle snap to centre lines
+    this.strike = { x, y };
+    // screen position: outer (+x) is screen left, top (+y) is screen up
+    for (const el of [this.q('.strike-btn'), this.q('#spBall')]) { el.style.setProperty('--sx', String(-x)); el.style.setProperty('--sy', String(-y)); }
+    const v = y > 0.15 ? 'High' : y < -0.15 ? 'Low' : '', h = x > 0.15 ? 'Fade' : x < -0.15 ? 'Draw' : '';
+    const fly = [y > 0.15 ? 'flies lower' : y < -0.15 ? 'flies higher' : '', x > 0.15 ? 'fades' : x < -0.15 ? 'draws' : ''].filter(Boolean).join(', ');
+    const label = v || h ? `${[v, h].filter(Boolean).join(' · ')}${fly ? ' — ' + fly : ''}` : 'Dead centre';
+    this.q('#spRead').textContent = label;
+    this.q('.strike-btn').setAttribute('aria-label', `Strike point: ${label}. Choose where to hit the ball`);
+    this.q('.strike-btn').classList.toggle('set', !!(x || y));
+    this.onStrike(this.strike);
+  }
+  openStrike(on: boolean) {
+    const pop = this.q('#strikePop');
+    pop.hidden = !on; this.el.classList.toggle('strike-open', on);
+    if (on) (this.q('#spRet') as HTMLButtonElement).focus({ preventScroll: true }); else (this.q('.strike-btn') as HTMLButtonElement).focus({ preventScroll: true });
   }
 
   toast(word: string, why: string, cls: string) {

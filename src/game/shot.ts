@@ -16,11 +16,11 @@ export const CLUB_DATA: Record<string, { full: number; launch: number; spin: num
   '6i': { full: 178, launch: 16, spin: 5600, curve: 0.95 },
   '7i': { full: 165, launch: 18, spin: 6200, curve: 0.9 },
   '8i': { full: 152, launch: 20, spin: 7000, curve: 0.85 },
-  '9i': { full: 140, launch: 23, spin: 7800, curve: 0.8 },
-  'PW': { full: 128, launch: 26, spin: 8500, curve: 0.75, pitch: 1 },
-  '50°': { full: 113, launch: 29, spin: 9000, curve: 0.7, pitch: 0.9 },
-  '56°': { full: 96, launch: 32, spin: 9500, curve: 0.65, pitch: 0.8, flop: 1 },
-  '60°': { full: 80, launch: 35, spin: 9800, curve: 0.6, pitch: 0.72, flop: 0.87 },
+  '9i': { full: 140, launch: 23, spin: 8500, curve: 0.8 },
+  'PW': { full: 128, launch: 26, spin: 9100, curve: 0.75, pitch: 1 },
+  '50°': { full: 113, launch: 29, spin: 9500, curve: 0.7, pitch: 0.9 },
+  '56°': { full: 96, launch: 32, spin: 9900, curve: 0.65, pitch: 0.8, flop: 1 },
+  '60°': { full: 80, launch: 35, spin: 10200, curve: 0.6, pitch: 0.72, flop: 0.87 },
 };
 
 export const MODES: Record<ShotMode, { label: string; rule: string; ok: (id: string) => boolean; max: (id: string) => number }> = {
@@ -46,6 +46,8 @@ export interface SwingResult {
   angle: number;      // push angle in degrees, + = to the right on the pad
   drift: number;      // average sideways drift during the pull, as a fraction of the pad
   released: boolean;  // finger lifted before the strike line
+  /** where the club meets the ball, each -1..1: y +1 = top of the ball, x -1 = inner half (toward the golfer) */
+  strike?: { x: number; y: number };
 }
 
 export interface ShotPlan {
@@ -74,17 +76,22 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   carry *= 1 - Math.random() * 0.09 * e;
   // launch and spin by mode
   let la = C.launch, spin = C.spin;
-  if (mode === 'punch') { la *= 0.55; spin *= 0.75; }
+  if (mode === 'punch') { la *= 0.6; spin *= 0.9; }
   if (mode === 'pitch') { la = C.launch + 6; spin = 6500 + 1200 * (C.pitch ?? 0.8); }
   if (mode === 'flop') { la = 50 + 4 * (1 - (C.flop ?? 1)); spin = 4800; }
   if (mode === 'full' && r.power < 0.8) { la *= 0.92 + 0.08 * r.power; spin *= 0.75 + 0.25 * r.power; }
   if (lie.name === 'Rough') spin *= 0.6;               // flyer-ish: less spin from the rough
   if (lie.name === 'Fairway bunker') spin *= 0.85;
   la += rnd() * 3.2 * e;                               // tempo: a bit high or low
+  // strike point: under the ball launches higher with more backspin, over it lower with less; off-centre loses a little
+  const sk = r.strike ?? { x: 0, y: 0 }, sx = clamp(sk.x, -1, 1), sy = clamp(sk.y, -1, 1);
+  la -= 4 * sy; spin *= 1 - 0.25 * sy;
+  carry *= 1 - 0.03 * Math.min(1, Math.hypot(sx, sy));
   const speed = speedForCarry(carry * YD, la * D, spin);
   // direction: push angle sets the curve (spin-axis tilt); the start line goes a little the other way
   const ang = clamp(r.angle, -35, 35);
-  const tilt = (ang / 35) * 0.42 * C.curve + gauss() * 0.06 * e;
+  // inner half of the ball → draw, outer → fade (a lefty's draw curves right)
+  const tilt = (ang / 35) * 0.42 * C.curve + gauss() * 0.06 * e + (lefty ? -1 : 1) * sx * 0.1 * C.curve;
   const startDeg = -0.3 * (ang / 35) * 9 * C.curve + gauss() * 2.4 * e + gauss() * 1.8 * eB + lie.side * lie.slope * 0.45;
   // a lefty's draw curves right, so name shapes by handedness
   const curvesLeft = ang < 0;

@@ -14,6 +14,8 @@ export interface BodyPose {
   ankleL: THREE.Vector3; ankleR: THREE.Vector3;
   toeL: THREE.Vector3; toeR: THREE.Vector3;
   kneePoleL: THREE.Vector3; kneePoleR: THREE.Vector3;
+  /** optional: the direction the top of each foot faces (default up); needed when a foot stands on its toe */
+  footUpL?: THREE.Vector3; footUpR?: THREE.Vector3;
   shrugL: number; shrugR: number;  // clavicle forward/back (protraction) in radians
 }
 
@@ -143,7 +145,8 @@ export class Rig {
       align(this.bindDir[th], Z, tDir, knee, Q[th]);
       align(this.bindDir[sn], Z, sDir, knee, Q[sn]);
       this.fk(sn); this.fk(ft);
-      align(this.bindDir[ft], Y, _a.subVectors(toe, P[ft]).clone(), Y, Q[ft]);
+      const up = (side === 'L' ? p.footUpL : p.footUpR) ?? Y;
+      align(this.bindDir[ft], Y, _a.subVectors(toe, P[ft]).clone(), up, Q[ft]);
     }
 
     // write bone locals

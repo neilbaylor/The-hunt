@@ -10,7 +10,8 @@ import { Ball, BALL } from './game/ball';
 import { planShot, LIES, YD, type ShotPlan } from './game/shot';
 import { Tracer } from './game/tracer';
 import { Sound } from './game/audio';
-import { Hud, type CardData } from './ui/hud';
+import { Hud, viewport, type CardData } from './ui/hud';
+import { ballTex, onBallTexUpdate } from './ui/balltex';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const smooth = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -21,7 +22,7 @@ const QS = new URLSearchParams(location.search);
 let pixelRatio = QS.has('pr') ? +QS.get('pr')! : Math.min(devicePixelRatio, 1.75);
 const fixedPR = QS.has('pr');
 renderer.setPixelRatio(pixelRatio);
-renderer.setSize(innerWidth, innerHeight);
+renderer.setSize(viewport().w, viewport().h);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -30,7 +31,7 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 document.getElementById('app')!.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 7000);
+const camera = new THREE.PerspectiveCamera(42, viewport().w / viewport().h, 0.1, 7000);
 let range: Range | null = null;
 try { range = createRange(renderer, scene); range.setTimeOfDay(QS.get('time') === 'midday' ? 'midday' : 'golden'); } catch (e) { console.error('range failed', e); }
 // post-processing: high on desktop, medium on phones (falls back to low if frames run long)
@@ -49,16 +50,19 @@ const profile = NEIL;
 const golfer = new Golfer(profile, await loadNeil());
 scene.add(golfer.root);
 const ball = new Ball(range);
-const dimples = (() => {
-  const c = document.createElement('canvas'); c.width = 256; c.height = 128; const g = c.getContext('2d')!;
-  g.fillStyle = 'rgb(128,128,255)'; g.fillRect(0, 0, 256, 128);
-  for (let y = 4; y < 128; y += 8) for (let x = (y / 8) % 2 ? 4 : 8, i = 0; x < 256; x += 8, i++) {
-    const gr = g.createRadialGradient(x, y, 0, x, y, 4); gr.addColorStop(0, 'rgb(128,128,255)'); gr.addColorStop(0.6, 'rgb(100,100,230)'); gr.addColorStop(1, 'rgb(128,128,255)');
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill();
-  }
-  const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; return t;
-})();
-const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(BALL.r, 32, 20), new THREE.MeshPhysicalMaterial({ color: '#ffffff', roughness: 0.32, clearcoat: 0.6, clearcoatRoughness: 0.25, normalMap: dimples, normalScale: new THREE.Vector2(0.6, 0.6) }));
+// tour ball: hex-packed dimple normal map + sidestamp print (shared with the HUD spin ball)
+const ballTexInfo = ballTex();
+const ballPrint = new THREE.CanvasTexture(ballTexInfo.printCanvas); ballPrint.colorSpace = THREE.SRGBColorSpace; ballPrint.anisotropy = 4;
+const ballNormal = new THREE.CanvasTexture(ballTexInfo.normalCanvas); ballNormal.colorSpace = THREE.NoColorSpace;
+onBallTexUpdate(() => { ballPrint.needsUpdate = true; });
+const ballMat = new THREE.MeshPhysicalMaterial({ color: '#fbfaf6', roughness: 0.42, clearcoat: 1, clearcoatRoughness: 0.12, normalMap: ballNormal, normalScale: new THREE.Vector2(1, 1) });
+ballMat.onBeforeCompile = sh => {
+  sh.uniforms.printMap = { value: ballPrint };
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D printMap;')
+    .replace('#include <map_fragment>', '#include <map_fragment>\nvec4 pr = texture2D(printMap, vNormalMapUv);\ndiffuseColor.rgb = mix(diffuseColor.rgb, pr.rgb, pr.a);');
+};
+ballMat.customProgramCacheKey = () => 'tour-ball';
+const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(BALL.r, 48, 32), ballMat);
 ballMesh.castShadow = true; scene.add(ballMesh);
 const tee = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0018, 0.06, 10), new THREE.MeshStandardMaterial({ color: '#f2f2ee', roughness: 0.5 }));
 const teeCup = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.0035, 0.008, 12), tee.material);
@@ -122,8 +126,16 @@ hud.pad.addEventListener('pointermove', e => {
     G.target = fullBack() * clamp(SW.depth / 80, 0, 1);
     if (SW.depth > 12 && p[1] < SW.depth - 10) {
       SW.phase = 'down'; SW.tTrans = now;
-      const speed = fullBack() / tTop();
-      SW.off = G.arrived === null ? -((G.target - G.phi) / speed) * 1000 : now - G.arrived;
+      // how early/late the push was vs the golfer reaching the top. Early: time the golfer still needed,
+      // integrating the same eased approach the animation uses. The raw offset is softened so a natural
+      // pull-then-push (just as the golfer settles) reads Smooth: raw -125..+230 ms maps to the -70..+160 window.
+      let raw: number;
+      if (G.arrived === null) {
+        const v0 = fullBack() / tTop() * 1.25; let gap = G.target - G.phi, t = 0;
+        while (gap > 0.03 && t < 3) { gap -= v0 * (1 / 240) * (0.3 + 0.7 * smooth(0, 0.5, gap / fullBack())); t += 1 / 240; }
+        raw = -t * 1000;
+      } else raw = now - G.arrived;
+      SW.off = raw >= 0 ? raw * 0.7 : raw * 0.56;
       G.topPhi = Math.max(0.05, G.phi); G.phase = 'down';
       SW.trailD.push(p);
       sound.swoosh(clamp(SW.depth / 80, 0.2, 1));
@@ -155,7 +167,8 @@ function strike(now: number, p: [number, number], released: boolean) {
   const angle = Math.atan2(p[0] - SW.deep[0], SW.deep[1] - p[1]) * 180 / Math.PI;
   const drift = SW.driftN ? SW.driftSum / SW.driftN / 80 : 0;
   // the pad's left/right is the screen's left/right; for a lefty the ball still curves the way you push
-  plan = planShot({ power, offMs: SW.off, pushMs: now - SW.tTrans, angle, drift, released }, hud.club, hud.mode, LIES[hud.lie], golfer.lefty);
+  const strikePt = (hud as unknown as { strike?: { x: number; y: number } }).strike ?? { x: 0, y: 0 };
+  plan = planShot({ power, offMs: SW.off, pushMs: now - SW.tTrans, angle, drift, released, strike: strikePt }, hud.club, hud.mode, LIES[hud.lie], golfer.lefty);
   ball.hit(plan.launch);
   tracer.clear(); tracer.push(ball.pos);
   card = { plan, power, offMs: SW.off, done: false };
@@ -199,7 +212,9 @@ const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
 const want = new THREE.Vector3(), wantLook = new THREE.Vector3();
 let landingCam: THREE.Vector3 | null = null;
 const side = golfer.lefty ? 1 : -1;
-const portrait = () => innerHeight > innerWidth * 1.05;
+const portrait = () => { const v = viewport(); return v.h > v.w * 1.05; };
+/** portrait lens shift: lift the golfer above the swing stick; the stick takes a bigger share of short screens */
+const addressShift = () => { const { w, h } = viewport(); const sc = clamp(Math.min(w / 430, h / 800), 0.62, 1.15); const f = (14 + 272 * sc) / h; return clamp(0.06 + 0.45 * f, 0.12, 0.27); };
 function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
   if (portrait()) {
     // phone held upright: tight on the golfer from behind his trail side, like a TV swing cam
@@ -212,10 +227,11 @@ function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
 }
 let lensShift = 0;
 function fitCamera() {
-  camera.aspect = innerWidth / innerHeight;
-  camera.fov = portrait() ? 52 : 42;
+  const { w: vw, h: vh } = viewport();
+  camera.aspect = vw / vh;
+  camera.fov = portrait() ? (vh / vw < 1.62 ? 56 : 52) : 42;
   // portrait: shift the lens so the golfer sits above the swing stick without tilting the camera
-  if (portrait() && lensShift > 0.001) camera.setViewOffset(innerWidth, innerHeight, 0, innerHeight * lensShift, innerWidth, innerHeight);
+  if (portrait() && lensShift > 0.001) camera.setViewOffset(vw, vh, 0, vh * lensShift, vw, vh);
   else camera.clearViewOffset();
   camera.updateProjectionMatrix();
 }
@@ -268,7 +284,7 @@ function updateCamera(dt: number, now: number) {
       wantLook.copy(b).add(new THREE.Vector3(0, 0.3, 0));
     }
   }
-  const wantShift = portrait() && (camMode === 'address' || camMode === 'intro' || (camMode === 'chase' && (now - chaseT0) < 550)) ? (camMode === 'intro' ? 0.0 : 0.2) : 0;
+  const wantShift = portrait() && (camMode === 'address' || camMode === 'intro' || (camMode === 'chase' && (now - chaseT0) < 550)) ? (camMode === 'intro' ? 0.0 : addressShift()) : 0;
   if (Math.abs(wantShift - lensShift) > 0.002) { lensShift += (wantShift - lensShift) * (1 - Math.pow(0.02, dt)); fitCamera(); }
   const kk = camMode === 'landing' || camMode === 'rest' ? 1 - Math.pow(0.02, dt) : k;
   camPos.lerp(want, camMode === 'chase' ? 1 - Math.pow(0.04, dt) : kk);
@@ -376,7 +392,7 @@ function frame(now: number) {
   // dynamic resolution: keep frames under ~20 ms
   if (frameTimes.length === 90 && !fixedPR) {
     const avg = frameTimes.reduce((a, b) => a + b, 0) / 90;
-    if (avg > 0.024 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); post.setSize(innerWidth, innerHeight); if (pixelRatio <= 1 && post.quality !== 'low') post.setQuality('low'); frameTimes.length = 0; }
+    if (avg > 0.024 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); post.setSize(viewport().w, viewport().h); if (pixelRatio <= 1 && post.quality !== 'low') post.setQuality('low'); frameTimes.length = 0; }
     else if (avg < 0.0135 && pixelRatio < Math.min(devicePixelRatio, 2)) { pixelRatio = Math.min(Math.min(devicePixelRatio, 2), pixelRatio + 0.25); renderer.setPixelRatio(pixelRatio); frameTimes.length = 0; }
   }
   const r0 = performance.now();
@@ -384,7 +400,11 @@ function frame(now: number) {
   (window as any).__frameMs = performance.now() - r0;
   requestAnimationFrame(frame);
 }
-addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); post.setSize(innerWidth, innerHeight); fitCamera(); });
+// size to the visible viewport: phones resize it as the browser's bars show and hide
+const onViewport = () => { const { w, h } = viewport(); renderer.setSize(w, h); post.setSize(w, h); fitCamera(); };
+addEventListener('resize', onViewport);
+window.visualViewport?.addEventListener('resize', onViewport);
+addEventListener('orientationchange', () => setTimeout(onViewport, 250));
 // a tap anywhere during the result skips ahead
 renderer.domElement.addEventListener('pointerdown', () => { sound.unlock(); if (state === 'result') nextBall(); });
 requestAnimationFrame(t => { last = t; frame(t); });

@@ -17,14 +17,20 @@ export interface Launch {
 
 export type BallPhase = 'teed' | 'flight' | 'bounce' | 'roll' | 'stopped';
 
-// e: bounce, mu: friction, pit: speed the turf soaks up per m/s of landing speed, roll: rolling resistance (× g)
-const SURF: Record<Surface, { e: number; mu: number; pit: number; roll: number }> = {
-  tee: { e: 0.3, mu: 0.45, pit: 0.42, roll: 0.2 },
-  fairway: { e: 0.3, mu: 0.45, pit: 0.42, roll: 0.2 },
-  rough: { e: 0.15, mu: 0.35, pit: 0.6, roll: 0.45 },
-  green: { e: 0.25, mu: 0.55, pit: 0.45, roll: 0.065 },
-  bunker: { e: 0.03, mu: 0.6, pit: 0.95, roll: 1.6 },
+// e: bounce, mu: friction during an impact, pit: speed the turf soaks up per m/s of landing speed,
+// slide: friction while the ball skids along the turf, roll: rolling resistance (× g)
+const SURF: Record<Surface, { e: number; mu: number; pit: number; slide: number; roll: number }> = {
+  tee: { e: 0.3, mu: 0.3, pit: 0.42, slide: 0.42, roll: 0.2 },
+  fairway: { e: 0.3, mu: 0.3, pit: 0.42, slide: 0.42, roll: 0.2 },
+  rough: { e: 0.15, mu: 0.35, pit: 0.6, slide: 0.6, roll: 0.45 },
+  green: { e: 0.25, mu: 0.32, pit: 0.45, slide: 0.32, roll: 0.065 },
+  bunker: { e: 0.03, mu: 0.6, pit: 0.95, slide: 1.2, roll: 1.6 },
 };
+let K_STEEP = 5;
+const smooth01 = (x: number) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
+export const tune = { set steep(v: number) { K_STEEP = v; } };
+/** tests only: pretend the whole world is this surface when there is no range */
+export const TEST = { surface: 'fairway' as Surface };
 
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _n = new THREE.Vector3(), _w = new THREE.Vector3();
 
@@ -32,6 +38,10 @@ export class Ball {
   readonly pos = new THREE.Vector3();
   readonly vel = new THREE.Vector3();
   readonly spin = new THREE.Vector3();   // angular velocity vector (rad/s)
+  /** while rolling: the speed of the ball's surface from its spin (equals the velocity once it rolls cleanly) */
+  readonly sv = new THREE.Vector3();
+  /** horizontal distance from the first landing to where it stopped (negative = spun back) */
+  roll() { if (!this.landing) return 0; const d = new THREE.Vector3(this.pos.x - this.landing.x, 0, this.pos.z - this.landing.z), f = new THREE.Vector3(this.landing.x - this.start.x, 0, this.landing.z - this.start.z).normalize(); return d.dot(f); }
   phase: BallPhase = 'teed';
   t = 0;
   apex = 0;
@@ -46,7 +56,7 @@ export class Ball {
 
   tee(at: THREE.Vector3) {
     this.pos.copy(at); this.vel.set(0, 0, 0); this.spin.set(0, 0, 0);
-    this.phase = 'teed'; this.t = 0; this.apex = at.y; this.landing = null; this.bounces = 0; this.start.copy(at);
+    this.phase = 'teed'; this.t = 0; this.apex = at.y; this.landing = null; this.bounces = 0; this.start.copy(at); this.sv.set(0, 0, 0);
   }
 
   hit(L: Launch) {
@@ -65,7 +75,7 @@ export class Ball {
   setAftertouch(top: number, side: number) { this.after.top = top; this.after.side = side; }
   private applyAftertouch(dt: number) {
     const A = this.after;
-    const wantBack = (A.top < 0 ? -A.top * 4200 : -A.top * 1100) * RPM, wantSide = -A.side * 750 * RPM; // extra rad/s at full input
+    const wantBack = (A.top < 0 ? -A.top * 3200 : -A.top * 1100) * RPM, wantSide = -A.side * 750 * RPM; // extra rad/s at full input
     const rate = 2200 * RPM * dt;
     const dB = Math.max(-rate, Math.min(rate, wantBack - A.appliedBack)), dS = Math.max(-rate, Math.min(rate, wantSide - A.appliedSide));
     if (!dB && !dS) return;
@@ -76,7 +86,7 @@ export class Ball {
   }
 
   ground(x: number, z: number) { return this.range ? this.range.heightAt(x, z) : 0; }
-  surface(x: number, z: number): Surface { return this.range ? this.range.surfaceAt(x, z) : 'fairway'; }
+  surface(x: number, z: number): Surface { return this.range ? this.range.surfaceAt(x, z) : TEST.surface; }
 
   step(dt: number) {
     if (this.phase === 'teed' || this.phase === 'stopped') return;
@@ -113,14 +123,26 @@ export class Ball {
       this.range?.normalAt(p.x, p.z, _n) ?? _n.set(0, 1, 0);
       // gravity along the slope
       v.x += (_n.x * G * 0.71) * dt; v.z += (_n.z * G * 0.71) * dt;
-      const sp = Math.hypot(v.x, v.z);
-      const dec = F.roll * G * dt;
-      if (sp <= dec || sp < 0.03) { v.set(0, 0, 0); if (Math.hypot(_n.x, _n.z) < 0.04 || sp < 0.01) this.phase = 'stopped'; }
-      else { v.x *= (sp - dec) / sp; v.z *= (sp - dec) / sp; }
+      // skidding: while the ball's surface speed (spin) doesn't match its travel, turf friction works on both.
+      // Leftover backspin pulls a wedge to a stop and can draw it back.
+      const slx = v.x - this.sv.x, slz = v.z - this.sv.z, sl = Math.hypot(slx, slz);
+      if (sl > 0.04) {
+        const a = Math.min(F.slide * G * dt, sl / 3.5);
+        v.x -= a * slx / sl; v.z -= a * slz / sl;
+        this.sv.x += 2.5 * a * slx / sl; this.sv.z += 2.5 * a * slz / sl;
+      } else {
+        const sp = Math.hypot(v.x, v.z);
+        const dec = F.roll * G * dt;
+        if (sp <= dec || sp < 0.03) { v.set(0, 0, 0); if (Math.hypot(_n.x, _n.z) < 0.04 || sp < 0.01) this.phase = 'stopped'; }
+        else { v.x *= (sp - dec) / sp; v.z *= (sp - dec) / sp; }
+        this.sv.set(v.x, 0, v.z);
+      }
       p.x += v.x * dt; p.z += v.z * dt;
       p.y = this.ground(p.x, p.z) + BALL.r;
-      // rolling spin matches the roll
-      this.spin.set(-v.z, 0, v.x).multiplyScalar(1 / BALL.r);
+      // safety net: no shot ever runs out more than 40% of its carry (stops runaway rolls on slopes)
+      if (this.landing && Math.hypot(p.x - this.landing.x, p.z - this.landing.z) > Math.max(6, 0.4 * this.carry())) { v.set(0, 0, 0); this.phase = 'stopped'; }
+      // visual spin follows the ball's surface speed
+      this.spin.set(-this.sv.z, 0, this.sv.x).multiplyScalar(1 / BALL.r);
     }
     // visual spin
     const w = this.spin.length();
@@ -143,14 +165,21 @@ export class Ball {
     const rollAxis = new THREE.Vector3().crossVectors(_n, tDir);
     const wRoll = this.spin.dot(rollAxis);
     // the turf gives under the ball and soaks up speed (steep landings more), then friction grips the spin
-    const vIn = Math.max(0, vtl - F.pit * Math.abs(vn));
-    const J = F.mu * (1 + F.e) * Math.abs(vn);
-    const slip = vIn - BALL.r * wRoll;
-    const vt2 = 3.5 * J >= Math.abs(slip) ? (5 / 7) * vIn + (2 / 7) * BALL.r * wRoll : vIn - Math.sign(slip) * J;
-    const vn2 = -vn * F.e * (Math.abs(vn) > 2 ? 1 : 0.5);
+    // steep landings dig in and lose more of their forward speed (a wedge bites, a driver skips)
+    const steep = Math.abs(vn) / Math.max(1e-3, Math.hypot(vn, vtl));
+    const vIn = Math.max(0, vtl - F.pit * Math.abs(vn) * (1 + K_STEEP * Math.max(0, steep - 0.68)));
+    // hard, steep landings sink into the turf and pop up less
+    const e = F.e * (1 - 0.35 * smooth01((Math.abs(vn) - 6) / 8));
+    const Jmax = F.mu * (1 + e) * Math.abs(vn);
+    const rw = BALL.r * wRoll;                      // surface speed from spin (+ = topspin)
+    const slip = vIn - rw;
+    let vt2: number, rw2: number;
+    if (3.5 * Jmax >= Math.abs(slip)) { vt2 = (5 * vIn + 2 * rw) / 7; rw2 = vt2; }   // grips: rolls cleanly
+    else { const J = Math.sign(slip) * Jmax; vt2 = vIn - J; rw2 = rw + 2.5 * J; }   // still skidding: keeps some spin
+    const vn2 = -vn * e * (Math.abs(vn) > 2 ? 1 : 0.5);
     v.copy(tDir).multiplyScalar(vt2).addScaledVector(_n, vn2);
-    this.spin.copy(rollAxis).multiplyScalar(vt2 / BALL.r).addScaledVector(_n, this.spin.dot(_n) * 0.5);
-    if (vn2 < 0.45) { this.phase = 'roll'; v.addScaledVector(_n, -v.dot(_n)); }
+    this.spin.copy(rollAxis).multiplyScalar(rw2 / BALL.r).addScaledVector(_n, this.spin.dot(_n) * 0.5);
+    if (vn2 < 0.45) { this.phase = 'roll'; v.addScaledVector(_n, -v.dot(_n)); this.sv.copy(tDir).multiplyScalar(rw2); }
     else this.phase = 'bounce';
   }
 

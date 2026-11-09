@@ -25,11 +25,13 @@ export interface SwingState {
 export const BALL_R = 0.02135;
 const IN = 0.0254;
 
-interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: number; chestTilt: number; chestSide: number; shift: number; drop: number; heel: number; shrug: number }
-const A: Keys = { hipTurn: 0, hipTilt: 0.22, hipSide: 0.03, chestTurn: 0, chestTilt: 0.64, chestSide: 0.1, shift: 0, drop: 0, heel: 0, shrug: 0 };
-const T: Keys = { hipTurn: -0.8, hipTilt: 0.2, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.66, chestSide: 0.03, shift: -0.025, drop: 0, heel: 0, shrug: 0.18 };
-const I: Keys = { hipTurn: 0.62, hipTilt: 0.18, hipSide: 0.07, chestTurn: 0.3, chestTilt: 0.6, chestSide: 0.25, shift: 0.07, drop: 0.012, heel: 0.3, shrug: -0.05 };
-const F: Keys = { hipTurn: 1.45, hipTilt: 0.05, hipSide: 0.04, chestTurn: 1.9, chestTilt: 0.06, chestSide: -0.12, shift: 0.12, drop: -0.03, heel: 1, shrug: -0.15 };
+interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: number; chestTilt: number; chestSide: number; shift: number; drop: number; heel: number; shrug: number; pro: number }
+// address: spine bent toward the ball and tilted away from the target (trail shoulder low, lead hip high)
+const A: Keys = { hipTurn: 0, hipTilt: 0.22, hipSide: 0.07, chestTurn: 0, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15 };
+const T: Keys = { hipTurn: -0.8, hipTilt: 0.2, hipSide: 0.02, chestTurn: -1.62, chestTilt: 0.66, chestSide: 0.1, shift: -0.02, drop: 0, heel: 0, shrug: 0.18, pro: 0.1 };
+const I: Keys = { hipTurn: 0.68, hipTilt: 0.18, hipSide: 0.08, chestTurn: 0.16, chestTilt: 0.6, chestSide: 0.25, shift: 0.075, drop: 0.012, heel: 0.3, shrug: -0.05, pro: -0.13 };
+// full finish: belt buckle and chest past the target, weight on the lead leg, upright with a slight reverse-C
+const F: Keys = { hipTurn: 1.62, hipTilt: 0.04, hipSide: 0.0, chestTurn: 1.95, chestTilt: 0.0, chestSide: 0.13, shift: 0.17, drop: -0.035, heel: 1, shrug: -0.12, pro: 0 };
 const lerpK = (a: Keys, b: Keys, t: number, o: Keys) => { for (const k in a) (o as any)[k] = (a as any)[k] + ((b as any)[k] - (a as any)[k]) * t; return o; };
 const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -42,6 +44,7 @@ export const SHOT_STYLE: Record<ShotMode, { back: number; finish: number; stance
 };
 export const PHI_TOP = 2.6;     // hands angle at the top of a full swing
 export const PHI_FINISH = -3.2; // hands angle at a full finish
+const LEAN = 0.075;             // shaft lean at impact, radians (hands ~6 cm ahead of the ball)
 
 export class Golfer {
   readonly root = new THREE.Group();   // world placement (mirrored for left-handers)
@@ -62,6 +65,9 @@ export class Golfer {
   private e1 = new THREE.Vector3(); private e2 = new THREE.Vector3(); private axis = new THREE.Vector3();
   private rh = 0.6;
   private stanceX = 0;
+  private leanSign = 1;
+  /** extra forward bend from the hips found at set-up (radians), faded out as the golfer stands up in the finish */
+  private tiltAdj = 0;
   private pelvisBase = new THREE.Vector3();
   readonly clubHeadWorld = new THREE.Vector3();
   readonly lefty: boolean;
@@ -110,25 +116,37 @@ export class Golfer {
     // stance: wider for long clubs, ball forward for the driver
     const long = (this.club.length - 0.88) / 0.3;
     this.stanceX = teed ? -0.1 * k : -0.035 * k * long;
-    // solve how far the golfer stands from the ball so the lead arm hangs naturally
+    // set-up like a tour player: arms hang (shoulder sockets roughly above the hands), relaxed and nearly
+    // straight. Find the distance from the ball that puts the lead shoulder over the hands, then bend more or
+    // less from the hips until the lead arm is ~98% extended.
     const pos = this.pose;
     const armLen = this.rig.len.upper + this.rig.len.fore;
-    let lo = -1.2, hi = -0.2;
-    for (let it = 0; it < 22; it++) {
-      const z = (lo + hi) / 2;
-      this.pelvisBase.set(this.stanceX + st.handsFwd * 0, this.body.skel.joint[BONE.pelvis].y - 0.07 * k - st.stance * 0.01, z);
-      this.addressKeys(pos);
-      this.rig.apply(pos);
-      const sh = this.rig.P[BONE.upperL];
-      const d = sh.distanceTo(this.gripAddr) - 0.07;
-      if (d > armLen * 0.97) lo = z; else hi = z;
+    const solveZ = () => {
+      let lo = -1.2, hi = -0.1;
+      for (let it = 0; it < 20; it++) {
+        const z = (lo + hi) / 2;
+        this.pelvisBase.set(this.stanceX, this.body.skel.joint[BONE.pelvis].y - 0.07 * k - st.stance * 0.01, z);
+        this.addressKeys(pos); this.rig.apply(pos);
+        const sh = this.rig.P[BONE.upperL];
+        // shoulder a touch outside the hands (toward the ball) — a plumb line from it hangs just inside the toes
+        if (sh.z < this.gripAddr.z + 0.015) lo = z; else hi = z;
+      }
+      return this.rig.P[BONE.upperL].distanceTo(this.gripAddr) - 0.072 * k;
+    };
+    let tlo = -0.25, thi = 0.35;
+    for (let it = 0; it < 14; it++) {
+      this.tiltAdj = (tlo + thi) / 2;
+      const d = solveZ();
+      if (d > armLen * 0.985) tlo = this.tiltAdj; else thi = this.tiltAdj; // too far: bend over more
     }
+    this.tiltAdj = (tlo + thi) / 2; solveZ();
     // swing circle: plane through the shaft line and the target line
     this.e1.copy(this.club.shaftDir);
     this.e2.set(-1, 0, 0).addScaledVector(this.e1, this.e1.x).normalize();
     this.rh = 0.6 * k;
     this.circleC.copy(this.gripAddr).addScaledVector(this.e1, this.rh);
     this.axis.crossVectors(this.e1.clone().negate(), this.e2).normalize();
+    { const gl = this.club.gripLead.clone(); const q = new THREE.Quaternion().setFromAxisAngle(this.axis, 0.1); this.leanSign = gl.clone().applyQuaternion(q).x > gl.x ? 1 : -1; }
     // hands: build once per club, pointing at the arms at address
     if (this.hands) { this.club.group.remove(this.hands.group); }
     const shL = this.rig.P[BONE.upperL].clone(), shR = this.rig.P[BONE.upperR].clone();
@@ -156,7 +174,7 @@ export class Golfer {
   private addressKeys(p: BodyPose) {
     const k = this.k, st = SHOT_STYLE[this.mode];
     p.hipTurn = A.hipTurn + st.open; p.hipTilt = A.hipTilt; p.hipSide = A.hipSide;
-    p.chestTurn = A.chestTurn + st.open * 0.5; p.chestTilt = A.chestTilt; p.chestSide = A.chestSide;
+    p.chestTurn = A.chestTurn + st.open * 0.5; p.chestTilt = A.chestTilt + this.tiltAdj; p.chestSide = A.chestSide;
     p.pelvis.copy(this.pelvisBase);
     p.shrugL = p.shrugR = 0;
     this.feet(p, 0, 0);
@@ -183,16 +201,24 @@ export class Golfer {
     p.toeL.copy(p.ankleL).add(fL.applyAxisAngle(new THREE.Vector3(0, 1, 0), flareL));
     p.toeR.copy(p.ankleR).add(fR.applyAxisAngle(new THREE.Vector3(0, 1, 0), flareR));
     // trail heel comes up and the trail knee kicks in toward the target in the follow-through
+    p.footUpL = undefined; p.footUpR = undefined;
     if (heel > 0) {
-      const toe = p.toeR.clone();
-      const v = p.ankleR.clone().sub(toe);
-      v.applyAxisAngle(new THREE.Vector3(Math.cos(flareR), 0, -Math.sin(flareR)), -1.0 * heel);
+      // trail foot: the heel comes up and the foot pivots on its toe until the sole faces back (away from the target)
+      const toe = p.toeR.clone(); toe.x += 0.03 * heel;
+      const v = p.ankleR.clone().sub(p.toeR);
+      const up = new THREE.Vector3(0, 1, 0);
+      const pitchAxis = new THREE.Vector3(Math.cos(flareR), 0, -Math.sin(flareR));
+      const yaw = 0.55 * smooth(0.3, 1, heel);
+      const lift = 1.25 * heel;
+      v.applyAxisAngle(pitchAxis, -lift).applyAxisAngle(up, yaw);
+      up.applyAxisAngle(pitchAxis, -lift).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
       p.ankleR.copy(toe).add(v);
-      p.ankleR.x += 0.05 * heel;
-      p.toeR.y += 0.0;
+      p.toeR.copy(toe);
+      p.footUpR = up;
     }
     p.kneePoleL.set(p.ankleL.x + 0.15 + shift, 0.5, fz + 1.0);
-    p.kneePoleR.set(p.ankleR.x + 0.25 + 1.2 * heel, 0.5, fz + 1.0);
+    // trail knee kicks in toward the lead knee as the heel comes up
+    p.kneePoleR.set(p.ankleR.x + 0.25 + 1.6 * heel, 0.45, fz + 1.0 - 0.3 * heel);
   }
 
   /** Pose the golfer for a swing state. Returns the club-head position (world). */
@@ -206,7 +232,7 @@ export class Golfer {
       return o;
     };
     const finishK = (): Keys => { const o = { ...F }; for (const n in o) (o as any)[n] = (I as any)[n] + ((F as any)[n] - (I as any)[n]) * st.finish; return o; };
-    let phi = s.phi, hinge = 0, beta = 0;
+    let phi = s.phi, hinge = 0, beta = 0, finW = 0;
     const hingeTop = 2.05 * st.hinge;
     if (s.phase === 'address') {
       Object.assign(key, A);
@@ -241,16 +267,18 @@ export class Golfer {
         const t = late ? smooth(0.32, 1.0, f) : e;
         key[n] = I[n] + (fin[n] - I[n]) * t;
       }
-      hinge = -2.1 * st.hinge * smooth(0.05, 0.75, f);
+      // arms extend down the line first; the wrists re-hinge only as the club swings up
+      hinge = -1.9 * st.hinge * smooth(0.22, 0.8, f);
       beta = 0.55 * smooth(0.1, 1, f);
+      finW = smooth(0.3, 0.95, f) * smooth(0.45, 0.95, st.finish);
     }
     // breathing and a little life at address
     const breathe = s.phase === 'address' ? Math.sin(s.idleT * 1.6) * 0.006 : 0;
 
     p.hipTurn = key.hipTurn + st.open; p.hipTilt = key.hipTilt; p.hipSide = key.hipSide;
-    p.chestTurn = key.chestTurn + st.open * 0.5; p.chestTilt = key.chestTilt + breathe; p.chestSide = key.chestSide;
+    p.chestTurn = key.chestTurn + st.open * 0.5; p.chestTilt = key.chestTilt + breathe + this.tiltAdj * (s.phase === 'follow' ? 1 - smooth(0.25, 0.9, -phi / Math.abs(PHI_FINISH)) : 1); p.chestSide = key.chestSide;
     p.pelvis.copy(this.pelvisBase); p.pelvis.x += key.shift * k; p.pelvis.y -= key.drop * k;
-    p.shrugL = key.shrug; p.shrugR = -key.shrug * 0.5;
+    p.shrugL = key.shrug; p.shrugR = -key.shrug * 0.5 + key.pro;
     this.feet(p, key.heel, key.shift);
 
     // hands on the circle, carried round the body by beta; club rotated in the plane by phi + hinge
@@ -262,8 +290,16 @@ export class Golfer {
     const psi = phi + hinge;
     const qc = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), beta).multiply(new THREE.Quaternion().setFromAxisAngle(this.axis, psi));
     const g = this.club.group;
-    g.quaternion.copy(qc);
     g.position.copy(hands).sub(this.club.gripLead.clone().applyQuaternion(qc));
+    // shaft lean: around address and impact the hands sit ahead of the club head (toward the target).
+    // Rotate the club about its head (the club's origin), so the head stays put and the grip moves forward.
+    let leanW = 0;
+    if (s.phase === 'address') leanW = 0.35;
+    else if (s.phase === 'down') leanW = 1 - smooth(0, 0.45, Math.max(0, phi) / Math.max(0.01, s.topPhi));
+    else if (s.phase === 'follow') leanW = 1 - smooth(0, 0.14, -phi / Math.abs(PHI_FINISH));
+    else if (s.phase === 'back') leanW = 0.35 * (1 - smooth(0, 0.3, phi / PHI_TOP));
+    if (leanW > 0) qc.premultiply(new THREE.Quaternion().setFromAxisAngle(this.axis, LEAN * leanW * this.leanSign));
+    g.quaternion.copy(qc);
     // arms: lead wrist first; if it can't reach, move the club with the hand
     const wl = this.hands.wristLead.clone().applyQuaternion(qc).add(g.position);
     const wr = this.hands.wristTrail.clone().applyQuaternion(qc).add(g.position);
@@ -279,6 +315,34 @@ export class Golfer {
     p.look.copy(this.ballC).lerp(new THREE.Vector3(60, 6, -4), watch);
     if (s.lookAt) p.look.copy(this.char.worldToLocal(s.lookAt.clone()));
     this.rig.apply(p);
+    if (finW > 0.001) {
+      // full finish target, built in the chest's frame: hands up past the lead shoulder, shaft wrapped behind the neck
+      const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];
+      const L = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(qChest);
+      const gripFin = neck.clone().add(L(0.12, 0.16, 0.1));
+      const shaftFin = L(-0.6, -0.24, -0.76).normalize();   // across the back of the shoulders, behind the neck            // grip → club head
+      const faceFin = L(0, 0.35, -0.9).normalize();                  // where the club face points
+      // club local frame: shaft runs hosel → butt along shaftDir, face looks along +X
+      const mLocal = new THREE.Matrix4(), mFin = new THREE.Matrix4();
+      const sd = this.club.shaftDir.clone();
+      const fx = new THREE.Vector3(1, 0, 0).addScaledVector(sd, -sd.x).normalize();
+      mLocal.makeBasis(sd, fx, new THREE.Vector3().crossVectors(sd, fx));
+      const sF = shaftFin.clone().negate(), fF = faceFin.clone().addScaledVector(sF, -faceFin.dot(sF)).normalize();
+      mFin.makeBasis(sF, fF, new THREE.Vector3().crossVectors(sF, fF));
+      const qFin = new THREE.Quaternion().setFromRotationMatrix(mFin.multiply(mLocal.transpose()));
+      const qB = qc.clone().slerp(qFin, finW);
+      const gripNow = this.club.gripLead.clone().applyQuaternion(qc).add(g.position);
+      const gripB = gripNow.lerp(gripFin, finW);
+      qc.copy(qB);
+      g.quaternion.copy(qB);
+      g.position.copy(gripB).sub(this.club.gripLead.clone().applyQuaternion(qB));
+      p.wristL.copy(this.hands.wristLead.clone().applyQuaternion(qB).add(g.position));
+      p.wristR.copy(this.hands.wristTrail.clone().applyQuaternion(qB).add(g.position));
+      // elbows: lead elbow folds down toward the target, trail elbow points down in front of the chest
+      p.poleL.lerp(neck.clone().add(L(0.45, -0.7, 0.25)), finW);
+      p.poleR.lerp(neck.clone().add(L(-0.2, -0.7, 0.5)), finW);
+      this.rig.apply(p);
+    }
     for (let pass = 0; pass < 2; pass++) {
       const miss = this.rig.wristPos.L.clone().sub(p.wristL);
       if (miss.lengthSq() < 1e-7) break;

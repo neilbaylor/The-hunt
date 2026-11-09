@@ -3,6 +3,9 @@
 import * as THREE from 'three';
 import { createRange, YD, type TimeOfDay } from '../world/range';
 import { createPost, type Quality } from './post';
+import { Golfer, PHI_TOP } from '../golfer/golfer';
+import { NEIL } from '../golfer/profile';
+import { loadNeil } from '../golfer/assets';
 
 const qs = new URLSearchParams(location.search);
 const view = qs.get('view') ?? (innerHeight > innerWidth ? 'portrait' : 'landscape');
@@ -23,6 +26,8 @@ const camera = new THREE.PerspectiveCamera(view === 'portrait' ? 52 : 40, innerW
 const range = createRange(renderer, scene);
 range.setTimeOfDay(time);
 const post = createPost(renderer, scene, camera, { quality, grade: time, toneMapping: (qs.get('tm') as 'agx' | 'aces') ?? 'agx' });
+// depth of field like the game's address camera (?dof=0 to compare)
+post.setDof(view === 'portrait' || view === 'landscape' ? Number(qs.get('dof') ?? 1) : 0, Number(qs.get('ds') ?? 40), Number(qs.get('de') ?? 160));
 
 // stand-in golfer at address: legs, hips, a tilted torso, head with a cap, arms and a club down to the ball
 const golfer = new THREE.Group();
@@ -40,7 +45,15 @@ add(new THREE.CylinderGeometry(0.12, 0.12, 0.06, 20), shirt, [-0.42, 1.56, 0], [
 for (const s of [-1, 1]) add(new THREE.CapsuleGeometry(0.05, 0.55, 6, 10), shirt, [-0.48, 1.05, s * 0.12], [s * 0.15, 0, 0.35]);
 add(new THREE.CylinderGeometry(0.006, 0.006, 0.95, 8), new THREE.MeshStandardMaterial({ color: '#c8ccd2', metalness: 1, roughness: 0.25 }), [-0.35, 0.42, 0], [0, 0, 0.95]);
 golfer.position.set(0.95, 0, 0);
-scene.add(golfer);
+if (qs.get('golfer') === 'capsule') scene.add(golfer);
+else {
+  // the real golfer (as in the game) so the frame reads like the game's
+  const real = new Golfer(NEIL, await loadNeil());
+  real.setClub(Number(qs.get('club') ?? 6), 'full');
+  const pose = qs.get('pose') ?? 'address';
+  real.update({ phase: pose === 'top' ? 'back' : 'address', phi: pose === 'top' ? PHI_TOP : 0, topPhi: PHI_TOP, idleT: 0 });
+  scene.add(real.root);
+}
 const ball = new THREE.Mesh(new THREE.SphereGeometry(0.0214, 24, 16), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }));
 ball.position.set(0, 0.0214, 0); ball.castShadow = true; scene.add(ball);
 
@@ -57,6 +70,7 @@ if (view === 'portrait') {
     camera.position.set(bx * 0.55, t.pos.y + 1.7, bz + 9); camera.lookAt(bx, t.pos.y + 1.1, bz);
   }
   focus.copy(t.pos);
+} else if (view === 'bg') { camera.fov = 18; camera.updateProjectionMatrix(); camera.position.set(0.7, 1.75, 3.6); camera.lookAt(0, 12, -500);
 } else if (view === 'trees') { camera.position.set(22, 1.9, -30); camera.lookAt(62, 6.0, -22); focus.set(45, 0, -28);
 } else if (view === 'turf') { camera.position.set(1.2, 0.9, 1.6); camera.lookAt(-0.2, 0.0, -1.5); }
 else if (view === 'flight') {

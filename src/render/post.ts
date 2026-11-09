@@ -2,8 +2,12 @@
 // gentle bloom on the sun and bright sky, ground-contact ambient occlusion on high, and a vignette.
 //
 //   low  : direct render (renderer tone mapping only) — the safe fallback for weak phones
-//   med  : render → bloom (half res) → output (tone map + sRGB) → grade + vignette → FXAA
-//   high : MSAA render → GTAO → bloom → output → grade + vignette
+//   med  : render → depth of field → bloom (half res) → output (tone map + sRGB) → grade + vignette → FXAA
+//   high : MSAA render → depth of field → GTAO → bloom → output → grade + vignette
+//
+// Depth of field is the broadcast "long lens" look: the golfer and the near turf stay sharp and the range
+// behind softens with distance. Only background pixels are blurred and only background pixels feed the blur,
+// so the golfer's silhouette never smears. setDof(0) turns it off (ball-flight cameras).
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -12,6 +16,7 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAPass } from 'three/examples/jsm/postprocessing/FXAAPass.js';
+import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 
 export type Quality = 'low' | 'med' | 'high';
 export type Grade = 'golden' | 'midday';
@@ -29,7 +34,71 @@ export interface Post {
   setSize(w: number, h: number): void;
   setQuality(q: Quality): void;
   setGrade(g: Grade): void;
+  /** depth of field: amount 0..1 (eased), sharp out to `start` metres, fully soft by `end` */
+  setDof(amount: number, start?: number, end?: number): void;
   readonly quality: Quality;
+}
+
+// background-only depth of field: a 16-tap golden-angle disc whose radius grows with view distance
+const DofShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    tDepth: { value: null as THREE.Texture | null },
+    resolution: { value: new THREE.Vector2(1, 1) },
+    cameraNear: { value: 0.1 }, cameraFar: { value: 1000 },
+    focusStart: { value: 40 }, focusEnd: { value: 160 },
+    maxRadius: { value: 6 }, amount: { value: 1 },
+  },
+  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+#include <packing>
+uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform vec2 resolution;
+uniform float cameraNear, cameraFar, focusStart, focusEnd, maxRadius, amount;
+varying vec2 vUv;
+float coc(vec2 uv) {
+  float d = texture2D(tDepth, uv).x;
+  float dist = d >= 0.99999 ? 1e6 : -perspectiveDepthToViewZ(d, cameraNear, cameraFar);
+  // a gentle ease so the transition from sharp to soft has no visible band
+  float t = clamp((dist - focusStart) / (focusEnd - focusStart), 0.0, 1.0);
+  return amount * t * t * (3.0 - 2.0 * t);
+}
+void main() {
+  vec4 c0 = texture2D(tDiffuse, vUv);
+  float k0 = coc(vUv);
+  if (k0 < 0.02) { gl_FragColor = c0; return; }
+  float R = k0 * maxRadius;
+  vec4 sum = c0; float wsum = 1.0;
+  for (int i = 0; i < 16; i++) {
+    float fi = float(i);
+    float r = sqrt((fi + 0.5) / 16.0);
+    float a = fi * 2.39996323;
+    vec2 uv = vUv + vec2(cos(a), sin(a)) * r * R / resolution;
+    float ks = coc(uv);
+    // only background feeds the blur: a sharp golfer next to the background never bleeds into it
+    float w = smoothstep(0.0, 0.25, ks);
+    sum += texture2D(tDiffuse, uv) * w; wsum += w;
+  }
+  gl_FragColor = sum / wsum;
+}`,
+};
+
+class DofPass extends Pass {
+  readonly uniforms: typeof DofShader.uniforms;
+  private quad: FullScreenQuad;
+  constructor(private camera: THREE.PerspectiveCamera) {
+    super();
+    this.uniforms = THREE.UniformsUtils.clone(DofShader.uniforms) as typeof DofShader.uniforms;
+    this.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: this.uniforms, vertexShader: DofShader.vertexShader, fragmentShader: DofShader.fragmentShader, depthTest: false, depthWrite: false }));
+  }
+  setSize(w: number, h: number) { this.uniforms.resolution.value.set(w, h); }
+  render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget) {
+    const u = this.uniforms;
+    u.tDiffuse.value = readBuffer.texture; u.tDepth.value = readBuffer.depthTexture;
+    u.cameraNear.value = this.camera.near; u.cameraFar.value = this.camera.far;
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this.quad.render(renderer);
+  }
+  dispose() { this.quad.material.dispose(); this.quad.dispose(); }
 }
 
 // display-space colour grade (runs after tone mapping, before AA)
@@ -87,6 +156,8 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
   let composer: EffectComposer | null = null;
   let bloom: UnrealBloomPass | null = null;
   let gradePass: ShaderPass | null = null;
+  let dofPass: DofPass | null = null;
+  const dof = { amount: 0, target: 0, start: 40, end: 160 };
   let time = 0;
 
   function applyGrade() {
@@ -102,14 +173,25 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
 
   function build() {
     composer?.dispose();
-    composer = null; bloom = null; gradePass = null;
+    composer = null; bloom = null; gradePass = null; dofPass = null;
     if (quality === 'low') { applyGrade(); return; }
     const pr = renderer.getPixelRatio();
     const rt = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType, samples: quality === 'high' ? 4 : 0 });
     composer = new EffectComposer(renderer, rt);
     composer.setPixelRatio(pr);
     composer.setSize(size.x, size.y);
+    // the scene pass keeps its depth so depth of field can read it
+    for (const t of [composer.renderTarget1, composer.renderTarget2]) {
+      t.depthTexture = new THREE.DepthTexture(t.width, t.height);
+      t.depthTexture.type = THREE.UnsignedIntType;
+    }
     composer.addPass(new RenderPass(scene, camera));
+    dofPass = new DofPass(camera);
+    // blur radius in render pixels: about 0.9% of the screen height at full strength (phones: ~6–8 px)
+    dofPass.uniforms.maxRadius.value = Math.max(3, size.y * pr * 0.0065);
+    dofPass.setSize(size.x * pr, size.y * pr);
+    dofPass.enabled = dof.amount > 0.01;
+    composer.addPass(dofPass);
     if (quality === 'high') {
       const ao = new GTAOPass(scene, camera, size.x * pr, size.y * pr);
       // subtle, local contact occlusion only (feet on turf, club on the ground, under the visor)
@@ -136,6 +218,12 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
       time += dt;
       if (!composer) { renderer.render(scene, camera); return; }
       if (gradePass) gradePass.uniforms.time.value = time % 100;
+      // ease the depth of field in and out so camera cuts don't pop
+      dof.amount += (dof.target - dof.amount) * (1 - Math.exp(-dt * 4));
+      if (dofPass) {
+        dofPass.enabled = dof.amount > 0.01;
+        const u = dofPass.uniforms; u.amount.value = dof.amount; u.focusStart.value = dof.start; u.focusEnd.value = dof.end;
+      }
       composer.render(dt);
     },
     setSize(w, h) {
@@ -144,9 +232,17 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
         composer.setPixelRatio(renderer.getPixelRatio());
         composer.setSize(w, h);
         if (gradePass) gradePass.uniforms.aspect.value = w / h;
+        const pr = renderer.getPixelRatio();
+        if (dofPass) { dofPass.setSize(w * pr, h * pr); dofPass.uniforms.maxRadius.value = Math.max(3, h * pr * 0.0065); }
       }
     },
     setQuality(q) { if (q !== quality) { quality = q; build(); } },
     setGrade(g) { grade = g; applyGrade(); },
+    setDof(amount, start, end) {
+      dof.target = THREE.MathUtils.clamp(amount, 0, 1);
+      if (start !== undefined) dof.start = start;
+      if (end !== undefined) dof.end = end;
+      if (dof.amount === 0 && dof.target > 0 && time === 0) dof.amount = dof.target; // first frame: no fade-in
+    },
   };
 }

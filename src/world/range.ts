@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import crestUrl from '../assets/brand/toronto-hunt-crest.png?url';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export type Surface = 'tee' | 'fairway' | 'rough' | 'green' | 'bunker';
@@ -67,13 +68,16 @@ const FRINGE = 1.8;
 
 interface Green { yards: number; x: number; z: number; r: number; p: number; color: string }
 const GREENS: Green[] = [
-  { yards: 50, x: -11, z: -50 * YD, r: 6.5, p: 0.3, color: '#d7263d' },
-  { yards: 100, x: 13, z: -100 * YD, r: 8.5, p: 1.7, color: '#ffd23f' },
-  { yards: 150, x: -16, z: -150 * YD, r: 10.5, p: 2.9, color: '#f4f4ef' },
+  // the first three sit close to the line so their flags are in the portrait swing camera's narrow frame
+  { yards: 50, x: -6.5, z: -50 * YD, r: 6.5, p: 0.3, color: '#d7263d' },
+  { yards: 100, x: 9.5, z: -100 * YD, r: 8.5, p: 1.7, color: '#ffd23f' },
+  { yards: 150, x: -12, z: -150 * YD, r: 10.5, p: 2.9, color: '#f4f4ef' },
   { yards: 200, x: 15, z: -200 * YD, r: 12, p: 4.2, color: '#2f6fdf' },
   { yards: 250, x: -12, z: -250 * YD, r: 13.5, p: 5.1, color: '#ff8a1c' },
   { yards: 300, x: 6, z: -300 * YD, r: 15, p: 0.9, color: '#9b5de5' },
 ];
+// the clubhouse on the rise beyond the range: white clapboard, dark roof, a flag on the gable
+const CLUBHOUSE = { x: -42, z: -585, w: 34, d: 14, h: 8, yaw: 0.12 };
 interface Bunker { x: number; z: number; rx: number; rz: number; rot: number; p: number }
 const BUNKERS: Bunker[] = [
   { x: -6.5, z: -126, rx: 4.8, rz: 2.4, rot: 0.45, p: 0.7 },
@@ -457,6 +461,30 @@ vec4 turfAt(vec2 p, float scale) {
   vec4 t1 = texture2D(uTurf, a), t2 = texture2D(uTurf, b);
   return mix(t1, t2, 0.42) * vec4(vec3(1.0 / 0.47), 1.0);
 }
+// tee box divots: elongated scars along the target line, denser in the hitting area, none under the ball or the feet
+vec3 divotAt(vec2 p) { // x = coverage, y = 0 old (sand-seed) .. 1 fresh (soil), z = depth for the bump
+  float cs = 0.38;
+  vec2 cell = floor(p / cs);
+  vec3 best = vec3(0.0);
+  float hitZone = (1.0 - smoothstep(2.0, 5.5, abs(p.x - 0.4))) * (1.0 - smoothstep(1.8, 4.5, abs(p.y + 0.6)));
+  float dens = 0.07 + 0.36 * hitZone;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 c = cell + vec2(float(i), float(j));
+    float h = fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
+    if (h > dens) continue;
+    float h2 = fract(h * 91.7 + 0.13), h3 = fract(h * 13.3 + 0.71);
+    vec2 ctr = (c + 0.2 + 0.6 * vec2(h2, h3)) * cs;
+    if (length(ctr) < 0.42 || (abs(ctr.x - 0.9) < 0.5 && abs(ctr.y) < 0.55)) continue;
+    float a = (fract(h * 5.3) - 0.5) * 0.7;
+    vec2 d = mat2(cos(a), -sin(a), sin(a), cos(a)) * (p - ctr);
+    vec2 sz = vec2(0.03 + 0.02 * h2, 0.07 + 0.05 * h3);
+    // a torn edge
+    float e = length(d / sz) + 0.12 * sin(atan(d.y, d.x) * 7.0 + h * 30.0);
+    float cov = 1.0 - smoothstep(0.82, 1.0, e);
+    if (cov > best.x) best = vec3(cov, step(0.72, fract(h * 37.1)), 1.0 - e);
+  }
+  return best;
+}
 // mown grass: blades laid one way look light when you look along them and dark against them
 vec2 viewXZ() { vec2 d = cameraPosition.xz - vWPos.xz; return d / max(length(d), 1e-3); }
 float mowSheen(float stripe, vec2 mowAxis) { return (stripe * 2.0 - 1.0) * dot(viewXZ(), mowAxis); }
@@ -471,8 +499,17 @@ vec3 groundColor(vec2 p) {
   vec3 col = mix(${v3(COL.rough)}, ${v3(COL.roughDry)}, smoothstep(0.5, 0.85, n2 * 0.6 + n3 * 0.55) * 0.5);
   float wild = clamp(smoothstep(45.0, 110.0, abs(p.x - fwCenter(p.y))) + smoothstep(-360.0, -420.0, p.y) + smoothstep(60.0, 110.0, p.y), 0.0, 1.0);
   float slope = 1.0 - clamp(vWNrm.y, 0.0, 1.0);
-  vec3 meadow = mix(${v3(COL.meadow)}, ${v3(COL.roughDry)}, clamp(smoothstep(20.0, 140.0, vWPos.y) * 0.6 + slope * 2.0 + (n3 - 0.5) * 0.8, 0.0, 1.0));
+  vec3 meadow = mix(${v3(COL.meadow)}, ${v3(COL.roughDry)}, clamp(smoothstep(20.0, 140.0, vWPos.y) * 0.25 + slope * 0.8 + (n3 - 0.5) * 0.6, 0.0, 0.7));
   col = mix(col, meadow, wild * 0.85);
+  // the big hills on the horizon are wooded: dark clumpy canopy with a few greener clearings and hedgerows
+  float hill = smoothstep(560.0, 900.0, length(vec2(p.x * 0.85, (p.y + 160.0) * 0.62)));
+  if (hill > 0.0) {
+    float cl = texture2D(uNoise, p * 0.0026 + 0.31).g, cl2 = texture2D(uNoise, p * 0.012).r;
+    float clearing = smoothstep(0.52, 0.62, cl * 0.8 + cl2 * 0.35);
+    vec3 woods = mix(${v3(COL.forestLeaf)} * 0.9, ${v3(COL.forestLeafLight)}, smoothstep(0.3, 0.85, cl2)) * (0.75 + 0.5 * texture2D(uNoise, p * 0.05).r);
+    vec3 field = mix(${v3(COL.meadow)} * 1.1, ${v3(COL.cut)}, cl2) * (0.9 + 0.2 * n2);
+    col = mix(col, mix(woods, field, clearing), hill);
+  }
   // forest floor: dark, shaded ground where the woods are thick, so distant trees read as woodland
   float fmask = smoothstep(0.5, 0.6, texture2D(uForest, (p - vec2(${FMAP_X0.toFixed(1)}, ${FMAP_Z0.toFixed(1)})) / ${FMAP_SIZE.toFixed(1)}).r);
   float outd = max(abs(p.x - fwCenter(p.y)) - 52.0, max(-p.y - 350.0, p.y - 60.0));
@@ -537,6 +574,13 @@ vec3 groundColor(vec2 p) {
   // tee box wear: a few lighter scuffs and divots near the ball
   float wear = smoothstep(0.62, 0.8, texture2D(uNoise, p * 0.9 + 3.1).g) * (1.0 - smoothstep(1.5, 4.0, length(p - vec2(0.3, -0.6))));
   tc = mix(tc, ${v3(COL.roughDry)} * 0.9, wear * 0.12);
+  // divots: old ones filled with a pale sand-and-seed mix with green coming through, fresh ones dark soil
+  vec3 dv = divotAt(p);
+  if (dv.x > 0.0) {
+    vec3 sandSeed = mix(${v3(lin('#a39a72'))}, ${v3(COL.teeLight)}, 0.25 + 0.35 * n4) * (0.9 + 0.2 * n1);
+    vec3 soil = mix(${v3(lin('#4a3a28'))}, ${v3(lin('#6b5a3c'))}, n4);
+    tc = mix(tc, mix(sandSeed, soil, dv.y), dv.x * 0.92);
+  }
   col = mix(col, tc, tm);
   gRough = mix(gRough, 0.9, tm);
   gBump = mix(gBump, 0.75, tm);
@@ -567,7 +611,7 @@ vec3 groundColor(vec2 p) {
       // turf is a poor mirror: damp the sky sheen that makes grass look plastic at grazing angles
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular *= 0.3;\nreflectedLight.indirectSpecular *= 0.25;');
   };
-  m.customProgramCacheKey = () => 'range-ground-v5';
+  m.customProgramCacheKey = () => 'range-ground-v6';
   return m;
 }
 
@@ -688,11 +732,25 @@ function finish(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   m.computeBoundingSphere();
   return m;
 }
-function farTreeGeo(): THREE.BufferGeometry {
-  const leaf = lin('#3a5f28');
-  const C = new THREE.Vector3(0, 5.5, 0);
-  const t = new THREE.CylinderGeometry(0.2, 0.3, 2.4, 5, 1, true).toNonIndexed(); t.translate(0, 1.2, 0);
-  return finish([paint(t, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#3f3326'))), blob(0, 6.0, 0, 3.2, 1.3, 1, C, leaf, 1.8, 10)]);
+function farTreeGeo(kind = 0): THREE.BufferGeometry {
+  const trunk = (h: number) => { const t = new THREE.CylinderGeometry(0.18, 0.3, h, 5, 1, true).toNonIndexed(); t.translate(0, h / 2, 0); return paint(t, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#3a2f24'))); };
+  if (kind === 1) {
+    // conifer: three stacked, slightly ragged cones, darker blue-green
+    const leaf = lin('#24412a'), C = new THREE.Vector3(0, 7, 0), parts = [trunk(2)];
+    [[2.6, 5.5, 2.2], [2.0, 4.6, 5.2], [1.3, 3.8, 8.0]].forEach(([r, h, y], i) => {
+      const c = new THREE.ConeGeometry(r, h, 7, 1, true).toNonIndexed();
+      const p = c.getAttribute('position');
+      for (let v = 0; v < p.count; v++) { const a = Math.atan2(p.getZ(v), p.getX(v)); const k = 1 + 0.18 * Math.sin(a * 3 + i * 2.1) * (p.getY(v) < 0 ? 1 : 0); p.setXYZ(v, p.getX(v) * k, p.getY(v), p.getZ(v) * k); }
+      c.translate(0, y + h / 2, 0); c.computeVertexNormals();
+      parts.push(paint(c, (x, yy, z, nx, ny, nz, col) => { const ao = 0.45 + 0.55 * clamp((yy - 1) / 11, 0, 1); col.copy(leaf).multiplyScalar(ao * (0.85 + 0.25 * Math.max(0, nx * 0.6 + ny * 0.5 - nz * 0.3))); }));
+      void C;
+    });
+    return finish(parts);
+  }
+  // broadleaf: four low-poly lumps around a crown, so the silhouette is ragged rather than a ball
+  const leaf = lin('#3a5f28'), C = new THREE.Vector3(0, 6, 0);
+  const lumps: [number, number, number, number][] = [[0, 6.3, 0, 2.7], [1.6, 5.4, 0.6, 2.1], [-1.4, 5.6, -0.8, 2.2], [0.3, 7.6, -0.5, 1.8]];
+  return finish([trunk(2.8), ...lumps.map(([x, y, z, r]) => blob(x, y, z, r, 1.05, 0, C, leaf, 3.2, 9.5))]);
 }
 
 // ───────────────────────── card trees (alpha-tested foliage cards) ─────────────────────────
@@ -1046,17 +1104,53 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
   teeBox.receiveShadow = true; teeBox.castShadow = true;
   scene.add(teeBox);
 
-  // tee markers: chunky "golf ball" markers on short stems
+  // tee markers: painted hardwood blocks in the club's navy with a gold band, set into the turf
   {
     const parts: THREE.BufferGeometry[] = [];
-    for (const sx of [-4.9, 4.9]) {
-      const ball = new THREE.SphereGeometry(0.11, 18, 12); ball.translate(sx, 0.13, -2.2);
-      const stem = new THREE.CylinderGeometry(0.025, 0.03, 0.06, 8); stem.translate(sx, 0.02, -2.2);
-      parts.push(paint(ball, (_x, _y, _z, _a, ny, _c, c) => c.copy(lin('#1f5fd6')).multiplyScalar(0.85 + 0.15 * ny)), paint(stem, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#d9d9d9'))));
+    for (const [sx, sz] of [[-3.4, -1.3], [4.3, -1.1]]) {
+      const blk = new RoundedBoxGeometry(0.3, 0.15, 0.15, 3, 0.025); blk.rotateY(0.04 * sx); blk.translate(sx, 0.06, sz);
+      parts.push(paint(blk, (x, y, _z, _a, ny, _c, c) => {
+        const band = Math.abs(y - 0.075) < 0.018 ? 1 : 0;
+        c.copy(band ? lin('#f2c21b') : lin('#13254a')).multiplyScalar(0.8 + 0.2 * Math.max(0, ny) + (y < 0.0 ? -0.2 : 0));
+        void x;
+      }));
     }
-    const m = new THREE.Mesh(finish(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0 }));
-    m.castShadow = true;
+    const m = new THREE.Mesh(finish(parts), new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.42, clearcoat: 0.5, clearcoatRoughness: 0.35 }));
+    m.castShadow = true; m.receiveShadow = true;
     scene.add(m);
+  }
+
+  // the clubhouse on the rise beyond the range: white clapboard walls, a dark slate roof with dormers,
+  // chimneys and a flagpole. Seen through the haze it gives the backdrop a sense of place.
+  {
+    const C = CLUBHOUSE, gy = rawHeight(C.x, C.z, false) - 0.6;
+    const wallTex = (() => {
+      const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128; const g = cv.getContext('2d')!;
+      g.fillStyle = '#efece4'; g.fillRect(0, 0, 512, 128);
+      for (let y = 0; y < 128; y += 6) { g.fillStyle = 'rgba(0,0,0,0.07)'; g.fillRect(0, y, 512, 1.5); }
+      for (let row = 0; row < 2; row++) for (let i = 0; i < 14; i++) {
+        const x = 14 + i * 35.5, y = row ? 70 : 18;
+        g.fillStyle = '#273038'; g.fillRect(x, y, 18, 34); g.fillStyle = 'rgba(255,230,180,0.35)'; g.fillRect(x + 2, y + 2, 6, 14);
+        g.fillStyle = '#1b2a22'; g.fillRect(x - 4, y, 3, 34); g.fillRect(x + 19, y, 3, 34);
+      }
+      g.fillStyle = '#3a2b1f'; g.fillRect(236, 76, 40, 52);
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+    })();
+    const grp = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(C.w, C.h, C.d), new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.85 }));
+    body.position.y = C.h / 2; grp.add(body);
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(12, C.h * 0.75, 10), body.material); wing.position.set(C.w / 2 + 5, C.h * 0.375, 3); grp.add(wing);
+    const roofMat = new THREE.MeshStandardMaterial({ color: '#2b3036', roughness: 0.7 });
+    const roofShape = new THREE.Shape([new THREE.Vector2(-C.d / 2 - 0.8, 0), new THREE.Vector2(C.d / 2 + 0.8, 0), new THREE.Vector2(0, 5.2)]);
+    const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(roofShape, { depth: C.w + 1.6, bevelEnabled: false }), roofMat);
+    roof.rotation.y = Math.PI / 2; roof.position.set(-C.w / 2 - 0.8, C.h, 0); grp.add(roof);
+    for (const dx of [-10, 0, 10]) { const dm = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.8, 2.4), roofMat); dm.position.set(dx, C.h + 1.6, C.d / 2 - 1.6); grp.add(dm); }
+    for (const dx of [-C.w / 2 + 3, C.w / 2 - 3]) { const ch = new THREE.Mesh(new THREE.BoxGeometry(1.2, 3.2, 1.2), new THREE.MeshStandardMaterial({ color: '#7a4a36', roughness: 0.9 })); ch.position.set(dx, C.h + 4.2, -1); grp.add(ch); }
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 12, 6), new THREE.MeshStandardMaterial({ color: '#e8e8e4', roughness: 0.5 })); pole.position.set(C.w / 2 + 14, 6, 9); grp.add(pole);
+    const fl = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.6), new THREE.MeshStandardMaterial({ color: FLAG_YELLOW, roughness: 0.9, side: THREE.DoubleSide })); fl.position.set(C.w / 2 + 15.4, 11, 9); grp.add(fl);
+    grp.position.set(C.x, gy, C.z); grp.rotation.y = C.yaw;
+    grp.traverse(o => { if ((o as THREE.Mesh).isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+    scene.add(grp);
   }
 
   // greens: yellow flagsticks with waving crest flags, cups, and yardage boards
@@ -1073,8 +1167,9 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
     };
     GREENS.forEach((g, i) => {
       const y0 = heightAt(g.x, g.z);
-      const k = 1 + g.yards / 330; // a touch bigger far away so they still read from the tee
-      const H = 2.3 * k, fw = 0.56 * k, fh = 0.4 * k, pr = 0.0095 * k;
+      // a touch bigger far away so they still read from the tee; the cloth more so, so the crest reads on a phone
+      const k = 1.1 + g.yards / 300, kf = 1.75 + g.yards / 160;
+      const H = 2.3 * k, fw = 0.56 * kf, fh = 0.4 * kf, pr = 0.0095 * k * 1.25;
       const pole = new THREE.CylinderGeometry(pr, pr * 1.15, H, 10, 1, false); pole.translate(g.x, y0 + H / 2 - 0.08, g.z);
       poles.push(pole);
       const ferrule = new THREE.CylinderGeometry(pr * 1.5, pr * 1.3, 0.05 * k, 10); ferrule.translate(g.x, y0 + H - 0.08 + 0.02 * k, g.z);
@@ -1082,7 +1177,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
       // flag: hangs from the top of the pole, streams with the wind (toward +x, slightly away)
       const flag = new THREE.PlaneGeometry(fw, fh, 18, 8); flag.translate(fw / 2 + pr, 0, 0);
       flag.rotateY(-0.25);
-      flag.translate(g.x, y0 + H - 0.08 - fh / 2 - 0.03 * k, g.z);
+      flag.translate(g.x, y0 + H - 0.08 - fh / 2 - 0.03 * kf, g.z);
       const ph = new Float32Array(flag.getAttribute('position').count).fill(i * 1.7 + 0.4);
       flag.setAttribute('aPhase', new THREE.BufferAttribute(ph, 1));
       const sz = new Float32Array(flag.getAttribute('position').count).fill(fw);
@@ -1229,6 +1324,13 @@ reflectedLight.indirectSpecular *= 0.3;`);
     }
     // the far end and behind the tee
     for (let i = 0; i < 140; i++) { const x = (rand() - 0.5) * 260, z = -345 - rand() * 120; place(x, z, rand() < 0.5 ? 0 : 1, 0.9 + rand() * 0.7); }
+    // a second, taller layer further back on the rising ground, with gaps, so the backdrop has depth
+    for (let i = 0; i < 190; i++) {
+      const x = (rand() - 0.5) * 420, z = -470 - rand() * 190;
+      if (Math.abs(x - CLUBHOUSE.x) < 30 && Math.abs(z - CLUBHOUSE.z) < 26) continue;
+      if (fbm(x / 60 + 2.2, z / 60, 2) < 0.38) continue;
+      place(x, z, rand() < 0.45 ? 1 : rand() < 0.5 ? 0 : 2, 1.15 + rand() * 0.8);
+    }
     for (let i = 0; i < 60; i++) { const x = (rand() - 0.5) * 200, z = 38 + rand() * 90; place(x, z, rand() < 0.5 ? 0 : rand() < 0.5 ? 1 : 2, 0.9 + rand() * 0.6); }
     // the middle distance (50–170 m outside the corridor): woodland edges and lone trees, full-detail species
     for (let i = 0, kept = 0; i < 9000 && kept < 200; i++) {
@@ -1303,11 +1405,29 @@ reflectedLight.indirectSpecular *= 0.3;`);
       far.push(m4.compose(p, q, s).clone());
       farTint.push(tintOf(new THREE.Color(), 1.3));
     }
-    const fgeo = farTreeGeo();
-    // split left / right so each half can be culled
-    for (const sgn of [-1, 1]) {
-      const idx = far.map((m, i) => [m, i] as const).filter(([m]) => Math.sign(m.elements[12] - fwCenter(m.elements[14])) === sgn);
-      const im = new THREE.InstancedMesh(fgeo, treeMat, idx.length);
+    // wooded hills: many more trees spread over the big hills on the horizon, so they read as forest, not bare ground
+    tries = 0;
+    let hillN = 0;
+    while (hillN < 1500 && tries++ < 200000) {
+      const x = (rand() - 0.5) * 4400, z = 600 - rand() * 4600;
+      const r = Math.hypot(x * 0.85, (z + 160) * 0.62);
+      if (r < 620 || outside(x, z) < 300) continue;
+      // clearings: skip where the large-scale noise is low
+      if (fbm(x / 260 + 7.7, z / 260 - 1.3, 3) < 0.42) continue;
+      p.set(x, rawHeight(x, z, false) - 0.8, z);
+      q.setFromAxisAngle(up, rand() * 6.28);
+      const sc2 = 1.6 + rand() * 1.2;
+      s.set(sc2, sc2 * (0.85 + rand() * 0.45), sc2);
+      far.push(m4.compose(p, q, s).clone());
+      farTint.push(tintOf(new THREE.Color(), 1.3).multiplyScalar(0.92));
+      hillN++;
+    }
+    const fgeos = [farTreeGeo(0), farTreeGeo(1)];
+    // split by species and left / right so each part can be culled
+    for (const sp of [0, 1]) for (const sgn of [-1, 1]) {
+      const idx = far.map((m, i) => [m, i] as const).filter(([m, i]) => Math.sign(m.elements[12] - fwCenter(m.elements[14])) === sgn && ((hash2(i, 77) < 0.3 ? 1 : 0) === sp));
+      if (!idx.length) continue;
+      const im = new THREE.InstancedMesh(fgeos[sp], treeMat, idx.length);
       idx.forEach(([m, i], k) => { im.setMatrixAt(k, m); im.setColorAt(k, farTint[i]); });
       im.computeBoundingSphere();
       scene.add(im);
@@ -1335,7 +1455,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       bladeGeo.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3));
       bladeGeo.setIndex(I);
     }
-    const COUNT = 48000;
+    const COUNT = 62000;
     const im = new THREE.InstancedMesh(bladeGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }), COUNT);
     const mat = im.material as THREE.MeshStandardMaterial;
     mat.onBeforeCompile = (sh) => {
@@ -1364,7 +1484,9 @@ gl_Position = projectionMatrix * mvPosition;`);
     // and a thinner spread around
     const zones: [number, number, number, number, number][] = [ // x0, x1, z0, z1, share
       // the hero patch round the ball and the golfer's feet (left-hander at +x), then the rest of the tee, the lip and around
-      [-16, 16, -14, -5.8, 0.55], [-24, 24, -26, -14, 0.2], [-30, 30, -36, 14, 0.25],
+      [-16, 16, -14, -5.8, 0.42], [-24, 24, -26, -14, 0.15], [-30, 30, -36, 14, 0.18],
+      // the tee itself, in front of the swing camera
+      [-3.5, 4.5, -6.5, 2.6, 0.25],
     ];
     while (n < COUNT && guard++ < 600000) {
       const r0 = rand();
@@ -1374,8 +1496,8 @@ gl_Position = projectionMatrix * mvPosition;`);
       const surf = surfaceAt(x, z);
       if (surf === 'bunker' || surf === 'green') continue;
       const nearEdge = teeSD(x, z) > -0.12 && teeSD(x, z) < 0.25; if (nearEdge) continue;
-      if (surf === 'tee') continue;
-      const h = surf === 'fairway' ? 0.024 + rand() * 0.022 : 0.05 + rand() * 0.07;
+      if (surf === 'tee' && (Math.hypot(x, z) < 0.05 || (Math.abs(x - 0.9) < 0.38 && Math.abs(z) < 0.5) || (Math.abs(x + 0.9) < 0.38 && Math.abs(z) < 0.5))) continue;
+      const h = surf === 'tee' ? 0.011 + rand() * 0.012 : surf === 'fairway' ? 0.024 + rand() * 0.022 : 0.05 + rand() * 0.07;
       p.set(x, heightAt(x, z) - 0.002, z);
       e.set((rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5); q.setFromEuler(e);
       s.set(h, h, h);
