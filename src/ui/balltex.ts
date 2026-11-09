@@ -28,7 +28,7 @@ export interface BallTex {
 
 const DIMPLE_COUNT = 348;
 const DIMPLE_DEPTH = 0.0092;   // cup depth in ball radii (real: ~0.25 mm on a 21 mm radius): large, shallow cups
-const DIMPLE_RC = 0.124;      // rad: cup radius (cells are ~0.102 inscribed, ~0.118 circumscribed)
+const DIMPLE_RC = 0.116;      // rad: cup radius (cells are ~0.102 inscribed, ~0.118 circumscribed)
 const CELL_REACH = 0.19;       // rad: how far a dimple's cell can reach (≥ the largest cell's circumradius)
 /** print map resolution (2× the normal map, so the script stays crisp up close) */
 export const PR_W = 2048, PR_H = 1024;
