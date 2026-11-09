@@ -97,7 +97,7 @@ else if (view === 'close' || view === 'three') {
   cam.position.copy(c).addScaledVector(f, 0.9).add(new THREE.Vector3(0, 0.03, 0)); cam.lookAt(c);
 }
 renderer.render(scene, cam);
-(window as any).__g = golfer;
+(window as any).__g = golfer; (window as any).__cam = cam; (window as any).__scene = scene;
 (window as any).__render = () => renderer.render(scene, cam);   // frame-by-frame captures (face animation clips)
 if (view === 'probe') {
   // bare head, flat front light, narrow lens: for face-landmark detection on our own mesh
