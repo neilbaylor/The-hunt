@@ -80,8 +80,8 @@ if (view === 'portrait') {
   const t = range.featured ?? range.targets[1];
   camera.position.set(t.pos.x - 3.2, t.pos.y + 2.0, t.pos.z + 3.6); camera.lookAt(t.pos.x + 0.4, t.pos.y + 2.1, t.pos.z); focus.copy(t.pos);
 } else if (view === 'landcam') {
-  // the game's landing camera: past the landing spot, off to the side and raised, looking back at the ball by the 150 green
-  const bx = -8, bz = -131, by = range.heightAt(bx, bz);
+  // the game's landing camera: past the landing spot, off to the side and raised, looking back at a ball on the target green
+  const f = range.featured ?? range.targets[3], bx = f.pos.x + 3, bz = f.pos.z + 4, by = range.heightAt(bx, bz);
   ball.position.set(bx, by + 0.0214, bz); focus.set(bx, by + 0.0214, bz);
   camera.position.set(bx + 12, range.heightAt(bx + 12, bz - 26) + 5.5, bz - 26); camera.lookAt(bx, by + 0.4, bz);
 } else if (view === 'landing' || view === 'landfw') {

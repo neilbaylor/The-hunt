@@ -1373,6 +1373,16 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
     });
     // glossy painted fibreglass: a crisp clear-coat highlight running up the stick
     const pinMat = new THREE.MeshPhysicalMaterial({ color: FLAG_YELLOW, emissive: FLAG_YELLOW, emissiveIntensity: 0.16, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.4 });
+    // far away a real 17 mm stick is thinner than a pixel and vanishes: widen it with distance to about a pixel
+    pinMat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+{
+  vec3 wp0 = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  vec2 side = objectNormal.xz;
+  if (dot(side, side) > 0.25) transformed.xz += normalize(side) * max(0.0, distance(wp0, cameraPosition) * 0.0011 - 0.0085);
+}`);
+    };
+    pinMat.customProgramCacheKey = () => 'range-pin-v1';
     const poleMesh = new THREE.Mesh(mergeGeometries(poles.map(p => p.toNonIndexed()), false)!, pinMat);
     poleMesh.castShadow = true;
     const tipMesh = new THREE.Mesh(mergeGeometries(tips.map(p => p.toNonIndexed()), false)!, new THREE.MeshStandardMaterial({ color: '#2a2a2a', roughness: 0.4, metalness: 0.6 }));
