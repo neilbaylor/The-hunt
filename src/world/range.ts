@@ -65,9 +65,9 @@ const TIMES: Record<TimeOfDay, TimePreset> = {
   golden: {
     elev: 12, azim: 238,
     // a hazy summer evening, sun low and nearly into the camera: creamy pale sky, golden light, cool green shade
-    sky: { turbidity: 8.5, rayleigh: 1.25, mieCoefficient: 0.0062, mieDirectionalG: 0.82 },
-    clouds: 0.12, sunColor: '#ffd08a', sunI: 5.6, hemiSky: '#c4ccd2', hemiGround: '#46502c', hemiI: 0.24,
-    fog: '#e4dbc4', fogDensity: 0.0007, envI: 0.38, groundBounce: '#4e5e2c', trans: 1.15,
+    sky: { turbidity: 10, rayleigh: 0.95, mieCoefficient: 0.008, mieDirectionalG: 0.84 },
+    clouds: 0.1, sunColor: '#ffc970', sunI: 6.8, hemiSky: '#b8c2c8', hemiGround: '#46502c', hemiI: 0.2,
+    fog: '#e9dfc6', fogDensity: 0.0008, envI: 0.3, groundBounce: '#4e5e2c', trans: 1.2,
   },
   midday: {
     elev: 48, azim: -28,
@@ -229,7 +229,7 @@ function surfaceAt(x: number, z: number): Surface {
 const lin = (hex: string) => new THREE.Color(hex); // THREE.Color converts sRGB hex to linear
 const COL = {
   rough: lin('#2a5526'), roughDry: lin('#6a7334'), meadow: lin('#4a6b2c'), cut: lin('#377232'),
-  fwDark: lin('#327a31'), fwLight: lin('#5a9c3c'), fringe: lin('#3d8735'),
+  fwDark: lin('#387a2c'), fwLight: lin('#62a03a'), fringe: lin('#3f8833'),
   green: lin('#5ea341'), greenLight: lin('#72b04a'), tee: lin('#3c8433'), teeLight: lin('#4c943a'),
   sand: lin('#f1e8d2'), sandDark: lin('#d2c39f'), lip: lin('#2f5f1c'), forest: lin('#1d3313'), forestLeaf: lin('#1b3412'), forestLeafLight: lin('#3f5f22'),
 };
@@ -1675,7 +1675,8 @@ reflectedLight.indirectSpecular *= 0.3;`);
         const h = Math.max(fwHalf(z, 0), 22);
         const rows = 1 + Math.floor(rand() * 3);
         for (let r = 0; r < rows; r++) {
-          const dx = h + 26 + r * 9 + rand() * 14 + (z > -20 ? 6 : 0);
+          // the first row stands close along the rough, so its long evening shadows reach across the fairway
+          const dx = h + 13 + r * 9 + rand() * 12 + (z > -20 ? 6 : 0);
           const x = fwCenter(z) + side * dx;
           // mostly oaks and maples along the fairway, a few birches, the odd conifer
           const sp = rand() < 0.78 ? 0 : rand() < 0.65 ? 2 : 1;
@@ -1733,7 +1734,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       const save = seed; seed = 2468;
       for (let i = 0; i < 26; i++) {
         const a = rand() * 6.28, rr = Math.sqrt(rand()) * 70, x = 128 + Math.cos(a) * rr * 0.8, y = 128 + Math.sin(a) * rr, r = 30 + rand() * 30;
-        const gr = g2.createRadialGradient(x, y, r * 0.3, x, y, r); gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        const gr = g2.createRadialGradient(x, y, r * 0.3, x, y, r); gr.addColorStop(0, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
         g2.fillStyle = gr; g2.fillRect(x - r, y - r, 2 * r, 2 * r);
       }
       g2.globalCompositeOperation = 'destination-out';
@@ -1750,9 +1751,9 @@ reflectedLight.indirectSpecular *= 0.3;`);
       const im = new THREE.InstancedMesh(quad, sm, blobs.length);
       const bake = () => {
         const shadowDir = new THREE.Vector2(-sunDir.x, -sunDir.z).normalize();
-        const reach = Math.min(4, 1 / Math.tan(Math.asin(clamp(sunDir.y, 0.05, 1))));
+        const reach = Math.min(5, 1 / Math.tan(Math.asin(clamp(sunDir.y, 0.05, 1))));
         const ang = Math.atan2(shadowDir.x, shadowDir.y);
-        sm.opacity = sunDir.y < 0.3 ? 0.55 : 0.62;
+        sm.opacity = sunDir.y < 0.3 ? 0.72 : 0.62;
         blobs.forEach((b, i) => {
           const len = b.r * 2 + b.h * reach * 0.55;
           const cx = b.x + shadowDir.x * (len / 2 - b.r * 0.8), cz = b.z + shadowDir.y * (len / 2 - b.r * 0.8);
