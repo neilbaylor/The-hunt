@@ -40,7 +40,7 @@ ap.add_argument('--forehead', type=float, default=1.12, help='stretch of the bro
 ap.add_argument('--cheek-fill', type=float, default=0.0025, help='extra fullness (m) at the cheek apples')
 ap.add_argument('--hair-top', type=float, default=0.125, help='top of the hair above the eyes (m)')
 ap.add_argument('--rest', default='closed', choices=['closed', 'grin'], help='rest face: a relaxed closed-mouth smile, or the portrait\'s open grin')
-ap.add_argument('--rest-smile', type=float, default=-0.6, help='smile morph baked into the rest face')
+ap.add_argument('--rest-smile', type=float, default=-0.85, help='smile morph baked into the rest face')
 ap.add_argument('--real-photos', default='8716142c,ee55797f,efc78715,f9637097', help='his photos the central face is projected from (name prefixes; empty = none)')
 ap.add_argument('--skin-lift', type=float, default=6.0, help='Lab L added to the real-photo face')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
@@ -1091,6 +1091,10 @@ Tx = Tx - tn * np.einsum('ij,ij->i', Tx, tn)[:, None]; Tx /= np.linalg.norm(Tx, 
 Bx = Bx - tn * np.einsum('ij,ij->i', Bx, tn)[:, None]; Bx /= np.linalg.norm(Bx, axis=1, keepdims=True) + 1e-12
 nts = np.c_[np.einsum('ij,ij->i', hiN, Tx), np.einsum('ij,ij->i', hiN, Bx), np.einsum('ij,ij->i', hiN, tn)]
 nts[:, 2] = np.maximum(nts[:, 2], 0.25); nts /= np.linalg.norm(nts, axis=1, keepdims=True)
+# the generator's grin creases (nasolabial folds, the open lips) don't belong on the relaxed mouth: flatten the detail there
+mouth_c = (lm_f[61] + lm_f[291]) / 2
+mfl = np.exp(-(((cp[:, 0] - mouth_c[0]) / 0.04) ** 2 + ((cp[:, 1] - mouth_c[1] - 0.008) / 0.025) ** 2)) * (cp[:, 2] > mouth_c[2] - 0.04)
+nts = nts * (1 - mfl[:, None]) + np.array([0, 0, 1.0]) * mfl[:, None]; nts /= np.linalg.norm(nts, axis=1, keepdims=True)
 nmap = np.zeros((T, T, 3), np.float32); nmap[..., 2] = 1.0
 nmap[ty, tx] = nts
 nimg = ((nmap * 0.5 + 0.5) * 255).astype(np.uint8)
@@ -1153,7 +1157,7 @@ if _Uiris is not None:
         # sclera: between the iris and each corner of the eye
         crn = Lu[[33, 133] if k_ == 0 else [362, 263]]
         pts = [cxy + (c_ - cxy) * f_ for c_ in crn for f_ in (0.55, 0.65)]
-        eyes_uv[k_]['sclera'] = list(map(float, np.clip(np.median(np.array([U[int(y_) - 1:int(y_) + 2, int(x_) - 1:int(x_) + 2].reshape(-1, 3) for x_, y_ in pts]).reshape(-1, 3), 0) / 255 * (1.45 if real_ok else 1.0), 0, 0.85)))
+        eyes_uv[k_]['sclera'] = list(map(float, np.clip(np.median(np.array([U[int(y_) - 1:int(y_) + 2, int(x_) - 1:int(x_) + 2].reshape(-1, 3) for x_, y_ in pts]).reshape(-1, 3), 0) / 255 * (1.2 if real_ok else 1.0), 0, 0.8)))
         eyes_uv[k_]['irisCrop'] = 1.25        # the tile spans ±1.25 iris radii
     sheet_ = Image.new('RGB', (192, 96)); sheet_.paste(tiles[0], (0, 0)); sheet_.paste(tiles[1], (96, 0))
     buf_ = io.BytesIO(); sheet_.save(buf_, 'PNG'); iris_png = np.frombuffer(buf_.getvalue(), np.uint8)

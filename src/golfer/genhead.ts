@@ -147,6 +147,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
           eye *= 1.0 - 0.6 * smoothstep(-0.2, 0.85, e.y);                              // the upper lid and lashes shade the top
           eye *= 1.0 - 0.25 * smoothstep(-0.5, -0.95, e.y);                            // and the lower lid a little
           eye += vec3(0.35) * smoothstep(0.16, 0.02, length(vec2(e.x - 0.1, (e.y - 0.25) * asp)));   // a soft wet highlight (stays put)
+          // at rest (eyes ahead) the painted eye from his photos shows; the drawn one takes over as the eyes move
+          eye = mix(diffuseColor.rgb, eye, smoothstep(0.06, 0.3, length(uGaze)));
           // toward the lids the painted texture (lids, lashes, corners) takes over again
           eye = mix(eye, diffuseColor.rgb, smoothstep(0.62, 0.92, rr));
           // blink: the upper lid comes down to the lower; a lash line at its edge
@@ -217,7 +219,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       tb.copy(target).applyMatrix4(m4).sub(eyeBind);
       gx = mirroredX * Math.atan2(tb.x, tb.z) / 0.6; gy = Math.atan2(tb.y, Math.hypot(tb.x, tb.z)) / 0.45;
     } else {
-      if (now > nextGlance) { idleGaze.set((Math.random() - 0.5) * 0.9, (Math.random() - 0.5) * 0.4); if (Math.random() < 0.4) idleGaze.set(0, 0); nextGlance = now + 0.8 + Math.random() * 2.2; }
+      if (now > nextGlance) { idleGaze.set((Math.random() - 0.5) * 0.7, (Math.random() - 0.5) * 0.3); if (Math.random() < 0.55) idleGaze.set(0, 0); nextGlance = now + 0.8 + Math.random() * 2.2; }
       gx = idleGaze.x; gy = idleGaze.y;
     }
     gx = Math.max(-1, Math.min(1, gx)); gy = Math.max(-1, Math.min(1, gy));

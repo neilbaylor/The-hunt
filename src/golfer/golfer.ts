@@ -458,7 +458,12 @@ export class Golfer {
         const kAx = new THREE.Vector3().crossVectors(armDir, up);
         // (the club keeps its orientation: it stays pointing down the target line at the top)
         // (negative lift drops the hands into the slot in the downswing: hands at the trail thigh at delivery, elbow tucked)
-        if (Math.abs(key.lift) > 1e-4 && kAx.lengthSq() > 1e-6) armDir.applyAxisAngle(kAx.normalize(), Math.min(key.lift, armDir.angleTo(up) - 0.05));
+        if (key.lift > 1e-4 && kAx.lengthSq() > 1e-6) armDir.applyAxisAngle(kAx.normalize(), Math.min(key.lift, armDir.angleTo(up) - 0.05));
+        else if (key.lift < -1e-4) {
+          // the slot: the hands drop down and OUT toward the ball, so the trail forearm reaches them from a low, tucked elbow
+          const slot = new THREE.Vector3(0, -1, 0.85).normalize(), ax2 = new THREE.Vector3().crossVectors(armDir, slot);
+          if (ax2.lengthSq() > 1e-6) armDir.applyAxisAngle(ax2.normalize(), Math.min(-key.lift, armDir.angleTo(slot)));
+        }
         const wT = sh.clone().add(armDir.multiplyScalar(len));
         const mv = wT.sub(p.wristL).multiplyScalar(wF);
         g.position.add(mv); p.wristL.add(mv); p.wristR.add(mv);
