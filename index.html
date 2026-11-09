@@ -25,10 +25,14 @@
   .intro h1 { margin: 2px 0 0; line-height: .9; color: #fbf3df; text-transform: none; letter-spacing: .01em; paint-order: stroke fill; }
   .intro[data-name-style="a"] h1 { font: 400 clamp(70px, 21vw, 140px)/.95 'Shrikhand', 'Fredoka', sans-serif; -webkit-text-stroke: 7px #1d4a2c; text-shadow: 0 5px 0 #1d4a2c, 0 8px 0 #c9a227, 0 18px 26px rgba(0,0,0,.45); transform: rotate(-4deg); }
   .intro[data-name-style="b"] h1 { font: 400 clamp(78px, 24vw, 150px)/.9 'Lilita One', 'Fredoka', sans-serif; letter-spacing: .03em; -webkit-text-stroke: 6px #1d4a2c; text-shadow: 0 6px 0 #c9a227, 0 9px 0 #1d4a2c, 0 18px 26px rgba(0,0,0,.45); }
-  .intro[data-name-style="c"] h1 { font: 400 clamp(76px, 23vw, 150px)/.95 'Lobster', 'Fredoka', cursive; -webkit-text-stroke: 6px #1d4a2c; text-shadow: 0 5px 0 #1d4a2c, 0 9px 0 #c9a227, 0 18px 26px rgba(0,0,0,.45); transform: rotate(-5deg); }
+  .intro[data-name-style="c"] h1 { font: 400 clamp(98px, 30vw, 190px)/.95 'Lobster', 'Fredoka', cursive; -webkit-text-stroke: 6px #1d4a2c; text-shadow: 0 5px 0 #1d4a2c, 0 9px 0 #c9a227, 0 18px 26px rgba(0,0,0,.45); transform: rotate(-5deg); }
   .intro .tap { margin-top: 14px; font: 700 15px/1 'Fredoka', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #fbf3df; background: rgba(29,74,44,.82); padding: 10px 18px 11px; border-radius: 999px; box-shadow: 0 0 0 2px rgba(201,162,39,.8); animation: tapPulse 1.6s ease-in-out infinite; }
   @keyframes tapPulse { 0%, 100% { transform: scale(1); opacity: .95; } 50% { transform: scale(1.06); opacity: 1; } }
   .intro { cursor: pointer; }
+  /* the title lockup sits at the top: crest + THE HUNT */
+  .intro .brand { position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; top: calc(max(18px, env(safe-area-inset-top)) + 22px); gap: 14px; padding: 7px 26px 7px 7px; white-space: nowrap; animation: introIn .9s cubic-bezier(.2,1.4,.4,1) both; }
+  .intro .brand .crest { width: 60px; height: 60px; box-shadow: 0 0 0 3px #c9a227; }
+  .intro .brand b { font-size: clamp(22px, 7vw, 30px); letter-spacing: .1em; color: #1d4a2c; }
   .intro .kick { display: inline-flex; align-items: center; gap: 9px; font: 800 13px/1 'Nunito', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: #ffd23f; padding: 4px 14px 4px 4px; border-radius: 999px; background: rgba(29,74,44,.85); }
   /* Neil's portrait beside 'Player 1' (the image URL comes from the HUD, imported through Vite) */
   .intro .kick::before { content: ""; width: 38px; height: 38px; border-radius: 50%; background: var(--portrait) center/cover no-repeat, #fffaf0; box-shadow: 0 0 0 2px #0b1a33, 0 0 0 4px #ffd23f; }

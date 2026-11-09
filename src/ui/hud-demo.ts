@@ -44,9 +44,9 @@ if (q.has('intro')) {
   const css = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
   const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
   const intro = document.createElement('div'); intro.className = 'intro';
-  intro.innerHTML = `<div class="intro-card"><span class="brand"><i class="crest" aria-hidden="true"></i><b>The Hunt</b></span>
+  intro.innerHTML = `<span class="brand"><i class="crest" aria-hidden="true"></i><b>The Hunt</b></span><div class="intro-card">
   <span class="kick">Player 1</span><h1>${NEIL.name}</h1>
   <span class="tap">Tap anywhere to start</span></div>`;
-  intro.dataset.nameStyle = q.get('name') ?? 'a';
+  intro.dataset.nameStyle = q.get('name') ?? 'c';
   document.body.appendChild(intro); hud.el.classList.add('hidden');
 }
