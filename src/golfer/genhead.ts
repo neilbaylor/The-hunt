@@ -227,7 +227,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     if (dict.blink !== undefined) infl[dict.blink] = face.blink.value * 0.8;
   };
   const ctl: FaceController = {
-    setExpression(e) { for (const k3 of Object.keys(e) as (keyof Expression)[]) if (e[k3] !== undefined) (expr as any)[k3] = k3 === 'blink' ? e[k3]! : Math.max(0, Math.min(1, e[k3]!)); },
+    // smile < 0 eases the portrait's own smile toward neutral
+    setExpression(e) { for (const k3 of Object.keys(e) as (keyof Expression)[]) if (e[k3] !== undefined) (expr as any)[k3] = k3 === 'blink' ? e[k3]! : Math.max(k3 === 'smile' ? -1 : 0, Math.min(1, e[k3]!)); },
     lookAt(t) { target = t ? t.clone() : null; },
     setGaze(x, y = 0) { forced = x === null ? null : new THREE.Vector2(x, y); },
   };
