@@ -43,7 +43,7 @@ const B3Q = K({ reach: 1.16, hipTurn: -0.6, hipTilt: 0.26, hipSide: -0.01, chest
 const T: Keys = { reach: 1.22, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.18, pro: 0.1, hinge: 0.88, beta: -0.2 };
 // downswing: the hips lead (they're already unwinding while the chest is still turned), the trail side drops
 const TRANS = K({ reach: 1.2, hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
-const DOWN = K({ reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.66, beta: -0.16 }, T);
+const DOWN = K({ reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.56, beta: -0.16 }, T);
 const LATE = K({ reach: 1.01, hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.38, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.08, hinge: 0.45, beta: -0.08 }, T);
 // delivery: lead arm about parallel on the way down, shaft lagging ~45° behind the hands on plane, hips already open,
 // trail elbow tucked in front of the trail hip
