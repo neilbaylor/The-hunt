@@ -13,7 +13,7 @@ Needs: trimesh, fast-simplification, xatlas, mediapipe (+ /tmp/face_landmarker.t
 """
 import argparse, json, math, os, struct
 import numpy as np, cv2, trimesh, fast_simplification, xatlas
-from PIL import Image
+from PIL import Image, ImageOps
 from scipy.spatial import cKDTree
 from scipy.ndimage import map_coordinates
 
@@ -39,6 +39,8 @@ ap.add_argument('--face-length', type=float, default=1.08, help='stretch below t
 ap.add_argument('--forehead', type=float, default=1.12, help='stretch of the brow-to-hairline band (~3 cm)')
 ap.add_argument('--cheek-fill', type=float, default=0.0025, help='extra fullness (m) at the cheek apples')
 ap.add_argument('--hair-top', type=float, default=0.125, help='top of the hair above the eyes (m)')
+ap.add_argument('--rest', default='closed', choices=['closed', 'grin'], help='rest face: a relaxed closed-mouth smile, or the portrait\'s open grin')
+ap.add_argument('--rest-smile', type=float, default=-0.6, help='smile morph baked into the rest face')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
 ap.add_argument('--debug', default=None, help='directory for debug images')
@@ -503,11 +505,11 @@ if A.neck == 'loft':
     na = np.arctan2(neckv[:, 0] - axis_c[0], neckv[:, 2] - axis_c[1]); nr = np.hypot(neckv[:, 0] - axis_c[0], neckv[:, 2] - axis_c[1])
     def neck_r(a):
         da = np.abs((na - a + np.pi) % (2 * np.pi) - np.pi); sel = da < 0.15
-        return np.percentile(nr[sel], 75) if sel.sum() > 2 else nr.mean()
+        return np.percentile(nr[sel], 97) if sel.sum() > 2 else nr.max()   # outside all of the body's neck
     top = LV[loop]
     ta = np.arctan2(top[:, 0] - axis_c[0], top[:, 2] - axis_c[1])
     OVER = 0.012   # the neck runs on past the seam, down inside the collar, over the body's neck
-    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) + 0.003), 0, axis_c[1] + math.cos(a) * (neck_r(a) + 0.003)] for a in ta]); bot[:, 1] = np.minimum(y_seam_at(bot[:, 2]) - OVER, top[:, 1] - 0.025)   # at the back the collar rides high: the neck still runs down
+    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) + 0.004), 0, axis_c[1] + math.cos(a) * (neck_r(a) + 0.004)] for a in ta]); bot[:, 1] = np.minimum(y_seam_at(bot[:, 2]) - OVER, top[:, 1] - 0.025)   # at the back the collar rides high: the neck still runs down
     # smooth the bottom ring a little round the neck
     for _ in range(3): bot = 0.5 * bot + 0.25 * (np.roll(bot, 1, 0) + np.roll(bot, -1, 0))
     ROWS = 7
@@ -759,6 +761,23 @@ if A.unwrap != 'none' and os.path.exists(A.unwrap):
     from scipy.interpolate import RBFInterpolator
     U = np.asarray(Image.open(A.unwrap).convert('RGB')).astype(float); UH, UW = U.shape[:2]
     Lu = np.array(json.load(open(A.unwrap + '.lm.json'))['pts'], float)[:, :2]     # the true (unmirrored) image: this mesh is true until written
+    # a relaxed, closed-mouth rest face: the lips from the cleaned unwrap (build.py writes it, mirrored for the
+    # left-hander: flip it back), the open mouth between them painted shut with a soft lip line. No teeth.
+    clean_p = os.path.join(HERE, 'data', 'face_unwrap.clean.jpg')
+    if A.rest == 'closed' and os.path.exists(clean_p):
+        C_ = np.asarray(ImageOps.mirror(Image.open(clean_p).convert('RGB')).resize((UW, UH), Image.LANCZOS)).astype(np.float32)
+        OUTER = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185]
+        UPIN, LOIN = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308], [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308]
+        inner = np.r_[Lu[UPIN], Lu[LOIN][::-1]].astype(np.int32)
+        gap = np.zeros((UH, UW), np.uint8); cv2.fillPoly(gap, [inner], 255); gap = cv2.dilate(gap, np.ones((5, 5), np.uint8))
+        C_ = cv2.inpaint(np.clip(C_, 0, 255).astype(np.uint8), gap, 7, cv2.INPAINT_TELEA).astype(np.float32)
+        seam_ = ((Lu[UPIN] + Lu[LOIN]) / 2).astype(np.int32)
+        line_ = np.zeros((UH, UW), np.float32); cv2.polylines(line_, [seam_], False, 1.0, 3, cv2.LINE_AA); line_ = cv2.GaussianBlur(line_, (0, 0), 1.5)
+        C_ *= (1 - 0.45 * line_)[..., None]
+        lips = np.zeros((UH, UW), np.uint8); cv2.fillPoly(lips, [Lu[OUTER].astype(np.int32)], 255)
+        mm_ = cv2.GaussianBlur(cv2.dilate(lips, np.ones((25, 25), np.uint8)).astype(np.float32) / 255, (0, 0), 8)[..., None]
+        U = U * (1 - mm_) + C_ * mm_
+        print('  rest mouth: closed lips from the cleaned unwrap')
     # the cylinder's axis: through the middle of the skull (front to back), so the ears sit near ±90°
     hc_ = np.array([eye_lmh[0], (lm_f[IRIS[0], 1] + lm_f[IRIS[1], 1]) / 2, (FV[:, 2].min() + FV[:, 2].max()) / 2])
     def cyl(P): d = P - hc_; return np.c_[np.arctan2(d[:, 0], d[:, 2]) * 0.09, d[:, 1]]
@@ -779,6 +798,7 @@ if A.unwrap != 'none' and os.path.exists(A.unwrap):
     uw = RBFInterpolator(src, dst, kernel='thin_plate_spline', smoothing=0.5, degree=1)
     print('unwrap fit residual', np.linalg.norm(uw(src) - dst, axis=1).mean().round(1), 'px over', len(src), 'points')
     xy = uw(cyl(cp))
+    U_skin = None
     cu = np.stack([map_coordinates(U[..., k], [xy[:, 1] - 0.5, xy[:, 0] - 0.5], order=1, mode='nearest') for k in range(3)], 1)
     ang = np.abs(np.arctan2(cp[:, 0] - hc_[0], cp[:, 2] - hc_[2]))
     wu = np.clip(np.minimum.reduce([xy[:, 0] - 4, UW - 4 - xy[:, 0], xy[:, 1] - 4, UH - 4 - xy[:, 1]]) / 60, 0, 1) ** 1.5   # wide, soft edges
@@ -1001,6 +1021,10 @@ if A.unwrap not in (None, 'none') and os.path.exists(A.unwrap):
 tint = np.ones(3)   # (superseded by skinXform; kept so older loaders still read a tint)
 
 # ───────────────────────── write head.bin ─────────────────────────
+# the rest face: ease the portrait's open grin toward a relaxed smile (after the bake, so the texture rides along)
+if A.rest == 'closed' and 'smile' in morph_d:
+    VV = VV + morph_d['smile'][vmap] * A.rest_smile
+    print(f'  rest smile {A.rest_smile:+.2f} of the smile unit')
 PV = mir(VV).astype(np.float32)
 PN = mir(NN).astype(np.float32)
 IDX = UF[:, ::-1] if mirror else UF                  # mirroring flips the winding
