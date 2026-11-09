@@ -562,6 +562,9 @@ export class Hud {
     if (on) (this.q('#spRet') as HTMLButtonElement).focus({ preventScroll: true }); else (this.q('.strike-btn') as HTMLButtonElement).focus({ preventScroll: true });
   }
 
+  /** the cinematic shot cam's phase (null when off): the spin ball steps aside for the face shot */
+  setCine(phase: string | null) { this.el.classList.toggle('cine-face', phase === 'face'); }
+
   toast(word: string, why: string, cls: string) {
     const t = this.q('#toast');
     t.classList.remove('on'); void t.offsetWidth; // restart the pop animation

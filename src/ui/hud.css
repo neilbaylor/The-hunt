@@ -454,3 +454,11 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 /* player avatar: Neil's coloured-pencil portrait in a round frame */
 .who-chip .avatar { display: inline-block; width: 34px; height: 34px; border-radius: 50%; flex: none; align-self: center; background: var(--portrait) center/cover no-repeat, #fffaf0; box-shadow: 0 0 0 2px #13294b, 0 0 0 4px #ffd23f; margin: 2px 2px 2px 3px; }
 @media (orientation: portrait) { .hud.skin-f .who-chip .avatar { width: 30px; height: 30px; } }
+
+/* in flight the spin ball shrinks into the bottom-right corner (the middle of the frame is the ball and tracer);
+   it steps out entirely while the shot cam is on the golfer's face */
+.hud.flying .bc, .hud.spin-on .bc { left: auto; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); transform: scale(calc(var(--s, 1) * .7)); transform-origin: 100% 100%; transition: opacity .3s, transform .35s cubic-bezier(.2,1.4,.4,1); }
+.hud.flying .bc .spin-label, .hud.spin-on .bc .spin-label { max-width: 210px; white-space: normal; text-align: center; }
+.hud.cine-face .bc { opacity: 0; transform: translateY(30px) scale(calc(var(--s, 1) * .6)); pointer-events: none; }
+.hud.cine-face .bc * { pointer-events: none !important; }
+@media (orientation: portrait) { .hud.flying .bc, .hud.spin-on .bc { bottom: max(12px, env(safe-area-inset-bottom)); } }

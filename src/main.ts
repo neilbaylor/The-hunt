@@ -61,6 +61,14 @@ const ball = new Ball(range);
 const ballMat = tourBallMaterial();
 const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(BALL.r, 64, 40), ballMat);
 ballMesh.castShadow = true; scene.add(ballMesh);
+// a soft halo round the ball in flight so it reads against the sky on a phone
+const ballGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d')!, gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,250,.9)'); gr.addColorStop(0.25, 'rgba(255,250,235,.45)'); gr.addColorStop(1, 'rgba(255,245,220,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })(),
+  transparent: true, depthWrite: false, toneMapped: false,
+}));
+ballGlow.visible = false; ballGlow.renderOrder = 4; scene.add(ballGlow);
 // a white painted wooden tee: pointed shank, flared neck and a shallow cup with a rolled rim (origin = old centre,
 // so the ball's bottom sits in the cup at y = +0.022); most of the shank is pushed into the turf by teeUp()
 const tee = new THREE.Mesh(new THREE.LatheGeometry([
@@ -323,9 +331,10 @@ function updateCamera(dt: number, now: number) {
     fitCamera(); camera.fov += P.dFov; camera.updateProjectionMatrix(); cineLens = true;
     camera.position.copy(camPos); camera.lookAt(camLook); camera.rotateZ(P.roll);
     post.setDof(P.dof);
+    hud.setCine(shotcam.phase);
     return;
   }
-  if (cineLens) { cineLens = false; shotcam.stop(); fitCamera(); }
+  if (cineLens) { cineLens = false; shotcam.stop(); fitCamera(); hud.setCine(null); }
   if (camMode === 'intro') {
     // circle slowly in front of the golfer
     const th = (golfer.lefty ? Math.PI : 0) + 0.6 * Math.sin(now / 1000 * 0.22) + 0.35 * side;
@@ -471,9 +480,13 @@ function frame(now: number) {
   if (state === 'result' && now - resultT > 4200) nextBall();
   ballMesh.position.copy(ball.pos);
   ballMesh.quaternion.copy(ball.spinQuat);
-  // keep the ball visible far away
+  // keep the ball visible far away: in play it never drops below ~6 px on screen, and in the air it carries a soft halo
   const d = camera.position.distanceTo(ball.pos);
-  ballMesh.scale.setScalar(Math.max(1, d * 0.0035));
+  const worldPerPx = 2 * d * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / viewport().h;
+  const inPlay = state === 'flight' || state === 'result';
+  ballMesh.scale.setScalar(Math.max(1, d * 0.0035, inPlay ? 6 * worldPerPx / (BALL.r * 2) : 0));
+  ballGlow.visible = state === 'flight' && ball.phase === 'flight';
+  if (ballGlow.visible) { ballGlow.position.copy(ball.pos); ballGlow.scale.setScalar(26 * worldPerPx); }
   hud.tickSpin(dt, state === 'flight' && ball.phase === 'flight');
 
   updateCamera(simDt, now);

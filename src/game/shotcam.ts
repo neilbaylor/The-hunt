@@ -14,11 +14,12 @@ export const SHOTCAM = {
   faceDrop: 0.28,        // m: aim this far below the head so the face sits in the upper third (portrait)
   catch: 1.6,            // s: crane up off the golfer and fly after the ball
   crane: 6,              // m: how high the fly-by arcs over the golfer
-  chaseBack: 17,         // m behind the ball while following
+  chaseBack: 11,         // m behind the ball while following (close enough that the ball itself reads)
   chaseSide: 3,          // m off the line (to the golfer's back side) so the tracer reads as an arc
   chaseUp: 2.5,          // m above the ground ...
   chaseUpK: 0.6,         // ... plus this share of the ball's height: a touch below the ball, so it flies against the sky
-  lookAhead: 3,          // m: look this far ahead of the ball (room for it to fly into)
+  lookAhead: 2.5,        // m: lead the ball along its direction of travel (room for it to fly into)
+  frameLift: 8,          // deg: aim this far below the ball so it rides in the upper-middle third of a portrait frame
   apexZoom: 9,           // deg: fov punch-in at the apex (the camera backs off to match: a soft dolly-zoom)
   apexWidth: 7,          // m/s of vertical speed over which the apex zoom fades
   fallTilt: 3,           // deg: camera roll as the ball falls
@@ -105,8 +106,9 @@ export class ShotCam {
     const f = b.phase === 'flight' ? this.followPose(ctx, new THREE.Vector3(), new THREE.Vector3()) : null;
     const fromPos = f ? f.pos : this.from.pos, fromLook = f ? f.look : this.from.look;
     o.pos.copy(fromPos).lerp(this.landPos!, s);
-    const lookNow = b.pos.clone().addScaledVector(Y, 0.3);
-    o.look.copy(fromLook).lerp(lookNow, smoother(Math.min(1, s * 2.5)));   // the ball stays the subject
+    // keep the ball AND where it's coming down in shot during the hand-off; once it's down, just the ball
+    const lookNow = (b.phase === 'flight' ? b.pos.clone().lerp(this.landLook, 0.4) : b.pos.clone()).addScaledVector(Y, 0.3);
+    o.look.copy(fromLook).lerp(lookNow, smoother(Math.min(1, s * 2.5)));
     o.dFov = (f ? f.dFov : this.from.dFov) * (1 - s); o.roll = (f ? f.roll : this.from.roll) * (1 - s);
     if (f) { this.from.pos.copy(f.pos); this.from.look.copy(f.look); this.from.dFov = f.dFov; this.from.roll = f.roll; }
     return o;
@@ -136,7 +138,9 @@ export class ShotCam {
     pos.copy(b.pos).addScaledVector(dir, -back).addScaledVector(lat, C.chaseSide);
     const g = ctx.groundAt(pos.x, pos.z);
     pos.y = g + C.chaseUp + Math.max(0, b.pos.y - g) * C.chaseUpK;
-    look.copy(b.pos).addScaledVector(dir, C.lookAhead);
+    const v = b.vel.lengthSq() > 1 ? b.vel.clone().normalize() : dir;
+    look.copy(b.pos).addScaledVector(v, C.lookAhead);
+    look.y -= pos.distanceTo(b.pos) * Math.tan(C.frameLift * Math.PI / 180);
     return { pos, look, dFov: -C.apexZoom * apex, roll: C.fallTilt * Math.PI / 180 * fall * -this.side };
   }
 
