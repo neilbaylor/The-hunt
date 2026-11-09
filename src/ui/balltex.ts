@@ -24,90 +24,113 @@ export interface BallTex {
 }
 
 const DIMPLE_COUNT = 348;
-const DIMPLE_R = 0.094;     // angular radius of a dimple (rad)
-const DIMPLE_SLOPE = 0.46;   // wall steepness at the rim
+const DIMPLE_DEPTH = 0.0105;   // cup depth in ball radii (real: ~0.25 mm on a 21 mm radius): large, shallow cups
+const DIMPLE_RC = 0.112;      // rad: cup radius (cells are ~0.102 inscribed, ~0.118 circumscribed)
+const CELL_REACH = 0.19;       // rad: how far a dimple's cell can reach (≥ the largest cell's circumradius)
+/** print map resolution (2× the normal map, so the script stays crisp up close) */
+export const PR_W = 2048, PR_H = 1024;
 
+/** Closely packed round-ish dimples: every texel belongs to its nearest dimple centre (a spherical Voronoi cell,
+ *  like the near-hexagonal packing on a real ball); each cell is a shallow cap that rises to a thin rounded land
+ *  at the cell border. Normals come from the height field's gradient, so the shading is soft and broad. */
 function buildDimples(normal: Float32Array, ao: Float32Array) {
-  // bare sphere first
-  for (let row = 0; row < BT_H; row++) {
-    const th = ((row + 0.5) / BT_H) * Math.PI, st = Math.sin(th), ct = Math.cos(th);
-    for (let col = 0; col < BT_W; col++) {
-      const ph = ((col + 0.5) / BT_W) * Math.PI * 2, i = row * BT_W + col;
-      normal[i * 3] = -Math.cos(ph) * st; normal[i * 3 + 1] = ct; normal[i * 3 + 2] = Math.sin(ph) * st; ao[i] = 1;
-    }
-  }
-  const ga = Math.PI * (3 - Math.sqrt(5));
-  const rim = DIMPLE_R * 1.14;
-  for (let k = 0; k < DIMPLE_COUNT; k++) {
-    const y = 1 - ((k + 0.5) / DIMPLE_COUNT) * 2, rr = Math.sqrt(1 - y * y), t = ga * k;
-    const c = [Math.cos(t) * rr, y, Math.sin(t) * rr];
-    const thc = Math.acos(c[1]);
-    const r0 = Math.max(0, Math.floor(((thc - rim) / Math.PI) * BT_H)), r1 = Math.min(BT_H - 1, Math.ceil(((thc + rim) / Math.PI) * BT_H));
-    const phc = Math.atan2(c[2], -c[0]);
+  const n = BT_W * BT_H, d1 = new Float32Array(n).fill(9), d2 = new Float32Array(n).fill(9);
+  const ga = Math.PI * (3 - Math.sqrt(5)), C: number[][] = [];
+  for (let k = 0; k < DIMPLE_COUNT; k++) { const y = 1 - ((k + 0.5) / DIMPLE_COUNT) * 2, rr = Math.sqrt(1 - y * y), t = ga * k; C.push([Math.cos(t) * rr, y, Math.sin(t) * rr]); }
+  for (const c of C) {
+    const thc = Math.acos(c[1]), phc = Math.atan2(c[2], -c[0]);
+    const r0 = Math.max(0, Math.floor(((thc - CELL_REACH) / Math.PI) * BT_H)), r1 = Math.min(BT_H - 1, Math.ceil(((thc + CELL_REACH) / Math.PI) * BT_H));
     for (let row = r0; row <= r1; row++) {
-      const th = ((row + 0.5) / BT_H) * Math.PI, st = Math.sin(th);
-      // columns spanned at this latitude (whole row near the poles)
-      const span = st < 0.05 ? Math.PI : Math.min(Math.PI, rim / Math.max(st, 1e-3) * 1.05);
+      const th = ((row + 0.5) / BT_H) * Math.PI, st = Math.sin(th), ct = Math.cos(th);
+      const span = st < 0.2 ? Math.PI : Math.min(Math.PI, (CELL_REACH / st) * 1.05);
       const c0 = Math.floor(((phc - span) / (Math.PI * 2)) * BT_W), c1 = Math.ceil(((phc + span) / (Math.PI * 2)) * BT_W);
       for (let cc = c0; cc <= c1; cc++) {
-        const col = ((cc % BT_W) + BT_W) % BT_W, i = row * BT_W + col;
-        const ph = ((col + 0.5) / BT_W) * Math.PI * 2;
-        const dx = -Math.cos(ph) * st, dy = Math.cos(th), dz = Math.sin(ph) * st;
-        const dot = Math.min(1, dx * c[0] + dy * c[1] + dz * c[2]);
-        const d = Math.acos(dot);
-        if (d >= rim) continue;
-        // tangent at dir pointing away from the dimple centre
-        let tx = dx * dot - c[0], ty = dy * dot - c[1], tz = dz * dot - c[2];
-        const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
-        let s: number;
-        if (d < DIMPLE_R) { const q = d / DIMPLE_R; s = -DIMPLE_SLOPE * q; ao[i] = 1 - 0.16 * (1 - q * q) * (0.6 + 0.4 * q); }
-        else { const q = (d - DIMPLE_R) / (rim - DIMPLE_R); s = 0.22 * (1 - q) * q * 4 * 0.5; } // rounded land between cups
-        const nx = dx + s * tx, ny = dy + s * ty, nz = dz + s * tz, nl = Math.hypot(nx, ny, nz);
-        normal[i * 3] = nx / nl; normal[i * 3 + 1] = ny / nl; normal[i * 3 + 2] = nz / nl;
+        const col = ((cc % BT_W) + BT_W) % BT_W, i = row * BT_W + col, ph = ((col + 0.5) / BT_W) * Math.PI * 2;
+        const dot = -Math.cos(ph) * st * c[0] + ct * c[1] + Math.sin(ph) * st * c[2];
+        const d = Math.acos(Math.min(1, Math.max(-1, dot)));
+        if (d < d1[i]) { d2[i] = d1[i]; d1[i] = d; } else if (d < d2[i]) d2[i] = d;
       }
+    }
+  }
+  // height: round shallow cups sized just under the cell (so they nearly touch, like the real ball), with a
+  // profile whose slope eases to zero at the rim: soft, broad shading with a light rounded land, no hard creases
+  const H = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = Math.min(1, d1[i] / DIMPLE_RC), cup = Math.pow(1 - x * x, 1.5);
+    H[i] = -DIMPLE_DEPTH * cup;
+    ao[i] = 1 - 0.05 * cup;
+    void d2;
+  }
+  const dth = Math.PI / BT_H, dph = (Math.PI * 2) / BT_W;
+  for (let row = 0; row < BT_H; row++) {
+    const th = ((row + 0.5) / BT_H) * Math.PI, st = Math.sin(th), ct = Math.cos(th), su = Math.max(st, 0.05);
+    const rn = Math.min(BT_H - 1, row + 1), rp = Math.max(0, row - 1);
+    for (let col = 0; col < BT_W; col++) {
+      const i = row * BT_W + col, ph = ((col + 0.5) / BT_W) * Math.PI * 2;
+      const cn = (col + 1) % BT_W, cp = (col - 1 + BT_W) % BT_W;
+      const gT = (H[rn * BT_W + col] - H[rp * BT_W + col]) / ((rn - rp) * dth);
+      const gP = (H[row * BT_W + cn] - H[row * BT_W + cp]) / (2 * dph) / su;
+      // n = n0 - grad H  (eθ = ∂dir/∂θ, eφ = ∂dir/∂φ / sinθ)
+      const n0x = -Math.cos(ph) * st, n0y = ct, n0z = Math.sin(ph) * st;
+      const eTx = -Math.cos(ph) * ct, eTy = -st, eTz = Math.sin(ph) * ct;
+      const ePx = Math.sin(ph), ePz = Math.cos(ph);
+      const nx = n0x - gT * eTx - gP * ePx, ny = n0y - gT * eTy, nz = n0z - gT * eTz - gP * ePz, l = Math.hypot(nx, ny, nz);
+      normal[i * 3] = nx / l; normal[i * 3 + 1] = ny / l; normal[i * 3 + 2] = nz / l;
     }
   }
 }
 
-/** "Pro V1" in black with a red "x", centred on (x, y) */
-function proV1x(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
-  g.save();
-  g.translate(x, y); g.scale(k, k * 1.2);
-  g.textBaseline = 'middle'; g.textAlign = 'left';
-  const big = 'italic 700 46px "Barlow Condensed", "Arial Narrow", sans-serif', small = 'italic 700 42px "Barlow Condensed", "Arial Narrow", sans-serif';
-  g.font = big; const w1 = g.measureText('Pro V1').width;
-  g.font = small; const w2 = g.measureText('x').width;
-  const x0 = -(w1 + w2 + 2) / 2;
-  g.font = big; g.fillStyle = '#16161a'; g.fillText('Pro V1', x0, 0);
-  g.font = small; g.fillStyle = '#c8102e'; g.fillText('x', x0 + w1 + 2, 2);
+/** the back of the ball: PRO V1x (small caps, all black) between two arrow alignment lines, centred on (x, y).
+ *  Widths are in degrees of longitude so the mark sits on the sphere at the real proportions. */
+function sideMark(g: CanvasRenderingContext2D, x: number, y: number, degX: number) {
+  const textHalf = 16.5 * degX, arrIn = 18.8 * degX, arrOut = 38 * degX, cap = 13;
+  g.save(); g.translate(x, y); g.fillStyle = '#121214'; g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+  // lay the letters out at a nominal size, then scale to the target width
+  const big = '700 40px "Barlow", "Arial", sans-serif', small = '700 31px "Barlow", "Arial", sans-serif';
+  const parts: [string, string][] = [['P', big], ['RO', small], [' ', small], ['V', big], ['1', big], ['x', small]];
+  let w = 0; for (const [t, f] of parts) { g.font = f; w += g.measureText(t).width + 1.5; }
+  const k = (2 * textHalf) / w, capNom = 40 * 0.7;
+  g.save(); g.scale(k, (cap / capNom) * 1.05);
+  let cx = -w / 2;
+  g.strokeStyle = '#121214'; g.lineWidth = 1.4; g.lineJoin = 'round';   // a touch bolder than the 700 weight
+  for (const [t, f] of parts) { g.font = f; g.fillText(t, cx, capNom / 2); g.strokeText(t, cx, capNom / 2); cx += g.measureText(t).width + 1.5; }
+  g.restore();
+  // arrows: a sharp point outward, a broad notched tail by the text
+  const h = cap * 0.78, notch = 2.4 * degX;
+  for (const sgn of [-1, 1]) {
+    g.beginPath();
+    g.moveTo(sgn * arrOut, 0); g.lineTo(sgn * arrIn, -h / 2); g.lineTo(sgn * (arrIn + notch), 0); g.lineTo(sgn * arrIn, h / 2); g.closePath(); g.fill();
+  }
   g.restore();
 }
 
 function drawPrint(g: CanvasRenderingContext2D, align: boolean) {
-  g.clearRect(0, 0, BT_W, BT_H);
-  const cx = 0.25 * BT_W, cy = BT_H / 2;
-  // front: the thin black script sidestamp with the play number under it (as on the real ball)
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, PR_W, PR_H);
+  g.setTransform(PR_W / BT_W, 0, 0, PR_H / BT_H, 0, 0);   // lay out in the 1024 × 512 space
+  const cx = 0.25 * BT_W, cy = BT_H / 2, degX = BT_W / 360, degY = BT_H / 180;
+  // front: the big black script, ~45% of the diameter wide, just above the centre (as on the real ball)
   g.save();
-  g.translate(cx, cy - 4); g.scale(1.06, 1.18);
-  g.fillStyle = '#16161a'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const lat = 15.5;                                     // degrees above the equator
+  g.translate(cx, cy - lat * degY);
   g.font = '60px "Yellowtail", "Brush Script MT", "Segoe Script", cursive';
+  const w = g.measureText('Titleist').width, want = 2 * 26.5 * degX / Math.cos(lat * Math.PI / 180);
+  g.scale(want / w, (want / w) * 1.08);
+  g.fillStyle = '#121214'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText('Titleist', 0, 0);
-  // the real wordmark is a fine pen script: shave the strokes thinner
-  g.globalCompositeOperation = 'destination-out'; g.lineWidth = 2.4; g.lineJoin = 'round'; g.strokeText('Titleist', 0, 0); g.globalCompositeOperation = 'source-over';
+  g.globalCompositeOperation = 'destination-out'; g.lineWidth = 0.9; g.lineJoin = 'round'; g.strokeText('Titleist', 0, 0); g.globalCompositeOperation = 'source-over';
   g.restore();
+  // the red play number, hand-lettered: a flag at the top, a straight stem and a small foot
   g.save();
-  g.translate(cx + 4, cy + 62); g.scale(1, 1.3);
-  g.fillStyle = '#c8102e'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = '500 40px "Barlow", "Arial", sans-serif';
-  g.fillText('1', 0, 0);
-  g.globalCompositeOperation = 'destination-out'; g.lineWidth = 0.9; g.strokeText('1', 0, 0); g.globalCompositeOperation = 'source-over';
+  g.translate(cx, cy + 3.5 * degY);
+  const h = 11.5 * degY;                                // ~10% of the diameter tall
+  g.strokeStyle = '#c4122f'; g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = 2.6;
+  g.beginPath(); g.moveTo(-h * 0.2, -h * 0.34); g.quadraticCurveTo(-h * 0.02, -h * 0.4, h * 0.06, -h * 0.5); g.lineTo(h * 0.02, h * 0.42); g.stroke();
+  g.beginPath(); g.moveTo(-h * 0.24, h * 0.47); g.quadraticCurveTo(0, h * 0.4, h * 0.26, h * 0.46); g.stroke();
   g.restore();
-  // back: the model mark with a thin alignment line under it
-  const bx = 0.75 * BT_W;
-  proV1x(g, bx, cy, 0.82);
-  g.fillStyle = '#16161a';
-  g.fillRect(bx - 62, cy + 30, 124, 1.8);
-  if (align) { g.fillRect(bx - 150, cy + 36, 300, 2.2); }
+  // back: "PRO V1x" in black small caps on the equator, flanked by long tapered alignment arrows (~60% of the width)
+  sideMark(g, 0.75 * BT_W, cy, degX);
+  void align;
+  g.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 function bakeTangentMap(normal: Float32Array, out: HTMLCanvasElement) {
@@ -135,15 +158,15 @@ export function ballTex(align = false): BallTex {
   if (shared) return shared;
   const normal = new Float32Array(BT_W * BT_H * 3), ao = new Float32Array(BT_W * BT_H);
   buildDimples(normal, ao);
-  const printCanvas = document.createElement('canvas'); printCanvas.width = BT_W; printCanvas.height = BT_H;
+  const printCanvas = document.createElement('canvas'); printCanvas.width = PR_W; printCanvas.height = PR_H;
   const normalCanvas = document.createElement('canvas'); normalCanvas.width = BT_W; normalCanvas.height = BT_H;
   bakeTangentMap(normal, normalCanvas);
   const pg = printCanvas.getContext('2d', { willReadFrequently: true })!;
   drawPrint(pg, align);
   const aoCanvas = document.createElement('canvas'); aoCanvas.width = BT_W; aoCanvas.height = BT_H;
   { const ag = aoCanvas.getContext('2d')!, img = ag.createImageData(BT_W, BT_H); for (let i = 0; i < ao.length; i++) { const v = ao[i] * 255; img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255; } ag.putImageData(img, 0, 0); }
-  shared = { normal, ao, print: pg.getImageData(0, 0, BT_W, BT_H).data, printCanvas, normalCanvas, aoCanvas, version: 1 };
-  const refresh = () => { drawPrint(pg, align); shared!.print = pg.getImageData(0, 0, BT_W, BT_H).data; shared!.version++; listeners.forEach(f => f()); };
+  shared = { normal, ao, print: pg.getImageData(0, 0, PR_W, PR_H).data, printCanvas, normalCanvas, aoCanvas, version: 1 };
+  const refresh = () => { drawPrint(pg, align); shared!.print = pg.getImageData(0, 0, PR_W, PR_H).data; shared!.version++; listeners.forEach(f => f()); };
   try {
     Promise.all(['64px "Yellowtail"', 'italic 700 46px "Barlow Condensed"', '700 58px "Barlow"'].map(f => document.fonts.load(f))).then(refresh, () => {});
     document.fonts.ready.then(refresh, () => {});
@@ -184,7 +207,7 @@ export function shadeBall(size: number, m: Mat3): HTMLCanvasElement {
     scratch = { cv, img: cv.getContext('2d')!.createImageData(size, size) };
   }
   const { cv, img } = scratch, d = img.data, R = size / 2 - 1, c = size / 2;
-  const L = [-0.42, 0.62, 0.66], ll = Math.hypot(...L); L[0] /= ll; L[1] /= ll; L[2] /= ll;
+  const L = [-0.22, 0.72, 0.66], ll = Math.hypot(...L); L[0] /= ll; L[1] /= ll; L[2] /= ll;
   const H = [L[0], L[1], L[2] + 1], hl = Math.hypot(...H); H[0] /= hl; H[1] /= hl; H[2] /= hl;
   const N = T.normal, AO = T.ao, P = T.print;
   for (let py = 0; py < size; py++) {
@@ -207,17 +230,18 @@ export function shadeBall(size: number, m: Mat3): HTMLCanvasElement {
       const lx = N[i * 3], ly = N[i * 3 + 1], lz = N[i * 3 + 2];
       const nx = m[0] * lx + m[1] * ly + m[2] * lz, ny = m[3] * lx + m[4] * ly + m[5] * lz, nz = m[6] * lx + m[7] * ly + m[8] * lz;
       const ndl = nx * L[0] + ny * L[1] + nz * L[2];
-      const diff = Math.max(0, (ndl + 0.45) / 1.45);
-      const amb = 0.42 + 0.08 * ny;
+      const diff = Math.max(0, (ndl + 0.6) / 1.6);                 // wrapped: a soft studio falloff
+      const amb = 0.5 + 0.06 * ny;
       const ndh = Math.max(0, nx * H[0] + ny * H[1] + nz * H[2]);
-      const spec = Math.pow(ndh, 120) * 0.75 + Math.pow(Math.max(0, vx * H[0] + vy * H[1] + vz * H[2]), 14) * 0.07;
-      const fres = Math.pow(1 - vz, 3) * 0.18;
+      const spec = Math.pow(ndh, 36) * 0.2 + Math.pow(ndh, 160) * 0.12;   // a gentle broad sheen
+      const fres = Math.pow(1 - vz, 3) * 0.12;
       const ao = AO[i];
-      const lit = (0.66 * diff + amb) * ao;
-      let rC = 0.972 * lit, gC = 0.963 * lit, bC = 0.94 * lit;   // soft, slightly warm white
-      const pa = P[i * 4 + 3] / 255;
-      if (pa > 0) { rC = rC * (1 - pa) + (P[i * 4] / 255) * lit * pa; gC = gC * (1 - pa) + (P[i * 4 + 1] / 255) * lit * pa; bC = bC * (1 - pa) + (P[i * 4 + 2] / 255) * lit * pa; }
-      rC += spec + fres * 0.75; gC += spec + fres * 0.82; bC += spec + fres;
+      const lit = (0.56 * diff + amb) * ao;
+      let rC = 0.955 * lit, gC = 0.962 * lit, bC = 0.975 * lit;   // bright, clean, slightly cool white
+      const pcol = Math.min(PR_W - 1, (ph / (Math.PI * 2) * PR_W) | 0), prow = Math.min(PR_H - 1, (th / Math.PI * PR_H) | 0), j = (prow * PR_W + pcol) * 4;
+      const pa = P[j + 3] / 255;
+      if (pa > 0) { rC = rC * (1 - pa) + (P[j] / 255) * lit * pa; gC = gC * (1 - pa) + (P[j + 1] / 255) * lit * pa; bC = bC * (1 - pa) + (P[j + 2] / 255) * lit * pa; }
+      rC += spec + fres * 0.8; gC += spec + fres * 0.85; bC += spec + fres;
       d[o] = Math.min(255, rC * 255); d[o + 1] = Math.min(255, gC * 255); d[o + 2] = Math.min(255, bC * 255);
       d[o + 3] = r2 >= 1 ? Math.max(0, 1 - (Math.sqrt(r2) - 1) * R) * 255 : 255;
     }
