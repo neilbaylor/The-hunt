@@ -162,7 +162,7 @@ function rawHeight(x: number, z: number, withCanopy = true): number {
   // bunkers dug in
   for (const b of BUNKERS) {
     const d = bunkerD(b, x, z);
-    if (d < 1.4) h -= 0.38 * (1 - smooth(0.55, 1.08, d)) - 0.06 * smooth(1.0, 1.12, d) * (1 - smooth(1.12, 1.35, d));
+    if (d < 1.6) h -= 0.46 * (1 - smooth(0.62, 1.03, d)) - 0.17 * smooth(0.96, 1.07, d) * (1 - smooth(1.1, 1.55, d));
   }
   // the tee box stands proud of its surroundings
   h -= TEE_DROP * (1 - smooth(0, 16, Math.max(teeSD(x, z), 0)));
@@ -464,11 +464,13 @@ vec4 turfAt(vec2 p, float scale) {
 }
 // tee box divots: elongated scars along the target line, denser in the hitting area, none under the ball or the feet
 vec3 divotAt(vec2 p) { // x = coverage, y = 0 old (sand-seed) .. 1 fresh (soil), z = depth for the bump
-  float cs = 0.38;
+  float cs = 0.3;
   vec2 cell = floor(p / cs);
   vec3 best = vec3(0.0);
-  float hitZone = (1.0 - smoothstep(2.0, 5.5, abs(p.x - 0.4))) * (1.0 - smoothstep(1.8, 4.5, abs(p.y + 0.6)));
-  float dens = 0.07 + 0.36 * hitZone;
+  // yesterday's hitting lines: rows across the tee a couple of metres ahead and behind today's spot
+  float row = max(1.0 - smoothstep(0.35, 0.9, abs(p.y + 2.6)), 0.7 * (1.0 - smoothstep(0.35, 0.9, abs(p.y - 3.4))));
+  row = max(row, 0.5 * (1.0 - smoothstep(0.3, 0.8, abs(p.y + 4.8))));
+  float dens = 0.012 + 0.3 * row * (1.0 - smoothstep(4.5, 6.0, abs(p.x)));
   for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
     vec2 c = cell + vec2(float(i), float(j));
     float h = fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
@@ -478,11 +480,11 @@ vec3 divotAt(vec2 p) { // x = coverage, y = 0 old (sand-seed) .. 1 fresh (soil),
     if (length(ctr) < 0.42 || (abs(ctr.x - 0.9) < 0.5 && abs(ctr.y) < 0.55)) continue;
     float a = (fract(h * 5.3) - 0.5) * 0.7;
     vec2 d = mat2(cos(a), -sin(a), sin(a), cos(a)) * (p - ctr);
-    vec2 sz = vec2(0.03 + 0.02 * h2, 0.07 + 0.05 * h3);
+    vec2 sz = vec2(0.016 + 0.008 * h2, 0.04 + 0.025 * h3);
     // a torn edge
     float e = length(d / sz) + 0.12 * sin(atan(d.y, d.x) * 7.0 + h * 30.0);
     float cov = 1.0 - smoothstep(0.82, 1.0, e);
-    if (cov > best.x) best = vec3(cov, step(0.72, fract(h * 37.1)), 1.0 - e);
+    if (cov > best.x) best = vec3(cov, step(0.85, fract(h * 37.1)), 1.0 - e);
   }
   return best;
 }
@@ -564,7 +566,7 @@ vec3 groundColor(vec2 p) {
     float bd = length(uv) / (1.0 + 0.1 * sin(3.0 * a + bb.y) + 0.06 * sin(5.0 * a + bb.y * 1.7));
     if (bd > 1.4) continue;
     col = mix(col, ${v3(COL.lip)} * (0.9 + 0.2 * n1), inside(bd, 1.13) * 0.85);
-    float sm = inside(bd, 1.0);
+    float sm = inside(bd + (n1 - 0.5) * 0.025, 1.0);
     vec3 sc = mix(${v3(COL.sand)}, ${v3(COL.sandDark)}, smoothstep(0.78, 1.0, bd) * 0.55);
     // rake lines along the bunker's long axis, wandering a little; faded out where they would alias
     vec2 luv = uv * b.zw;
@@ -594,7 +596,7 @@ vec3 groundColor(vec2 p) {
   if (dv.x > 0.0) {
     vec3 sandSeed = mix(${v3(lin('#a39a72'))}, ${v3(COL.teeLight)}, 0.25 + 0.35 * n4) * (0.9 + 0.2 * n1);
     vec3 soil = mix(${v3(lin('#4a3a28'))}, ${v3(lin('#6b5a3c'))}, n4);
-    tc = mix(tc, mix(sandSeed, soil, dv.y), dv.x * 0.92);
+    tc = mix(tc, mix(sandSeed, soil, dv.y), dv.x * mix(0.6, 0.85, dv.y));
   }
   col = mix(col, tc, tm);
   gRough = mix(gRough, 0.9, tm);
@@ -643,8 +645,15 @@ function axis(lo: number, hi: number, step: number, minV: number, maxV: number, 
 }
 /** The terrain as a grid of chunks (dense in the playing corridor), so the camera and frustum culling skip what is off screen. */
 function terrainChunks(): THREE.BufferGeometry[] {
-  const xs = axis(-110, 110, 2, -5200, 5200, 1.13);
-  const zs = axis(-372, 60, 2, -5600, 4200, 1.13);
+  // 2 m everywhere in the corridor, 0.5 m over the bunkers so their lips and faces are crisp
+  const refine = (arr: number[], spans: [number, number][]) => {
+    let out = arr.filter(v => !spans.some(([a, b]) => v > a && v < b));
+    for (const [a, b] of spans) for (let v = a; v <= b + 1e-6; v += 0.5) out.push(v);
+    out = [...new Set(out.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
+    return out;
+  };
+  const xs = refine(axis(-110, 110, 2, -5200, 5200, 1.13), BUNKERS.map(b => [Math.floor(b.x - b.rx * 1.7), Math.ceil(b.x + b.rx * 1.7)]));
+  const zs = refine(axis(-372, 60, 2, -5600, 4200, 1.13), BUNKERS.map(b => [Math.floor(b.z - b.rx * 1.7), Math.ceil(b.z + b.rx * 1.7)]));
   const nx = xs.length, nz = zs.length;
   const pos = new Float32Array(nx * nz * 3), nrm = new Float32Array(nx * nz * 3), v = new THREE.Vector3();
   let k = 0;

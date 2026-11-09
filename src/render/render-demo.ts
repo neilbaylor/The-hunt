@@ -70,13 +70,16 @@ if (view === 'portrait') {
     camera.position.set(bx * 0.55, t.pos.y + 1.7, bz + 9); camera.lookAt(bx, t.pos.y + 1.1, bz);
   }
   focus.copy(t.pos);
+} else if (view === 'aim') { camera.position.set(0.5, 50, 22); camera.lookAt(0, 0, -110); focus.set(0, 0, -80);
+} else if (view === 'bunker') { camera.position.set(-1, 3.2, -112); camera.lookAt(-6.5, 0, -126); focus.set(-6.5, 0, -126);
+} else if (view === 'cup') { const t = range.targets[0]; camera.position.set(t.pos.x + 0.9, t.pos.y + 0.75, t.pos.z + 1.1); camera.lookAt(t.pos.x, t.pos.y + 0.12, t.pos.z); focus.copy(t.pos);
 } else if (view === 'bg') { camera.fov = 18; camera.updateProjectionMatrix(); camera.position.set(0.7, 1.75, 3.6); camera.lookAt(0, 12, -500);
 } else if (view === 'trees') { camera.position.set(22, 1.9, -30); camera.lookAt(62, 6.0, -22); focus.set(45, 0, -28);
 } else if (view === 'turf') { camera.position.set(1.2, 0.9, 1.6); camera.lookAt(-0.2, 0.0, -1.5); }
 else if (view === 'flight') {
   const z = -150 * YD; camera.position.set(1.5, 25, z + 30); camera.lookAt(0, 6, z - 120); focus.set(0, range.heightAt(0, z - 20), z - 20);
 } else { camera.position.set(-0.6, 1.62, 5.2); camera.lookAt(0.45, 0.92, -22); }
-if (view !== 'flight') { range.setShadowFocus(new THREE.Vector3(0.95, 0, 0), 3.5); range.contactShadow(new THREE.Vector3(0.95, 0, 0), 1, 0.5); }
+if (view === 'portrait' || view === 'landscape' || view === 'turf') { range.setShadowFocus(new THREE.Vector3(0.95, 0, 0), 3.5); range.contactShadow(new THREE.Vector3(0.95, 0, 0), 1, 0.5); }
 
 const stats = document.getElementById('stats')!;
 if (qs.get('stats') === '0') stats.style.display = 'none';
