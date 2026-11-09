@@ -101,13 +101,24 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   // the portrait already carries its own light and shade: a soft, slightly sheeny skin that doesn't add much more
   const mat = new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.62, sheen: 0.3, sheenColor: new THREE.Color('#ff9a7a'), sheenRoughness: 0.55 });
   const face = { gaze: new THREE.Vector2(), blink: { value: 0 }, gazeU: { value: new THREE.Vector2() } };
+  // the irises cropped from the unwrap (a small PNG inside head.bin); a flat blue-grey until it decodes
+  const c0 = document.createElement('canvas'); c0.width = c0.height = 2; const g0 = c0.getContext('2d')!; g0.fillStyle = '#7d97a8'; g0.fillRect(0, 0, 2, 2);
+  const irisTex = new THREE.Texture(c0); irisTex.colorSpace = THREE.SRGBColorSpace; irisTex.needsUpdate = true;
+  const irisU: { value: THREE.Texture<any> } = { value: irisTex };
+  if (G.arrays.irisPng) {
+    const png = arr('irisPng') as Uint8Array, url = URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' })), im = new Image();
+    // a new texture once it decodes (a texture's size is fixed at its first upload)
+    im.onload = () => { const t2 = new THREE.Texture(im); t2.colorSpace = THREE.SRGBColorSpace; t2.needsUpdate = true; irisU.value = t2; URL.revokeObjectURL(url); }; im.src = url;
+  }
+  const scl = ((G as any).eyes?.[0]?.sclera as number[] | undefined) ?? [0.72, 0.62, 0.58];
+  const sclera = new THREE.Color(scl[0] * 1.15, scl[1] * 1.15, scl[2] * 1.15).convertSRGBToLinear();
   const irisCol = new THREE.Color(irisHex);
   mat.onBeforeCompile = sh => {
     sh.uniforms.uGaze = face.gazeU; sh.uniforms.uBlink = face.blink;
-    sh.uniforms.uIris = { value: irisCol }; sh.uniforms.uLid = { value: new THREE.Color(G.skinColor[0], G.skinColor[1], G.skinColor[2]).convertSRGBToLinear().multiplyScalar(0.85) };
+    sh.uniforms.uIris = { value: irisCol }; sh.uniforms.uIrisTex = irisU; sh.uniforms.uSclera = { value: sclera }; sh.uniforms.uLid = { value: new THREE.Color(G.skinColor[0], G.skinColor[1], G.skinColor[2]).convertSRGBToLinear().multiplyScalar(0.85) };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 eyeA; attribute vec2 eyeB; varying vec4 vEyeA; varying vec2 vEyeB;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEyeA = eyeA; vEyeB = eyeB;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec4 vEyeA; varying vec2 vEyeB; uniform vec2 uGaze; uniform float uBlink; uniform vec3 uIris; uniform vec3 uLid;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec4 vEyeA; varying vec2 vEyeB; uniform vec2 uGaze; uniform float uBlink; uniform vec3 uIris; uniform vec3 uLid; uniform sampler2D uIrisTex; uniform vec3 uSclera;')
       .replace('#include <map_fragment>', `#include <map_fragment>
       {
         // the eye opening, drawn here so it can look around and blink: e = (across, up), |e| < 1 inside
@@ -118,14 +129,18 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
           vec2 ic = vEyeB + uGaze * vec2(0.32, 0.22);
           vec2 q = vec2(e.x - ic.x, (e.y - ic.y) * asp);          // in across-units, round
           float d = length(q) / 0.475;                            // 1 at the iris edge (6.2 mm on a 13 mm half-eye)
-          float corner = smoothstep(0.55, 1.0, abs(e.x));
-          vec3 sclera = mix(vec3(0.80, 0.74, 0.70), vec3(0.62, 0.42, 0.38), corner);
-          vec3 iris = uIris * (0.55 + 0.45 * smoothstep(1.0, 0.35, d)) * (0.9 + 0.2 * fract(sin(atan(q.y, q.x) * 23.0) * 43758.5));
-          iris = mix(iris, vec3(0.02), smoothstep(0.42, 0.36, d));                      // pupil
-          iris = mix(iris, uIris * 0.35, smoothstep(0.8, 1.0, d));                      // limbal ring
-          vec3 eye = mix(iris, sclera, smoothstep(0.98, 1.04, d));
-          eye *= 1.0 - 0.55 * smoothstep(-0.1, 0.9, e.y);                              // the upper lid's shadow
-          eye += vec3(0.5) * smoothstep(0.12, 0.0, length(q - vec2(0.12, 0.10) * 0.475)); // catchlight
+          // the unwrap's own iris (blue-grey, fibres, darker limbal ring), cropped by head.py to ±1.25 radii
+          vec2 tuv = clamp(vec2(0.25 + q.x / (0.475 * 1.25) * 0.25, 0.5 + q.y / (0.475 * 1.25) * 0.5), vec2(0.01), vec2(0.49, 0.99));
+          vec3 iris = texture2D(uIrisTex, tuv).rgb;
+          iris = mix(iris, iris * 0.55, smoothstep(0.82, 1.0, d));                     // limbal ring
+          float corner = smoothstep(0.45, 1.0, abs(e.x));
+          vec3 sclera = uSclera * mix(1.0, 0.75, corner);
+          vec3 eye = mix(iris, sclera, smoothstep(0.97, 1.05, d));
+          eye *= 1.0 - 0.6 * smoothstep(-0.2, 0.85, e.y);                              // the upper lid and lashes shade the top
+          eye *= 1.0 - 0.25 * smoothstep(-0.5, -0.95, e.y);                            // and the lower lid a little
+          eye += vec3(0.35) * smoothstep(0.16, 0.02, length(vec2(e.x - 0.1, (e.y - 0.25) * asp)));   // a soft wet highlight (stays put)
+          // toward the lids the painted texture (lids, lashes, corners) takes over again
+          eye = mix(eye, diffuseColor.rgb, smoothstep(0.62, 0.92, rr));
           // blink: the upper lid comes down to the lower; a lash line at its edge
           float lidY = 1.0 - 2.05 * uBlink;
           float lid = smoothstep(lidY - 0.06, lidY + 0.06, e.y + 0.15 * e.x * e.x);
@@ -164,6 +179,9 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   let pr = prof.map(x => x ?? 0.09);
   pr = pr.map((_, i) => Math.max(...[-2, -1, 0, 1, 2].map(j => pr[(i + j + 64) % 64])));
   pr = pr.map((_, i) => (pr[(i + 63) % 64] + pr[i] + pr[(i + 1) % 64]) / 3);
+  // buildVisor stands the band 11 mm off the measured surface (room for MakeHuman's hair shell); here the hair is
+  // pressed in under the band, so it sits ~5 mm off: snug on the forehead and temples
+  pr = pr.map(r => r - 0.006);
   const visor = { center: [vc.x, vc.y, vc.z], rx: (xmax - xmin) / 2 + 0.0115, rz: (zmax - zmin) / 2 + 0.0125, profile: pr };
 
   // ── the face's life: idle blinks every 2–6 s (~120 ms), small glances, a look-at target, expressions ──
@@ -235,7 +253,7 @@ export function buildHairCards(head: GenHead, opts: { color: string; eye: THREE.
     tot += vb.clone().sub(va).cross(vc.clone().sub(va)).length() / 2 * Math.min(1, (m - 0.55) / 0.3); tris.push(i); cum.push(tot);
   }
   if (!tris.length) return null;
-  const e = opts.eye, base = new THREE.Color(opts.color), N = opts.count ?? 6000, SEG = 3;
+  const e = opts.eye, base = new THREE.Color(opts.color), N = opts.count ?? 5000, SEG = 3;
   const pos: number[] = [], uv: number[] = [], col: number[] = [], nrmA: number[] = [], ind: number[] = [];
   const root = new THREE.Vector3(), nrm = new THREE.Vector3(), gdir = new THREE.Vector3(), side = new THREE.Vector3(), p = new THREE.Vector3(), tn = new THREE.Vector3();
   let skipped = 0;
@@ -255,12 +273,16 @@ export function buildHairCards(head: GenHead, opts: { color: string; eye: THREE.
     gdir.addScaledVector(nrm, -gdir.dot(nrm)).normalize();
     side.crossVectors(nrm, gdir).normalize();
     const under = opts.band && Math.abs(root.y - opts.band.y) < 0.022 ? 1 : 0;
-    const L = (0.007 + 0.022 * top * (0.7 + 0.3 * front)) * (0.7 + 0.6 * rand()) * (under ? 0.5 : 1), W = (0.0035 + 0.003 * rand()) * (0.7 + 0.3 * top);
-    const lift = (0.0008 + 0.0035 * top * (0.6 + 0.4 * front)) * (under ? 0.1 : 1);
+    // lying fairly flat: modest length on top, a hair's lift off the scalp; a few fine stray strands break the outline
+    const fine = rand() < 0.1 ? 1 : 0;
+    const L = (0.006 + 0.014 * top * (0.7 + 0.3 * front)) * (0.7 + 0.6 * rand()) * (under ? 0.5 : 1) * (fine ? 1.4 : 1);
+    const W = fine ? 0.0012 + 0.0008 * rand() : (0.0025 + 0.002 * rand()) * (0.7 + 0.3 * top);
+    const lift = (0.0006 + 0.0015 * top * (0.6 + 0.4 * front)) * (under ? 0.1 : 1) + fine * 0.002 * top;
     const b0 = pos.length / 3, shade = 0.7 + 0.5 * rand();
     for (let s2 = 0; s2 <= SEG; s2++) {
       const t = s2 / SEG;
-      p.copy(root).addScaledVector(gdir, L * t).addScaledVector(nrm, 0.001 + lift * Math.sin(t * Math.PI * 0.75));
+      // bend round the skull (radius ~9 cm) so the strand lies on the head instead of leaving it on a tangent
+      p.copy(root).addScaledVector(gdir, L * t).addScaledVector(nrm, 0.001 + lift * Math.sin(t * Math.PI * 0.75) - (L * t) ** 2 / (2 * 0.09));
       const w = W * (1 - 0.4 * t);
       pos.push(p.x - side.x * w / 2, p.y - side.y * w / 2, p.z - side.z * w / 2, p.x + side.x * w / 2, p.y + side.y * w / 2, p.z + side.z * w / 2);
       const ux = rand() * 0.6; uv.push(ux, t, ux + 0.4, t);

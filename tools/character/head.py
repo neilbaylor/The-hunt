@@ -33,6 +33,7 @@ ap.add_argument('--mpfb', default='/tmp/mh/mpfb2/src/mpfb/data', help='MakeHuman
 ap.add_argument('--neck', default='cap', choices=['cap', 'loft'], help="cap: keep the generator's cap, the body's neck shows below; loft: grow a neck down into the collar")
 ap.add_argument('--head-scale', type=float, default=1.0)
 ap.add_argument('--head-width', type=float, default=1.04)
+ap.add_argument('--hair-top', type=float, default=0.125, help='top of the hair above the eyes (m)')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
 ap.add_argument('--debug', default=None, help='directory for debug images')
@@ -191,6 +192,24 @@ t = eye_lmh - s * (R @ eye_g) * WID
 def place(P): return (s * (R @ P.T)).T * WID + t
 FV = place(GV); FN = (R @ GN.T).T / WID; FN /= np.linalg.norm(FN, axis=1, keepdims=True)
 lm_f = place(lm_g)
+# his hair lies fairly flat (3-5 cm, swept back): the generator's is a tall bush. Squash everything above the
+# visor band down so the top sits ~1.3 cm over a skull of the body's size, and press the hair in round the band
+eyeYf = (lm_f[468, 1] + lm_f[473, 1]) / 2
+yb = eyeYf + 0.045
+top_now, top_want = FV[:, 1].max(), eyeYf + A.hair_top
+kq = (top_want - yb) / max(top_now - yb, 1e-6)
+def flatten(P):
+    P = P.copy(); up = P[:, 1] > yb
+    P[up, 1] = yb + (P[up, 1] - yb) * kq
+    # round the band: pull the hair (sides and back, not the forehead) 4 mm in toward the skull's axis
+    cz_ = (FV[:, 2].min() + FV[:, 2].max()) / 2
+    a_ = np.abs(np.arctan2(P[:, 0], P[:, 2] - cz_))
+    w_ = np.clip((a_ - np.radians(35)) / np.radians(25), 0, 1) * np.clip(1 - np.abs(P[:, 1] - (yb + 0.008)) / 0.03, 0, 1)
+    d_ = P[:, [0, 2]] - [0, cz_]; r_ = np.linalg.norm(d_, axis=1, keepdims=True) + 1e-9
+    P[:, [0, 2]] -= d_ / r_ * (0.004 * w_)[:, None]
+    return P
+FV = flatten(FV); lm_f = flatten(lm_f)
+print(f'hair: top {top_now - eyeYf:.3f} m above the eyes → {top_want - eyeYf:.3f} (above-band scale {kq:.2f})')
 res = np.linalg.norm(lm_f[upper] - lm_mh[upper], axis=1)
 ang = np.degrees(np.arctan2(R[2, 1], R[1, 1]))
 print(f'fit: scale {s:.4f} m/unit, pitch {ang:.1f}°, eye spacing {ipd_mh * 1000:.1f} mm (landmark {ipd_lm_mh * 1000:.1f}), upper-face rms {np.sqrt((res ** 2).mean()) * 1000:.1f} mm')
@@ -240,7 +259,7 @@ for it in range(14):
 # a bit more length on top (his hair is longer on top, swept back), most at the front of the crown
 _vn0 = vnormals(LV, LF)
 lift = np.clip((LV[:, 1] - (eyeY0 + 0.07)) / 0.04, 0, 1) ** 1.2 * (0.7 + 0.3 * np.clip((LV[:, 2] - (eye_lmh[2] - 0.12)) / 0.1, 0, 1))
-LV += _vn0 * (0.006 * lift)[:, None]
+LV += _vn0 * (0.0 * lift)[:, None]   # (no extra lift: the hair is squashed flat above instead)
 if A.neck == 'loft':
     # the generator cuts the head off flat at about chin level: grow a neck down from that cut to the body's own neck
     # (a loft from the cut ring to the body's neck surface just above the collar), so the seam lies on the body's skin
@@ -340,7 +359,7 @@ EXPR = {
     'grimace': {'mouth-depression-retraction': 0.6, 'mouth-retraction': 0.3, 'neck-platysma': 0.5, 'eyebrows-left-down': 0.5, 'eyebrows-right-down': 0.5, 'eye-left-slit': 0.4, 'eye-right-slit': 0.4},
     'browUp': {'eyebrows-left-up': 1.0, 'eyebrows-right-up': 1.0},
     'browDown': {'eyebrows-left-down': 0.8, 'eyebrows-right-down': 0.8, 'eyebrows-left-inner-up': 0.2, 'eyebrows-right-inner-up': 0.2},
-    'jawOpen': {'mouth-open': 0.6},
+    'jawOpen': {'mouth-open': 0.4},
 }
 morph_d = {}
 base_obj = os.path.join(A.mpfb, '3dobjs/base.obj')
@@ -383,10 +402,17 @@ if os.path.exists(base_obj):
     dq, iq = cKDTree(WV).query(LV, k=6)
     wq = 1 / (dq + 1e-4); wq /= wq.sum(1, keepdims=True)
     reach = np.clip((0.014 - dq[:, 0]) / 0.008, 0, 1)        # only where the warped MakeHuman face lies on ours
+    # the painted teeth: inside the inner lip line (seen from the front), a little in front of the mouth's depth
+    INNER = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95]
+    poly = (lm_f[INNER][:, :2] * 1e4).astype(np.float32)
+    sd = np.array([cv2.pointPolygonTest(poly, (float(px * 1e4), float(py * 1e4)), True) for px, py in LV[:, :2]]) / 1e4
+    teeth_m = np.clip((sd + 0.003) / 0.003, 0, 1) * (np.abs(LV[:, 2] - lm_f[13, 2]) < 0.02)
+    print('  teeth kept rigid:', int((teeth_m > 0.5).sum()), 'verts')
     reach *= np.clip(((LV - cen) @ pn - BAND) / 0.01, 0, 1)  # nothing on the neck loft
     for name, parts in EXPR.items():
         d = sum(w * tgt(k) for k, w in parts.items()) * kunit
         dv = (d[headv][iq] * wq[..., None]).sum(1) * reach[:, None]
+        if name in ('grimace', 'jawOpen', 'smile'): dv *= (1 - teeth_m)[:, None]   # the painted teeth stay rigid; only the lips move
         morph_d[name] = dv
         print(f'  expression {name}: {int((np.linalg.norm(dv, axis=1) > 2e-4).sum())} verts move, max {np.linalg.norm(dv, axis=1).max() * 1000:.1f} mm')
 else:
@@ -546,6 +572,14 @@ known = wsum > 0.05
 col[known] /= wsum[known, None]
 conf = np.clip(wsum / 0.4, 0, 1)
 
+def snoise(q):
+    # smooth value noise (trilinear), q already scaled
+    i = np.floor(q).astype(np.int64); f = q - i; f = f * f * (3 - 2 * f)
+    def h(o): g = i + o; return (((g[:, 0] * 73856093) ^ (g[:, 1] * 19349663) ^ (g[:, 2] * 83492791)) % 1000003) / 1000003.0
+    c = [h(np.array([a, b, c_])) for a in (0, 1) for b in (0, 1) for c_ in (0, 1)]
+    x0 = [c[k] * (1 - f[:, 2]) + c[k + 1] * f[:, 2] for k in (0, 2, 4, 6)]
+    y0 = [x0[0] * (1 - f[:, 1]) + x0[1] * f[:, 1], x0[2] * (1 - f[:, 1]) + x0[3] * f[:, 1]]
+    return y0[0] * (1 - f[:, 0]) + y0[1] * f[:, 0]
 # what has no photo: hair above the hairline, skin below it (the nape / behind the ears)
 eyeY = (lm_f[IRIS[0], 1] + lm_f[IRIS[1], 1]) / 2
 ear_lo = eyeY - 0.045
@@ -554,8 +588,8 @@ ear_lo = eyeY - 0.045
 ear_z = np.mean([e_[2] for e_ in ear_pts]) if ear_pts else eye_lmh[2] - 0.08
 xr = np.abs(cp[:, 0] - eye_lmh[0]); back = np.clip(-(cp[:, 2] - (ear_z - 0.012)) / 0.02, 0, 1)   # hair starts just behind the ears
 nape = eyeY - 0.045 - 0.03 * np.clip(1 - xr / 0.065, 0, 1) ** 1.5
-ragged = 0.006 * (np.sin(cp[:, 0] * 900) * 0.5 + np.sin(cp[:, 0] * 2300 + 1.3) * 0.5)
-hair_amt = np.clip((cp[:, 1] - nape - ragged) / 0.008 + 0.5, 0, 1) * back
+ragged = 0.0015 * (snoise(cp * 400) - 0.5)
+hair_amt = np.clip((cp[:, 1] - nape - ragged) / 0.016 + 0.5, 0, 1) ** 1.3 * back   # a soft, tapered nape line
 hair_amt = np.maximum(hair_amt, np.clip((cp[:, 1] - (eyeY + 0.075)) / 0.01, 0, 1))
 hairy = hair_amt > 0.5
 lum = col.mean(1)
@@ -579,14 +613,6 @@ def vnoise(p, f):
     g = np.floor(p * f).astype(np.int64); h = ((g[:, 0] * 73856093) ^ (g[:, 1] * 19349663) ^ (g[:, 2] * 83492791)) % 1000003
     return (h / 1000003.0)
 relief = np.clip(np.einsum('ij,ij->i', hiN, tn), 0, 1)
-def snoise(q):
-    # smooth value noise (trilinear), q already scaled
-    i = np.floor(q).astype(np.int64); f = q - i; f = f * f * (3 - 2 * f)
-    def h(o): g = i + o; return (((g[:, 0] * 73856093) ^ (g[:, 1] * 19349663) ^ (g[:, 2] * 83492791)) % 1000003) / 1000003.0
-    c = [h(np.array([a, b, c_])) for a in (0, 1) for b in (0, 1) for c_ in (0, 1)]
-    x0 = [c[k] * (1 - f[:, 2]) + c[k + 1] * f[:, 2] for k in (0, 2, 4, 6)]
-    y0 = [x0[0] * (1 - f[:, 1]) + x0[1] * f[:, 1], x0[2] * (1 - f[:, 1]) + x0[3] * f[:, 1]]
-    return y0[0] * (1 - f[:, 0]) + y0[1] * f[:, 0]
 # strands follow the way the hair grows: swept straight back on top, down and back at the sides and nape
 topk = np.clip((cp[:, 1] - (eyeY + 0.04)) / 0.05, 0, 1)
 gd = np.c_[np.zeros(len(cp)), -1 + 1.0 * topk, -0.6 - 0.6 * topk]
@@ -665,6 +691,24 @@ for (ca, cb, up, lo_, ir) in ((33, 133, 159, 145, 468), (362, 263, 386, 374, 473
     print(f"  eye: half-width {np.linalg.norm(X) * 1000:.1f} mm, half-opening {np.linalg.norm(Y) * 1000:.1f} mm, iris at {np.round(eyeB[near][0], 2) if near.any() else '-'}, {int(near.sum())} verts")
 # colours the shader paints with, from the texture round the eyes
 eyes_uv = eyes_info
+# the unwrap's own irises (blue-grey, limbal ring, fibres), cropped for the shader, and its sclera tone
+iris_png = None
+if A.unwrap not in (None, 'none') and os.path.exists(A.unwrap):
+    import io
+    tiles = []
+    for k_, (ic_, ring_) in enumerate(((468, (469, 470, 471, 472)), (473, (474, 475, 476, 477)))):
+        cxy = Lu[ic_]; rad = float(np.mean(np.linalg.norm(Lu[list(ring_)] - cxy, axis=1)))
+        box = (cxy[0] - rad * 1.25, cxy[1] - rad * 1.25, cxy[0] + rad * 1.25, cxy[1] + rad * 1.25)
+        tiles.append(Image.fromarray(U.astype(np.uint8)).crop(tuple(int(round(b_)) for b_ in box)).resize((96, 96), Image.LANCZOS))
+        # sclera: between the iris and each corner of the eye
+        crn = Lu[[33, 133] if k_ == 0 else [362, 263]]
+        pts = [cxy + (c_ - cxy) * f_ for c_ in crn for f_ in (0.55, 0.65)]
+        eyes_uv[k_]['sclera'] = list(map(float, np.median(np.array([U[int(y_) - 1:int(y_) + 2, int(x_) - 1:int(x_) + 2].reshape(-1, 3) for x_, y_ in pts]).reshape(-1, 3), 0) / 255))
+        eyes_uv[k_]['irisCrop'] = 1.25        # the tile spans ±1.25 iris radii
+    sheet_ = Image.new('RGB', (192, 96)); sheet_.paste(tiles[0], (0, 0)); sheet_.paste(tiles[1], (96, 0))
+    buf_ = io.BytesIO(); sheet_.save(buf_, 'PNG'); iris_png = np.frombuffer(buf_.getvalue(), np.uint8)
+    if DBG: sheet_.save(os.path.join(DBG, 'irises.png'))
+    print('  irises from the unwrap; sclera', [np.round(np.array(e_['sclera']) * 255) for e_ in eyes_uv])
 # ───────────────────────── skin tone for the body ─────────────────────────
 # the body's skin texture at the forearms/neck vs the face's skin: a multiplier for the body skin material
 sk_img = np.asarray(Image.open(os.path.join(os.path.dirname(binp), 'skin.jpg')).convert('RGB')).astype(float)
@@ -692,6 +736,7 @@ def put(name, a):
 put('position', PV.ravel()); put('normal', PN.ravel()); put('uv', UV.astype(np.float32).ravel())
 put('index', IDX.astype(np.uint16 if len(UV) < 65536 else np.uint32).ravel())
 put('hair', np.round(np.clip(hair_v, 0, 1) * 255).astype(np.uint8))
+if iris_png is not None: put('irisPng', iris_png)
 put('skinIndex', bidx.ravel()); put('skinWeight', bw.ravel()); put('seam', seamw)
 _ea, _eb = eyeA[vmap], eyeB[vmap]; _ei = np.nonzero(_ea[:, 0] < 8)[0]          # sparse: only the verts round the eyes
 put('eye_i', _ei.astype(np.uint16 if len(UV) < 65536 else np.uint32)); put('eye_v', np.c_[_ea[_ei], _eb[_ei]].astype(np.float32).ravel())
