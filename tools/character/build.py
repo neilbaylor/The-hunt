@@ -510,6 +510,37 @@ for vi in _bd:
     elif Vshirt[vi, 1] < _lo + 0.06:
         Vshirt[vi, 1] = _lo
 
+# straight-cut trouser legs: push each leg out to a minimum radius round the hip→ankle line
+for sfx in 'lr':
+    hip = joint[BONES.index(f'thigh_{sfx}')]; ank = joint[BONES.index(f'foot_{sfx}')]; knee = joint[BONES.index(f'calf_{sfx}')]
+    ax = ank - hip; L2 = float(np.dot(ax, ax))
+    for vi in np.nonzero(pants)[0]:
+        if wsum(vi, [f'thigh_{sfx}', f'calf_{sfx}']) < 0.5 or Vpants[vi, 1] > hip[1] + 0.02:
+            continue
+        t = float(np.clip(np.dot(Vpants[vi] - hip, ax) / L2, 0, 1)); c = hip + ax * t
+        r = Vpants[vi] - c; rl = np.linalg.norm(r)
+        rmin = np.interp(t, [0, 0.45, 1.0], [C['thighR'], C['kneeR'], C['hemR']])
+        if C.get('shorts'): rmin = np.interp(t, [0, 0.4], [C['thighR'], C['shortsHemR']])  # roomy, straight leg opening
+        want = max(rl + pants_off[vi], rmin)
+        dirv = r / max(rl, 1e-6)
+        # inner side near the crotch: don't cross the body's midline
+        inward = -np.sign(c[0]) * dirv[0]
+        if inward > 0.3:
+            lim = (abs(c[0]) - 0.004) / max(inward, 1e-3)
+            want = min(want, max(rl + 0.004, lim))
+        # blend the straight cut in below the hip so there's no ledge
+        yy = Vpants[vi, 1]; bl = float(np.clip((hip[1] + 0.02 - yy) / 0.16, 0, 1)); bl = bl * bl * (3 - 2 * bl)
+        cur = rl + pants_off[vi]
+        Vpants[vi] = c + dirv * (cur + bl * (want - cur))
+        pants_off[vi] = 0.0
+# clean, level leg hems: the mask's edge follows the body's triangles, so move the bottom boundary onto the hem
+# line (this also closes the little slit the mask leaves up the inside of each leg)
+_nh = 0
+for vi in np.nonzero(pants)[0]:
+    if Vpants[vi, 1] < hem_y + 0.15 and any(not pants[n] for n in NB[vi]):
+        Vpants[vi] = Vpants[vi] + N[vi] * pants_off[vi]; pants_off[vi] = 0.0; Vpants[vi, 1] = hem_y; _nh += 1
+print('shorts hem: levelled', _nh, 'boundary vertices at y', round(float(hem_y), 3))
+
 # tucked in: a soft blousing of fabric just above the belt (more at the back and sides, in a few soft vertical
 # folds where it gathers into the waistband); below the belt line it stays inside the shorts
 if not C.get('untucked'):
@@ -523,7 +554,7 @@ if not C.get('untucked'):
         th = math.atan2(Vshirt[vi, 0], Vshirt[vi, 2] - _cz); back = 0.5 - 0.5 * math.cos(th)
         dv = np.array([Vshirt[vi, 0], 0.0, Vshirt[vi, 2] - _cz]); dv /= max(np.linalg.norm(dv), 1e-6)
         fold = 0.65 + 0.35 * math.sin(th * 9 + 1.3 * math.sin(th * 3))
-        Vshirt[vi] += dv * C.get('blouse', 0.012) * math.exp(-(dy / 0.017) ** 2) * (0.7 + 0.6 * back) * fold
+        Vshirt[vi] += dv * C.get('blouse', 0.012) * math.exp(-(dy / C.get('blouseWidth', 0.015)) ** 2) * (0.7 + 0.6 * back) * fold
         if y < belt_y + 0.01:   # under the waistband: keep it at least 4 mm inside the shorts
             d, j = kdp.query(Vshirt[vi])
             if d < 0.06:

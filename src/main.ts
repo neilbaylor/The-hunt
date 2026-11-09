@@ -640,7 +640,7 @@ const faceBadge = new FaceBadge(renderer, scene, () => golfer.body.bones[5] ?? n
 golfer.root.traverse(o => o.layers.enable(AVATAR_LAYER));
 scene.traverse(o => { if ((o as THREE.Light).isLight) o.layers.enable(AVATAR_LAYER); });
 requestAnimationFrame(t => { last = t; frame(t); });
-(window as any).__game = { faceBadge, wind, camera,
+(window as any).__game = { faceBadge, wind, camera, range,
   golfer, ball, hud, aim, aimCtl, shotcam, get state() { return state; }, skipToLanding, skipToLandingNow,
   /** debug (storyboards): stop the RAF loop and step the game by hand: manual(true); tick(ms) */
   manual(on: boolean) { manualClock = on; if (!on) requestAnimationFrame(t => { last = t; frame(t); }); },

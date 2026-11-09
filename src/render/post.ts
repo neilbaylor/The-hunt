@@ -5,6 +5,9 @@
 //   med  : render → depth of field → bloom (half res) → output (tone map + sRGB) → grade + vignette → FXAA → sharpen
 //   high : MSAA render → depth of field → GTAO → bloom → output → grade + vignette → sharpen
 //
+// med/high also run the hand-drawn realism finish (styles.ts HandDrawnPass) right after the scene render: ink contours,
+// shadow hatching, paper grain, the face kept clean (setFace). ?style=real turns it off (setFinish('real')); low skips it.
+//
 // Depth of field is the broadcast "long lens" look, kept subtle: the golfer, the turf, the flags and the side
 // trees stay sharp; only the far treeline and the hills soften a touch. Only background pixels are blurred and only background pixels feed the blur,
 // so the golfer's silhouette never smears. setDof(0) turns it off (ball-flight cameras).
