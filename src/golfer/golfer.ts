@@ -196,7 +196,7 @@ export class Golfer {
       let lo = -1.2, hi = -0.1;
       for (let it = 0; it < 20; it++) {
         const z = (lo + hi) / 2;
-        this.pelvisBase.set(this.stanceX, this.body.skel.joint[BONE.pelvis].y - 0.03 * k - st.stance * 0.01, z);
+        this.pelvisBase.set(this.stanceX, this.body.skel.joint[BONE.pelvis].y - kneeDrop * k - st.stance * 0.01, z);
         this.addressKeys(pos); this.rig.apply(pos);
         const sh = this.rig.P[BONE.upperL];
         // shoulder a touch outside the hands (toward the ball) — a plumb line from it hangs just inside the toes
@@ -205,13 +205,20 @@ export class Golfer {
       // arm length to the actual wrist on the grip (real hands), else to the grip less a hand
       return this.extras ? this.rig.P[BONE.upperL].distanceTo(wristAddr) : this.rig.P[BONE.upperL].distanceTo(this.gripAddr) - 0.072 * k;
     };
-    let tlo = -0.25, thi = 0.35;
-    for (let it = 0; it < 14; it++) {
+    // knee flex adapts to the body's proportions: the most athletic flex for which a natural spine bend still lets
+    // the lead arm hang straight to the hands (the tilt search isn't pinned at its upright limit)
+    let kneeDrop = 0.05;
+    for (; kneeDrop >= -0.02; kneeDrop -= 0.01) {
+      let tlo = -0.25, thi = 0.35;
+      for (let it = 0; it < 14; it++) {
+        this.tiltAdj = (tlo + thi) / 2;
+        const d = solveZ();
+        if (d > armLen * (this.extras ? 0.999 : 0.985)) tlo = this.tiltAdj; else thi = this.tiltAdj; // too far: bend over more
+      }
       this.tiltAdj = (tlo + thi) / 2;
-      const d = solveZ();
-      if (d > armLen * (this.extras ? 0.999 : 0.985)) tlo = this.tiltAdj; else thi = this.tiltAdj; // too far: bend over more
+      if (this.tiltAdj > -0.2) break;
     }
-    this.tiltAdj = (tlo + thi) / 2; solveZ();
+    solveZ();
     // swing circle: plane through the shaft line and the target line
     this.e1.copy(this.club.shaftDir);
     this.e2.set(-1, 0, 0).addScaledVector(this.e1, this.e1.x).normalize();

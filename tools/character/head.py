@@ -42,6 +42,7 @@ ap.add_argument('--hair-top', type=float, default=0.125, help='top of the hair a
 ap.add_argument('--rest', default='closed', choices=['closed', 'grin'], help='rest face: a relaxed closed-mouth smile, or the portrait\'s open grin')
 ap.add_argument('--rest-smile', type=float, default=-0.6, help='smile morph baked into the rest face')
 ap.add_argument('--real-photos', default='8716142c,ee55797f,efc78715,f9637097', help='his photos the central face is projected from (name prefixes; empty = none)')
+ap.add_argument('--skin-lift', type=float, default=6.0, help='Lab L added to the real-photo face')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
 ap.add_argument('--debug', default=None, help='directory for debug images')
@@ -901,6 +902,7 @@ if REAL and 'mv_cams' in globals():
             cw = np.cumsum(sw, 1); half = cw[:, -1:] / 2; j_ = np.argmax(cw >= half, axis=1)
             rc[:, k] = sv[np.arange(len(cp)), j_]
         rconf = np.clip(Wt_.sum(1) / 0.8, 0, 1)
+        if A.skin_lift: rc = lab2rgb(rgb2lab(rc) + [A.skin_lift, 0, 0])   # selfies under-expose a little; he reads lighter
         m_ = rconf * cmask
         # the unwrap (sides, ears, neck, scalp) carried onto the real skin: Lab mean/spread over the cheeks both see
         both = (m_ > 0.5) & (conf > 0.7) & (cp[:, 1] < (lm_f[468, 1] + lm_f[473, 1]) / 2 - 0.01) & (cp[:, 1] > lm_f[152, 1] + 0.01)
