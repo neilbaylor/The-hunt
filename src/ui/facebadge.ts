@@ -62,8 +62,9 @@ export class FaceBadge {
   }
 
   /** the swing word under the face; stays until the next swing */
-  setWord(text: string, cls: string) {
+  setWord(text: string, cls: string, sub = '') {
     this.word.className = 'face-word ' + cls; this.word.textContent = text;
+    if (sub) { const s = document.createElement('small'); s.className = 'face-shape'; s.textContent = sub; this.word.appendChild(s); }
     this.word.classList.remove('in'); void this.word.offsetWidth; this.word.classList.add('in');
   }
   clearWord() { this.word.textContent = ''; this.word.className = 'face-word'; this.bubble.classList.remove('on'); }

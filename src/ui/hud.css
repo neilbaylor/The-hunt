@@ -507,6 +507,7 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 .face-word:empty { display: none; }
 .face-word.good { background: linear-gradient(180deg, #2ccf72, #129a4f); } .face-word.warn { background: linear-gradient(180deg, #ffb238, #ea7d00); } .face-word.bad { background: linear-gradient(180deg, #ef4a5e, #c8102e); }
 .face-word.in { animation: wordIn .5s cubic-bezier(.2,1.8,.4,1) both; }
+.face-word .face-shape { display: block; margin-top: 4px; font: 600 10.5px/1 'Fredoka', sans-serif; letter-spacing: .02em; opacity: .92; text-align: center; }
 @keyframes wordIn { from { transform: translateY(-10px) scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
 .face-bubble { position: absolute; left: 72px; top: 34px; max-width: 200px; font: 700 14px/1.25 'Nunito', sans-serif; color: #13294b; background: #fffaf0; padding: 8px 12px 9px; border-radius: 16px 16px 16px 4px; box-shadow: 0 4px 12px rgba(0,0,0,.22); opacity: 0; transform: translateY(6px) scale(.9); transform-origin: 0 0; transition: opacity .2s, transform .25s cubic-bezier(.2,1.6,.4,1); }
 .face-bubble.on { opacity: 1; transform: none; }

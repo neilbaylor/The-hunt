@@ -55,10 +55,12 @@ export interface SwingResult {
 export interface ShotPlan {
   launch: Launch;
   targetCarryYds: number;
-  tempoWord: 'Smooth' | 'Quick' | 'Late' | 'Slow push';
+  tempoWord: 'Very early' | 'Early' | 'Slightly early' | 'Perfect' | 'Slightly late' | 'Late' | 'Very late';
   tempoCls: 'good' | 'warn' | 'bad';
   driftWord: string; driftCls: 'good' | 'warn' | 'bad';
   shape: string;
+  /** the curve in golfer's words, empty when it flies straight: Duck hook, Hook, Draw, Cut, Slice, Banana slice */
+  shapeWord: string;
   why: string;
   error: number;
 }
@@ -122,18 +124,28 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   const effAng = (execTilt / (0.42 * C.curve)) * 35 + ic * 9;   // a full planned curve reads as a Draw/Fade
   const curvesLeft = effAng < 0;
   const drawSide = lefty ? !curvesLeft : curvesLeft;
-  const shape = Math.abs(effAng) < 3 ? 'Straight' : drawSide ? (Math.abs(effAng) < 12 ? 'Draw' : 'Hook') : (Math.abs(effAng) < 12 ? 'Fade' : 'Slice');
-  const tempoWord = eT === 0 && eP < 0.2 ? 'Smooth' : r.offMs < -70 ? 'Quick' : r.offMs > 160 ? 'Late' : 'Slow push';
-  const tempoCls = tempoWord === 'Smooth' ? 'good' : (eT > 0.5 || eP > 0.5) ? 'bad' : 'warn';
-  const why = tempoWord === 'Smooth'
+  const aA = Math.abs(effAng);
+  const shapeWord = aA < 3 ? '' : drawSide
+    ? (aA < 12 ? 'Draw' : aA < 22 ? 'Hook' : 'Duck hook')
+    : (aA < 12 ? 'Cut' : aA < 22 ? 'Slice' : 'Banana slice');
+  const shape = shapeWord || 'Straight';
+  // timing, in plain words (the Perfect window is the same -70..+160 ms as before)
+  const o = r.offMs;
+  const tempoWord: ShotPlan['tempoWord'] =
+    o < -280 ? 'Very early' : o < -150 ? 'Early' : o < -70 ? 'Slightly early'
+    : o > 550 ? 'Very late' : o > 300 ? 'Late' : o > 160 ? 'Slightly late'
+    : eP >= 0.2 ? 'Slightly late'    // a slow, dragged push through arrives late
+    : 'Perfect';
+  const tempoCls = tempoWord === 'Perfect' ? 'good' : tempoWord.startsWith('Slightly') ? 'warn' : 'bad';
+  const why = tempoWord === 'Perfect'
     ? `${shape}${Math.abs(ang) >= 3 ? ` · pushed ${Math.abs(r.angle).toFixed(0)}° ${r.angle < 0 ? 'left' : 'right'}` : ''}`
-    : tempoWord === 'Quick' ? `Pushed ${Math.round(-r.offMs)} ms before the top`
-    : tempoWord === 'Late' ? `Hung at the top for ${Math.round(r.offMs)} ms`
+    : o < -70 ? `Pushed ${Math.round(-o)} ms before the top`
+    : o > 160 ? `Hung at the top for ${Math.round(o)} ms`
     : `Push took ${Math.round(r.pushMs)} ms. Snap it up quicker`;
   return {
     launch: { speed, launch: la * D, azimuth: startDeg * D, spinRpm: spin, tilt },
     targetCarryYds: carry, tempoWord, tempoCls,
     driftWord: eB === 0 ? 'Straight' : eB < 0.5 ? 'Wobbly' : 'Off line', driftCls: eB === 0 ? 'good' : eB < 0.5 ? 'warn' : 'bad',
-    shape, why, error: e,
+    shape, shapeWord, why, error: e,
   };
 }

@@ -11,7 +11,7 @@ const hud = new Hud(document.body, NEIL);
 hud.render(null);
 const plan = (word: ShotPlan['tempoWord'], cls: ShotPlan['tempoCls']): ShotPlan => ({
   launch: { speed: 50, launch: 0.3, azimuth: 0, spinRpm: 6000, tilt: 0 }, targetCarryYds: 160,
-  tempoWord: word, tempoCls: cls, driftWord: 'Straight', driftCls: 'good', shape: 'Draw', why: 'Draw · pushed 5° left', error: 0,
+  tempoWord: word, tempoCls: cls, driftWord: 'Straight', driftCls: 'good', shape: 'Draw', shapeWord: 'Draw', why: 'Draw · pushed 5° left', error: 0,
 });
 let card: CardData | null = null;
 const trail: [number, number][] = Array.from({ length: 12 }, (_, i) => [i * 0.3, i * 6.5]);
@@ -19,7 +19,7 @@ const trail: [number, number][] = Array.from({ length: 12 }, (_, i) => [i * 0.3,
   hud,
   address() { bg('address'); hud.setState(true, false, !card); hud.setPad([0, 0], [], [], false); },
   top() { bg('top'); hud.setState(false, false, !card); hud.setPad([3, 72], trail, [], true); },
-  strike(word: ShotPlan['tempoWord'] = 'Smooth', cls: ShotPlan['tempoCls'] = 'good') {
+  strike(word: ShotPlan['tempoWord'] = 'Perfect', cls: ShotPlan['tempoCls'] = 'good') {
     bg('flight'); card = { plan: plan(word, cls), power: 0.92, offMs: cls === 'good' ? 40 : 260, done: false };
     hud.card(card); hud.toast(word, plan(word, cls).why, cls); hud.showSpin(true); hud.setState(false, true, false);
     hud.setPad([0, 0], trail, [[3, 72], [1, 30], [-2, -10], [-4, -50]], false);

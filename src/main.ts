@@ -245,7 +245,7 @@ function strike(now: number, p: [number, number], released: boolean) {
   card = { plan, power, offMs: SW.off, done: false };
   if (dbg) dbg.textContent = `pull ${Math.round(SW.tDeep - SW.t0)} ms · pause ${Math.round(SW.tAt - SW.tDeep)} ms · push ${Math.round(now - SW.tTrans)} ms\nvs top ${dbgRaw > 0 ? '+' : ''}${Math.round(dbgRaw)} ms → graded ${Math.round(SW.off)} ms (${plan.tempoWord})`;
   hud.card(card);
-  faceBadge.setWord(plan.tempoWord, plan.tempoCls);   // the swing word sits under the face (the why lives in Shot details)
+  faceBadge.setWord(plan.tempoWord, plan.tempoCls, plan.shapeWord);   // the swing word sits under the face (the why lives in Shot details)
   sound.strike(CLUB_SPECS[hud.club].kind, 1 - plan.error);
   try { navigator.vibrate?.(18); } catch { /* not allowed */ }
   hitStop = 0.09;
@@ -569,7 +569,7 @@ function frame(now: number) {
   golfer.update({ phase: G.phase, phi: G.phi, topPhi: G.phase === 'back' ? Math.max(G.phi, 0.01) : G.topPhi, idleT: G.idleT, lookAt: state === 'intro' ? camera.position : undefined });
 
   // face: smile on the intro, and after a good shot
-  const good = state === 'result' && !!plan && plan.tempoWord === 'Smooth' && Math.abs(ball.offline() / YD) < 10;
+  const good = state === 'result' && !!plan && plan.tempoWord === 'Perfect' && Math.abs(ball.offline() / YD) < 10;
   faceBadge.update(dt);
   golfer.smileToward(Math.max(state === 'intro' || good ? 1 : 0, faceBadge.smile), dt);
 
@@ -615,7 +615,7 @@ function frame(now: number) {
       const near = range?.targets.reduce((b, t) => { const d = Math.hypot(t.pos.x - ball.pos.x, t.pos.z - ball.pos.z); return d < b.d ? { d, t } : b; }, { d: Infinity, t: null as any });
       const msg = near && near.t && near.d < near.t.radius ? `On the ${near.t.yards} green · ${(near.d / YD).toFixed(0)} yds from the pin` : `${tot.toFixed(0)} yds · ${Math.abs(off) < 1 ? 'online' : `${Math.abs(off).toFixed(0)} ${off < 0 ? 'left' : 'right'}`}`;
       // Neil reacts (face, word under the badge, a one-liner); the numbers wait behind 'Shot details'
-      const onGreen = !!(near && near.t && near.d < near.t.radius), pured = !!plan && plan.tempoWord === 'Smooth' && Math.abs(off) < 8;
+      const onGreen = !!(near && near.t && near.d < near.t.radius), pured = !!plan && plan.tempoWord === 'Perfect' && Math.abs(off) < 8;
       const expect = plan?.targetCarryYds ?? tot;
       const outcome: Outcome = onGreen && near!.d / YD < 1 ? 'holed' : onGreen && near!.d / YD < 5 ? 'near' : Math.abs(off) > 28 || tot < expect * 0.45 ? 'shank'
         : pured ? 'pure' : plan?.tempoCls === 'bad' ? 'bad' : onGreen || plan?.tempoCls === 'good' ? 'good' : 'ok';
