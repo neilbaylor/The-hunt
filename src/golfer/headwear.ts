@@ -37,9 +37,12 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   const seg = 96, height = 0.038, pos: number[] = [], uv: number[] = [], idx: number[] = [];
   for (let i = 0; i <= seg; i++) {
     const a = -Math.PI + (i / seg) * Math.PI * 2;   // a = 0 at the front
-    const x = Math.sin(a) * rx, z = Math.cos(a) * rz + zc;
+    const back = Math.max(0, -Math.cos(a)), sideB = Math.abs(Math.sin(a));
+    // the strap sits proud of the hair at the sides and back
+    const fr = Math.max(0, Math.cos(a));
+    const x = Math.sin(a) * (rx + 0.005 * sideB + 0.004 * back), z = Math.cos(a) * (rz + 0.011 * back + 0.008 * fr) + zc;
     const front = 0.5 + 0.5 * Math.cos(a);
-    const hh = height * (0.75 + 0.25 * front);
+    const hh = height * (0.55 + 0.45 * front);
     const tilt = -0.012 * front;                    // front lower
     pos.push(x, y0 + tilt - hh / 2, z, x * 0.985, y0 + tilt + hh / 2, z * 0.985 + zc * 0.015);
     const u = mirrored ? 1 - i / seg : i / seg; // a left-hander's body is mirrored, so mirror the logo back

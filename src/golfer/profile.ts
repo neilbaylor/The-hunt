@@ -66,7 +66,7 @@ export const NEIL: GolferProfile = {
     skin: '#e3b49a',
     skinWarm: '#d98f7c',
     lips: '#b9776c',
-    hair: '#3b2b20',
+    hair: '#4a3628',
     brows: '#3a2a1f',
     eyes: '#7d97a8',
     stubble: 0.55,

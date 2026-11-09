@@ -362,8 +362,9 @@ meshes['hair'] = hair
 
 # a ring round the head at visor height, for fitting hats
 band_y = eye_c[1] + P['visorAboveEyes']
-ring = V[[vi for vi in head_v if abs(V[vi, 1] - band_y) < 0.006]]
-visor = {'center': [float(hc[0]), float(band_y), float(ring[:, 2].mean())],
+ring = V[[vi for vi in body_idx if abs(V[vi, 1] - band_y) < 0.006 and np.linalg.norm(V[vi] - hc) < 0.16]]
+print('visor ring', len(ring), 'z', ring[:, 2].min().round(3), ring[:, 2].max().round(3), 'x', ring[:, 0].min().round(3), ring[:, 0].max().round(3))
+visor = {'center': [float(hc[0]), float(band_y), float((ring[:, 2].max() + ring[:, 2].min()) / 2)],
          'rx': float((ring[:, 0].max() - ring[:, 0].min()) / 2 + 0.0115),
          'rz': float((ring[:, 2].max() - ring[:, 2].min()) / 2 + 0.0125)}
 

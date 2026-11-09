@@ -21,7 +21,12 @@ export interface HumanData {
 const loadImage = (url: string) => new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
 
 export async function loadHuman(binUrl: string, skinUrl: string, eyesUrl: string): Promise<HumanData> {
-  const [buf, skin, eyes] = await Promise.all([fetch(binUrl).then(r => r.arrayBuffer()), loadImage(skinUrl), loadImage(eyesUrl)]);
+  // inlined builds carry the file as a data: URL; decode it directly (some sandboxes block fetch of data: URLs)
+  const getBin = async () => {
+    if (binUrl.startsWith('data:')) { const b = atob(binUrl.slice(binUrl.indexOf(',') + 1)); const u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u.buffer; }
+    return fetch(binUrl).then(r => r.arrayBuffer());
+  };
+  const [buf, skin, eyes] = await Promise.all([getBin(), loadImage(skinUrl), loadImage(eyesUrl)]);
   const dv = new DataView(buf);
   const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
   if (magic !== 'GOLF') throw new Error('bad character file');
@@ -126,9 +131,9 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const hairCol = new THREE.Color(p.look.hair);
   const strands = canvasTex(512, 512, g => {
     g.fillStyle = '#' + hairCol.getHexString(); g.fillRect(0, 0, 512, 512);
-    for (let i = 0; i < 9000; i++) { const x = rand() * 512, y = rand() * 512, l = 4 + rand() * 10; g.strokeStyle = rand() < 0.5 ? 'rgba(120,90,60,.35)' : 'rgba(8,5,3,.4)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rand() - 0.5) * 3, y + l); g.stroke(); }
-  }, true, 6);
-  const hairMat = new THREE.MeshStandardMaterial({ map: strands, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    for (let i = 0; i < 16000; i++) { const x = rand() * 512, y = rand() * 512, l = 5 + rand() * 14; g.strokeStyle = rand() < 0.45 ? 'rgba(150,112,78,.38)' : 'rgba(12,8,5,.42)'; g.lineWidth = 0.8 + rand() * 0.8; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + (rand() - 0.5) * 6, y + l / 2, x + (rand() - 0.5) * 4, y + l); g.stroke(); }
+  }, true, 7);
+  const hairMat = new THREE.MeshPhysicalMaterial({ map: strands, roughness: 0.62, sheen: 0.8, sheenColor: new THREE.Color('#b58a5e'), sheenRoughness: 0.35, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   hairMat.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float mask;\nvarying float vMask;\nvarying vec3 vObj;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMask = mask; vObj = position;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMask;\nvarying vec3 vObj;')

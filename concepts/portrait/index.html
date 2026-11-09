@@ -1,0 +1,711 @@
+<title>Portrait HUD Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wdth,wght@62..125,400..900&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;1,700&family=Courier+Prime:wght@400;700&family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,600&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+Condensed:wght@500;700&family=Manrope:wght@500;700;800&family=Oswald:wght@500;600;700&family=Russo+One&family=Space+Mono:wght@400;700&family=Special+Elite&display=swap">
+<style>
+/* Layout: one column of "directions"; each is a header (name, rationale, palette, type) over a wrapping grid of
+   phone frames (390×844 screens scaled to fit). Committed dark single theme, like a clubhouse at dusk. */
+:root {
+  --bg: #0c1210;
+  --surface: #141d19;
+  --line: #24332c;
+  --fg: #eef2ec;
+  --muted: #94a69b;
+  --flag: #f2c94c;
+  --display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --body: 'Barlow', system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px; display: grid; gap: 18px; }
+.kicker { font-family: var(--display); font-weight: 700; font-size: 13px; letter-spacing: .18em; text-transform: uppercase; color: var(--flag); }
+h1 { margin: 0; font-family: var(--display); font-weight: 700; font-size: clamp(42px, 8vw, 84px); line-height: .9; text-transform: uppercase; text-wrap: balance; }
+h2 { margin: 0; font-family: var(--display); font-weight: 700; font-size: clamp(26px, 4vw, 38px); text-transform: uppercase; letter-spacing: .02em; line-height: 1; text-wrap: balance; }
+p { margin: 0; }
+.lede { max-width: 68ch; color: var(--muted); }
+.toc { display: flex; flex-wrap: wrap; gap: 6px; }
+.toc a { font: 600 14px/1 var(--body); color: var(--fg); text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; background: var(--surface); }
+.toc a:focus-visible, .toc a:hover { border-color: var(--flag); }
+.dir { border-top: 1px solid var(--line); padding-top: 26px; display: grid; gap: 14px; scroll-margin-top: 12px; }
+.dir-head { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
+.dir-head .num { font: 700 13px/1 var(--display); letter-spacing: .18em; color: var(--flag); text-transform: uppercase; }
+.dir-head p { color: var(--muted); max-width: 70ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font-size: 13px; color: var(--muted); }
+.chips { display: flex; gap: 5px; }
+.chips i { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(255,255,255,.18); }
+.live-tag { font: 700 11px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: #0c1210; background: var(--flag); padding: 4px 7px; border-radius: 4px; }
+.frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 16px; }
+@media (max-width: 520px) { .frames { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+figcaption { font-size: 13px; color: var(--muted); }
+figcaption b { color: var(--fg); font-weight: 600; }
+
+/* device */
+.phone { position: relative; width: 100%; aspect-ratio: 390 / 844; max-width: 100%; border-radius: 9% / 4.2%; background: #000; padding: 2.4%; box-shadow: 0 0 0 1px #2c3530, 0 18px 40px rgba(0,0,0,.45); }
+.phone .glass { position: relative; width: 100%; height: 100%; border-radius: 7.4% / 3.4%; overflow: hidden; }
+.screen { position: absolute; left: 0; top: 0; width: 390px; height: 844px; transform-origin: 0 0; transform: scale(var(--k, .6)); overflow: hidden; user-select: none; -webkit-user-select: none; }
+.bgl { position: absolute; inset: 0; background-size: cover; background-position: center; }
+.bg-address { background-image: url("bg/address.jpg"); }
+.bg-top { background-image: url("bg/top.jpg"); }
+.bg-finish { background-image: url("bg/finish.jpg"); }
+.bg-flight { background-image: url("bg/flight.jpg"); }
+.bg-landing { background-image: url("bg/landing.jpg"); }
+.status { position: absolute; left: 0; right: 0; top: 0; height: 46px; display: flex; justify-content: space-between; align-items: center; padding: 6px 30px 0; font: 600 15px/1 -apple-system, 'Barlow', sans-serif; color: #fff; z-index: 30; text-shadow: 0 1px 2px rgba(0,0,0,.25); pointer-events: none; }
+.status .island { position: absolute; left: 50%; top: 11px; width: 120px; height: 34px; margin-left: -60px; border-radius: 20px; background: #000; }
+.status .bat { width: 26px; height: 12px; border: 1.5px solid rgba(255,255,255,.85); border-radius: 4px; position: relative; }
+.status .bat::after { content: ""; position: absolute; inset: 1.5px 6px 1.5px 1.5px; background: #fff; border-radius: 1.5px; }
+.home { position: absolute; left: 50%; bottom: 8px; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: rgba(255,255,255,.85); z-index: 30; pointer-events: none; }
+.hud { position: absolute; inset: 0; z-index: 10; }
+.abs { position: absolute; }
+
+/* ── shared bits ── */
+.av { border-radius: 50%; overflow: hidden; flex: none; display: block; }
+.stick { position: absolute; touch-action: none; cursor: grab; }
+.stick .knob { transition: transform .05s linear; }
+.stick.dragging { cursor: grabbing; }
+.toast-live { position: absolute; left: 0; right: 0; top: 300px; text-align: center; font: 700 44px/1 var(--display); text-transform: uppercase; color: #fff; text-shadow: 0 3px 16px rgba(0,0,0,.5); opacity: 0; transform: scale(.85); transition: opacity .2s, transform .25s cubic-bezier(.2,1.6,.4,1); pointer-events: none; z-index: 25; }
+.toast-live small { display: block; font: 600 15px/1.3 var(--body); text-transform: none; margin-top: 6px; }
+.toast-live.on { opacity: 1; transform: scale(1); }
+.hint-pull { position: absolute; font: 700 11px/1 var(--display); letter-spacing: .16em; text-transform: uppercase; }
+
+/* ═════ 1 · Sunday Slim ═════ */
+.d1 { --ink: #fff; --navy: rgba(9,20,44,.86); --gold: #ffc72c; --blue: #2b6cff; font-family: 'Barlow', sans-serif; color: #fff; }
+.d1 .bar { position: absolute; right: 12px; top: 56px; width: 214px; background: var(--navy); border-top: 3px solid var(--gold); }
+.d1 .bar .r1 { display: flex; align-items: center; gap: 10px; padding: 8px 10px 6px; }
+.d1 .bar b { font: 700 24px/1 'Barlow Condensed'; text-transform: uppercase; letter-spacing: .02em; flex: 1; }
+.d1 .bar .sc { font: 700 22px/1 'Barlow Condensed'; background: var(--blue); padding: 4px 10px; }
+.d1 .bar .r2 { display: flex; gap: 14px; padding: 5px 10px 7px; border-top: 1px solid rgba(255,255,255,.12); font: 600 13px/1 'Barlow Condensed'; color: #b9c6dd; text-transform: uppercase; letter-spacing: .06em; }
+.d1 .bar .r2 em { font-style: normal; color: #fff; }
+.d1 .wind { position: absolute; left: 12px; top: 56px; width: 62px; padding: 7px 0 6px; text-align: center; background: var(--navy); font: 700 22px/1 'Barlow Condensed'; }
+.d1 .wind small { display: block; font-size: 11px; letter-spacing: .1em; color: #b9c6dd; margin-top: 2px; }
+.d1 .wind svg { display: block; margin: 4px auto 0; }
+.d1 .card { position: absolute; right: 12px; bottom: 214px; width: 214px; background: var(--navy); }
+.d1 .card .row { display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,.1); }
+.d1 .card .row:last-child { border: 0; }
+.d1 .card .club { flex: 1; display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; font: 700 21px/1 'Barlow Condensed'; text-transform: uppercase; }
+.d1 .card .club span { font-size: 13px; color: var(--gold); letter-spacing: .06em; }
+.d1 .card .yd { padding: 8px 10px; font: 700 21px/1 'Barlow Condensed'; }
+.d1 .card .yd small { font-size: 12px; color: #b9c6dd; }
+.d1 .card .lie { flex: 1; padding: 7px 10px; font: 700 15px/1.15 'Barlow Condensed'; text-transform: uppercase; }
+.d1 .card .lie small { display: block; font-size: 12px; color: #b9c6dd; letter-spacing: .04em; }
+.d1 .card .thumb { width: 64px; align-self: stretch; background: radial-gradient(circle at 50% 42%, #fff 0 11px, #dfe5e8 12px, transparent 13px), linear-gradient(#5d9a3c, #3f7a2b); }
+.d1 .card .mode { flex: 1; padding: 7px 10px; font: 700 15px/1 'Barlow Condensed'; text-transform: uppercase; letter-spacing: .08em; text-align: center; }
+.d1 .card .mode.on { color: var(--gold); }
+.d1 .stick { right: 34px; bottom: 34px; width: 150px; height: 150px; }
+.d1 .stick .ring { position: absolute; inset: 0; border-radius: 50%; background: rgba(9,20,44,.55); border: 2px solid rgba(255,255,255,.85); box-shadow: 0 0 0 calc(var(--top,0) * 8px) rgba(255,199,44,.6); transition: box-shadow .12s; }
+.d1 .stick .lane { position: absolute; left: 50%; top: 14px; bottom: 14px; width: 2px; margin-left: -1px; background: repeating-linear-gradient(rgba(255,255,255,.5) 0 5px, transparent 5px 10px); }
+.d1 .stick .fill { position: absolute; left: 50%; top: 75px; width: 6px; margin-left: -3px; height: calc(var(--p) * 58px); background: var(--gold); border-radius: 3px; }
+.d1 .stick .fillu { position: absolute; left: 50%; bottom: 75px; width: 6px; margin-left: -3px; height: calc(var(--u) * 58px); background: #2fd3ff; border-radius: 3px; }
+.d1 .stick .knob { position: absolute; left: 47px; top: 47px; width: 56px; height: 56px; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 5px #fff, inset 0 0 0 8px var(--gold), 0 4px 10px rgba(0,0,0,.35); transform: translate(calc(var(--x) * 18px), calc((var(--p) - var(--u)) * 58px)); }
+.d1 .stick .cap { position: absolute; left: 0; right: 0; text-align: center; font: 700 11px/1 'Barlow Condensed'; letter-spacing: .18em; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.d1 .stick .cap.up { top: -18px; } .d1 .stick .cap.dn { bottom: -18px; }
+.d1 .tempo { position: absolute; right: 196px; bottom: 50px; width: 10px; height: 118px; background: rgba(9,20,44,.7); }
+.d1 .tempo i { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--g, .0) * 100%); background: linear-gradient(#ffc72c, #ff8a00); }
+.d1 .tempo b { position: absolute; left: -4px; right: -4px; top: 10px; height: 18px; border: 2px solid #3ddc84; }
+.d1 .spin { position: absolute; left: 50%; bottom: 40px; margin-left: -62px; }
+.d1 .live { position: absolute; left: 12px; bottom: 214px; background: var(--navy); border-top: 3px solid var(--gold); padding: 8px 12px; display: grid; grid-template-columns: repeat(2, auto); gap: 6px 18px; }
+.d1 .live dt { font: 600 11px/1 'Barlow Condensed'; letter-spacing: .12em; color: #b9c6dd; text-transform: uppercase; }
+.d1 .live dd { margin: 2px 0 0; font: 700 26px/1 'Barlow Condensed'; }
+.d1 .live dd small { font-size: 13px; color: #b9c6dd; }
+.d1 .topcue { position: absolute; left: 50%; top: 200px; margin-left: -80px; width: 160px; text-align: center; font: italic 700 34px/1 'Barlow Condensed'; color: var(--gold); background: #0a1630; padding: 6px 0 8px; clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
+
+/* ═════ 2 · Clubhouse ═════ */
+.d2 { --cream: #f4ecd8; --green: rgba(16,52,35,.92); --brass: #c9a24a; color: var(--cream); font-family: 'Barlow', sans-serif; }
+.d2 .plate { position: absolute; left: 12px; right: 12px; top: 54px; display: flex; align-items: center; gap: 10px; background: var(--green); border: 1px solid var(--brass); border-radius: 18px; padding: 8px 12px 8px 8px; box-shadow: inset 0 0 0 3px rgba(16,52,35,.95), inset 0 0 0 4px rgba(201,162,74,.35); }
+.d2 .plate .nm { flex: 1; font: italic 600 22px/1 'Fraunces'; }
+.d2 .plate .nm small { display: block; font: 500 11px/1.3 'Barlow'; letter-spacing: .12em; text-transform: uppercase; color: #c9bf9e; font-style: normal; margin-top: 3px; }
+.d2 .plate .yd { text-align: right; font: 600 30px/1 'Fraunces'; }
+.d2 .plate .yd small { display: block; font: 500 10px/1.2 'Barlow'; letter-spacing: .14em; color: #c9bf9e; text-transform: uppercase; }
+.d2 .strip { position: absolute; left: 12px; right: 12px; bottom: 30px; height: 176px; background: var(--green); border: 1px solid var(--brass); border-radius: 22px; box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 0 0 3px rgba(16,52,35,.95), inset 0 0 0 4px rgba(201,162,74,.35); }
+.d2 .cell { position: absolute; padding: 10px 14px; }
+.d2 .cell .lb { font: 500 10px/1 'Barlow'; letter-spacing: .16em; text-transform: uppercase; color: #c9bf9e; }
+.d2 .cell .v { font: 600 26px/1.05 'Fraunces'; margin-top: 4px; }
+.d2 .cell .v small { font: 500 12px 'Barlow'; color: #c9bf9e; }
+.d2 .modes { position: absolute; left: 14px; bottom: 14px; display: flex; gap: 4px; }
+.d2 .modes span { font: italic 600 14px/1 'Fraunces'; padding: 7px 10px; border-radius: 999px; background: rgba(244,236,216,.08); }
+.d2 .modes span.on { background: var(--brass); color: #10301f; }
+.d2 .modes span.off { opacity: .35; }
+.d2 .stick { right: 18px; bottom: 44px; width: 148px; height: 148px; }
+.d2 .stick .face { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #f8f2df, #ddcfa8); box-shadow: 0 0 0 7px #a98030, 0 0 0 9px #e6c777, 0 8px 18px rgba(0,0,0,.4), 0 0 0 calc(9px + var(--top,0) * 9px) rgba(232,199,119,.55); transition: box-shadow .12s; }
+.d2 .stick .face::before { content: ""; position: absolute; left: 50%; top: 14px; bottom: 14px; border-left: 2px dashed rgba(16,48,31,.45); }
+.d2 .stick .ticks { position: absolute; left: 50%; top: 80px; width: 18px; margin-left: -9px; height: 56px; background: repeating-linear-gradient(rgba(16,48,31,.55) 0 2px, transparent 2px 14px); }
+.d2 .stick .knob { position: absolute; left: 46px; top: 46px; width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle at 38% 32%, #2f7a52, #0f3a25); box-shadow: 0 0 0 4px #c9a24a, 0 4px 10px rgba(0,0,0,.35); transform: translate(calc(var(--x) * 16px), calc((var(--p) - var(--u)) * 52px)); display: grid; place-items: center; color: #f4ecd8; font: italic 600 13px 'Fraunces'; }
+.d2 .stick .lbl { position: absolute; left: -70px; top: 50%; transform: translateY(-50%); font: italic 600 15px/1.25 'Fraunces'; text-align: right; width: 60px; color: var(--cream); }
+.d2 .spin { position: absolute; right: 30px; bottom: 50px; }
+.d2 .note { position: absolute; left: 50%; top: 210px; transform: translateX(-50%); background: var(--green); border: 1px solid var(--brass); border-radius: 999px; padding: 8px 18px; font: italic 600 26px/1 'Fraunces'; color: #e6c777; white-space: nowrap; }
+
+/* ═════ 3 · Y2K Pro Tour ═════ */
+.d3 { color: #fff; font-family: 'Barlow', sans-serif; }
+.d3 .chrome { background: linear-gradient(180deg, #3f6bff 0%, #1b3fd9 48%, #0c2394 52%, #10259c 100%); border: 3px solid #d9e1f2; border-radius: 12px; box-shadow: inset 0 0 0 1px #7d8aa6, 0 5px 0 #0a1450, 0 9px 14px rgba(0,0,0,.4); position: absolute; }
+.d3 .chrome::after { content: ""; position: absolute; left: 5px; right: 5px; top: 3px; height: 40%; border-radius: 8px 8px 30px 30px; background: linear-gradient(rgba(255,255,255,.35), rgba(255,255,255,0)); pointer-events: none; }
+.d3 .sk { font-family: 'Russo One'; display: inline-block; transform: skewX(-8deg); text-shadow: 0 2px 0 #0a1450; }
+.d3 .who { left: 10px; top: 54px; right: 10px; height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 6px; }
+.d3 .who .sk { font-size: 22px; flex: 1; }
+.d3 .who .y { font-size: 26px; color: #ffe234; }
+.d3 .club { left: 10px; bottom: 200px; width: 150px; padding: 8px 12px; }
+.d3 .club .sk { font-size: 34px; }
+.d3 .club small { display: block; font: 700 11px/1 'Russo One'; color: #ffe234; letter-spacing: .06em; }
+.d3 .lie { left: 10px; bottom: 112px; width: 150px; padding: 8px 12px; }
+.d3 .lie .sk { font-size: 20px; }
+.d3 .meter { left: 10px; bottom: 36px; width: 150px; height: 64px; padding: 8px 10px; }
+.d3 .meter .track { position: relative; height: 16px; background: rgba(0,0,40,.55); border-radius: 8px; margin-top: 6px; overflow: hidden; }
+.d3 .meter .track i { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--g, .2) * 100%); background: linear-gradient(90deg, #5cff8a, #ffe234 70%, #ff4f6d); }
+.d3 .meter .track b { position: absolute; top: 0; bottom: 0; left: 78%; width: 10%; border-left: 2px solid #fff; border-right: 2px solid #fff; }
+.d3 .stick { right: 20px; bottom: 36px; width: 170px; height: 170px; }
+.d3 .stick .bezel { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle at 50% 30%, #4f7bff, #0b1f8a); box-shadow: inset 0 0 0 10px #c5cde0, inset 0 0 0 12px #5b6680, 0 6px 0 #0a1450, 0 0 0 calc(var(--top,0) * 10px) #5cff8a; transition: box-shadow .12s; }
+.d3 .stick .bezel::before { content: ""; position: absolute; left: 50%; top: 20px; bottom: 20px; border-left: 4px dotted #ffe234; margin-left: -2px; }
+.d3 .stick .knob { position: absolute; left: 55px; top: 55px; width: 60px; height: 60px; border-radius: 50%; background: radial-gradient(circle at 40% 30%, #fffbb0, #ffd400 55%, #ff8a00); border: 3px solid #fff; box-shadow: 0 3px 0 #0a1450; transform: translate(calc(var(--x) * 20px), calc((var(--p) - var(--u)) * 62px)); display: grid; place-items: center; font: 14px 'Russo One'; color: #0b1a7a; }
+.d3 .burst { position: absolute; left: 50%; top: 190px; transform: translateX(-50%) skewX(-8deg); font: 40px/1 'Russo One'; color: #0b1a7a; background: linear-gradient(180deg, #fff27a, #ffd400 50%, #ff9d00 51%, #ffc400); border: 3px solid #fff; border-radius: 10px; box-shadow: 0 5px 0 #0a1450; padding: 6px 18px; white-space: nowrap; }
+.d3 .spin { position: absolute; left: 50%; margin-left: -62px; bottom: 40px; }
+
+/* ═════ 4 · Frost ═════ */
+.d4 { color: #fff; font-family: 'Manrope', sans-serif; }
+.d4 .glass { position: absolute; background: rgba(28,40,52,.28); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); border: 1px solid rgba(255,255,255,.35); border-radius: 22px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.d4 .top { left: 14px; right: 14px; top: 54px; height: 54px; display: flex; align-items: center; gap: 10px; padding: 0 14px 0 8px; }
+.d4 .top b { font-weight: 800; font-size: 17px; flex: 1; }
+.d4 .top b small { display: block; font-weight: 500; font-size: 12px; opacity: .8; }
+.d4 .pill { font-weight: 700; font-size: 13px; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.22); }
+.d4 .dock { left: 14px; right: 14px; bottom: 24px; height: 206px; border-radius: 34px; }
+.d4 .dock .c { position: absolute; left: 16px; width: 150px; }
+.d4 .dock .c small { display: block; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .75; }
+.d4 .dock .c b { font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
+.d4 .dock .c b em { font-style: normal; font-size: 15px; font-weight: 700; opacity: .8; }
+.d4 .seg { position: absolute; left: 16px; bottom: 16px; display: flex; background: rgba(0,0,0,.18); border-radius: 14px; padding: 3px; }
+.d4 .seg span { font-weight: 700; font-size: 12px; padding: 7px 9px; border-radius: 11px; }
+.d4 .seg span.on { background: #fff; color: #10202a; }
+.d4 .seg span.off { opacity: .4; }
+.d4 .stick { right: 26px; bottom: 36px; width: 96px; height: 182px; }
+.d4 .stick .cap { position: absolute; inset: 0; border-radius: 48px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.5); box-shadow: inset 0 0 0 calc(var(--top,0) * 4px) #ff6b4a, 0 0 calc(var(--top,0) * 24px) rgba(255,107,74,.8); transition: box-shadow .12s; }
+.d4 .stick .fill { position: absolute; left: 4px; right: 4px; top: 48px; height: calc(var(--p) * 84px + 44px); border-radius: 44px; background: linear-gradient(rgba(255,255,255,.0), rgba(255,107,74,.55)); opacity: calc(var(--p) * 1.3); }
+.d4 .stick .knob { position: absolute; left: 12px; top: 49px; width: 72px; height: 72px; border-radius: 50%; background: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.25); transform: translate(calc(var(--x) * 10px), calc((var(--p) - var(--u)) * 46px)); display: grid; place-items: center; }
+.d4 .stick .knob::after { content: ""; width: 14px; height: 14px; border-radius: 50%; background: #ff6b4a; }
+.d4 .stick .ar { position: absolute; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 800; letter-spacing: .1em; opacity: .85; }
+.d4 .big { position: absolute; left: 0; right: 0; top: 190px; text-align: center; font-weight: 800; font-size: 46px; letter-spacing: -.03em; text-shadow: 0 4px 24px rgba(0,0,0,.25); }
+.d4 .big small { display: block; font-size: 14px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; opacity: .85; }
+.d4 .spin { position: absolute; right: 30px; bottom: 54px; }
+
+/* ═════ 5 · Hand-hung Board ═════ */
+.d5 { --board: #f7f4ea; --g: #0f5132; --red: #c8102e; color: #13261c; font-family: 'Oswald', sans-serif; }
+.d5 .board { position: absolute; left: 12px; right: 12px; top: 54px; background: var(--g); border: 3px solid #e9e2c9; box-shadow: 0 6px 16px rgba(0,0,0,.35); }
+.d5 .board .hd { color: #fff; text-align: center; font: 600 13px/1 'Oswald'; letter-spacing: .3em; padding: 6px 0 4px; text-transform: uppercase; }
+.d5 .board .rw { display: grid; grid-template-columns: 1.6fr repeat(4, 1fr); gap: 3px; padding: 0 6px 6px; }
+.d5 .board .rw span { background: var(--board); text-align: center; font: 600 22px/1.25 'Oswald'; padding: 3px 0; }
+.d5 .board .rw span.nm { text-align: left; padding-left: 8px; font-size: 20px; }
+.d5 .board .rw span.r { color: var(--red); }
+.d5 .board .rw span.k { font-size: 10px; letter-spacing: .14em; background: none; color: #d8e6dc; padding: 0; line-height: 1.2; }
+.d5 .tag { position: absolute; left: 12px; bottom: 34px; width: 120px; background: var(--board); border: 3px solid var(--g); padding: 8px 10px; }
+.d5 .tag small { display: block; font: 500 10px/1 'Oswald'; letter-spacing: .2em; color: #4d6656; text-transform: uppercase; }
+.d5 .tag b { font: 700 36px/1 'Oswald'; }
+.d5 .tag b em { font-style: normal; font-size: 16px; color: var(--red); margin-left: 4px; }
+.d5 .tag + .tag { bottom: 128px; }
+.d5 .stick { right: 26px; bottom: 34px; width: 128px; height: 196px; }
+.d5 .stick .post { position: absolute; left: 50%; top: 0; bottom: 0; width: 64px; margin-left: -32px; background: var(--board); border: 3px solid var(--g); box-shadow: 0 6px 14px rgba(0,0,0,.3), 0 0 0 calc(var(--top,0) * 7px) var(--red); transition: box-shadow .12s; }
+.d5 .stick .post::before { content: ""; position: absolute; left: 50%; top: 10px; bottom: 10px; border-left: 3px solid var(--g); margin-left: -1.5px; }
+.d5 .stick .num { position: absolute; left: 0; right: 0; font: 600 11px/1 'Oswald'; text-align: center; letter-spacing: .14em; color: var(--g); }
+.d5 .stick .knob { position: absolute; left: 30px; top: 70px; width: 68px; height: 56px; background: var(--red); color: #fff; display: grid; place-items: center; font: 700 15px/1 'Oswald'; letter-spacing: .1em; box-shadow: 0 3px 0 #7a0a1c; transform: translate(calc(var(--x) * 10px), calc((var(--p) - var(--u)) * 62px)); }
+.d5 .flag { position: absolute; left: 50%; top: 214px; transform: translateX(-50%); background: var(--board); border: 3px solid var(--g); padding: 4px 16px; font: 700 34px/1 'Oswald'; color: var(--red); letter-spacing: .06em; white-space: nowrap; }
+.d5 .spin { position: absolute; right: 36px; bottom: 50px; }
+
+/* ═════ 6 · Night Range ═════ */
+.d6 { --c: #22e1ff; --m: #ff3ea5; color: #e8f9ff; font-family: 'Space Mono', monospace; }
+.d6 .tint { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,8,26,.78), rgba(10,4,30,.35) 45%, rgba(5,6,15,.6)); mix-blend-mode: multiply; }
+.d6 .glow { position: absolute; border: 1.5px solid var(--c); border-radius: 10px; background: rgba(5,10,30,.55); box-shadow: 0 0 12px rgba(34,225,255,.45), inset 0 0 12px rgba(34,225,255,.15); }
+.d6 .bay { left: 14px; top: 56px; padding: 6px 12px; font-size: 12px; letter-spacing: .12em; }
+.d6 .bay b { display: block; font: 700 22px/1 'Barlow Condensed'; letter-spacing: .04em; color: #fff; text-shadow: 0 0 10px var(--c); }
+.d6 .score { right: 14px; top: 56px; padding: 6px 12px; text-align: right; border-color: var(--m); box-shadow: 0 0 12px rgba(255,62,165,.5), inset 0 0 12px rgba(255,62,165,.15); }
+.d6 .score b { font: 700 30px/1 'Space Mono'; color: #fff; text-shadow: 0 0 12px var(--m); }
+.d6 .score small { display: block; font-size: 10px; letter-spacing: .14em; color: #ffb3da; }
+.d6 .rail { left: 14px; top: 300px; width: 92px; padding: 8px; display: grid; gap: 8px; }
+.d6 .rail div small { display: block; font-size: 9px; letter-spacing: .16em; color: #8fdcf0; }
+.d6 .rail div b { font: 700 20px/1 'Space Mono'; color: #fff; }
+.d6 .stick { left: 50%; margin-left: -80px; bottom: 40px; width: 160px; height: 160px; }
+.d6 .stick .o { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--c); box-shadow: 0 0 18px rgba(34,225,255,.6), inset 0 0 18px rgba(34,225,255,.3), 0 0 calc(var(--top,0) * 40px) var(--m); transition: box-shadow .12s; }
+.d6 .stick .o::before { content: ""; position: absolute; inset: 22px; border-radius: 50%; border: 1px dashed rgba(34,225,255,.5); }
+.d6 .stick .beam { position: absolute; left: 50%; top: 80px; width: 4px; margin-left: -2px; height: calc(var(--p) * 60px); background: var(--m); box-shadow: 0 0 10px var(--m); }
+.d6 .stick .knob { position: absolute; left: 56px; top: 56px; width: 48px; height: 48px; border-radius: 50%; background: radial-gradient(circle, #fff 0 30%, var(--c) 70%); box-shadow: 0 0 22px var(--c); transform: translate(calc(var(--x) * 18px), calc((var(--p) - var(--u)) * 60px)); }
+.d6 .stick .cap { position: absolute; left: 0; right: 0; text-align: center; font-size: 10px; letter-spacing: .3em; color: var(--c); text-shadow: 0 0 8px var(--c); }
+.d6 .club { right: 14px; bottom: 60px; width: 92px; padding: 8px; text-align: center; }
+.d6 .club b { font: 700 32px/1 'Barlow Condensed'; color: #fff; text-shadow: 0 0 10px var(--c); display: block; }
+.d6 .club small { font-size: 10px; letter-spacing: .14em; color: #8fdcf0; }
+.d6 .neon { position: absolute; left: 0; right: 0; top: 200px; text-align: center; font: 700 44px/1 'Barlow Condensed'; letter-spacing: .08em; color: #fff; text-shadow: 0 0 8px var(--m), 0 0 24px var(--m); }
+.d6 .spin { position: absolute; left: 50%; margin-left: -62px; bottom: 50px; }
+
+/* ═════ 7 · Card Stack ═════ */
+.d7 { color: #111; font-family: 'Archivo', sans-serif; font-stretch: 100%; }
+.d7 .pill { position: absolute; left: 12px; top: 54px; display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 999px; padding: 4px 14px 4px 4px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+.d7 .pill b { font-weight: 800; font-size: 15px; }
+.d7 .pill span { font-size: 12px; color: #666; }
+.d7 .wind { position: absolute; right: 12px; top: 54px; background: #111; color: #fff; border-radius: 999px; padding: 9px 14px; font-weight: 800; font-size: 14px; }
+.d7 .sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 290px; background: #fff; border-radius: 28px 28px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.18); }
+.d7 .sheet .grab { position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: #ddd; }
+.d7 .cards { position: absolute; left: 14px; top: 24px; display: flex; gap: 8px; }
+.d7 .cardx { width: 86px; padding: 10px; border-radius: 16px; background: #f3f4f2; }
+.d7 .cardx.ac { background: #111; color: #fff; }
+.d7 .cardx small { display: block; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #888; }
+.d7 .cardx.ac small { color: #9be3c0; }
+.d7 .cardx b { font-weight: 800; font-size: 24px; font-stretch: 80%; letter-spacing: -.01em; }
+.d7 .cardx em { font-style: normal; font-size: 12px; font-weight: 700; color: #00a85a; }
+.d7 .stick { left: 14px; right: 14px; bottom: 30px; height: 118px; }
+.d7 .stick .track { position: absolute; inset: 0; border-radius: 22px; background: #f3f4f2; box-shadow: inset 0 0 0 calc(var(--top,0) * 3px) #00c46a; transition: box-shadow .12s; }
+.d7 .stick .track::before { content: "Pull down to swing  ·  push up through"; position: absolute; left: 0; right: 0; top: 12px; text-align: center; font-size: 12px; font-weight: 700; color: #999; }
+.d7 .stick .knob { position: absolute; left: 50%; top: 32px; width: 120px; height: 44px; margin-left: -60px; border-radius: 22px; background: #111; color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 13px; letter-spacing: .06em; transform: translate(calc(var(--x) * 30px), calc((var(--p) - var(--u)) * 34px)); box-shadow: 0 6px 14px rgba(0,0,0,.25); }
+.d7 .stick .meter { position: absolute; left: 14px; right: 14px; bottom: 12px; height: 6px; border-radius: 3px; background: #e2e4e0; }
+.d7 .stick .meter i { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--p) * 100%); border-radius: 3px; background: #111; }
+.d7 .stick .meter b { position: absolute; top: -4px; bottom: -4px; left: 84%; width: 10%; border-radius: 3px; background: rgba(0,196,106,.4); }
+.d7 .result { position: absolute; left: 14px; right: 14px; top: 116px; display: flex; gap: 8px; }
+.d7 .result div { flex: 1; background: #f3f4f2; border-radius: 16px; padding: 10px 12px; }
+.d7 .result small { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; color: #888; }
+.d7 .result b { font-weight: 800; font-size: 26px; font-stretch: 80%; }
+.d7 .spin { position: absolute; left: 50%; margin-left: -50px; top: 30px; }
+
+/* ═════ 8 · Thumb Arc ═════ */
+.d8 { --amber: #ffb547; color: #fff; font-family: 'Barlow', sans-serif; }
+.d8 .who { position: absolute; left: 12px; top: 54px; display: flex; align-items: center; gap: 8px; background: rgba(21,24,28,.72); border-radius: 999px; padding: 4px 14px 4px 4px; font: 700 15px/1.1 'Barlow Condensed'; text-transform: uppercase; letter-spacing: .06em; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.d8 .who small { display: block; font: 500 11px 'Barlow'; letter-spacing: .04em; text-transform: none; opacity: .85; }
+.d8 .yard { position: absolute; right: 14px; top: 54px; text-align: right; font: 700 54px/0.9 'Barlow Condensed'; text-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.d8 .yard small { display: block; font-size: 13px; letter-spacing: .14em; color: var(--amber); }
+.d8 .arc { position: absolute; right: -150px; bottom: -150px; width: 470px; height: 470px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, rgba(21,24,28,.0) 0 150px, rgba(21,24,28,.82) 151px 232px, rgba(21,24,28,0) 233px); }
+.d8 .arcbtn { position: absolute; width: 64px; height: 64px; border-radius: 50%; background: #15181c; border: 1.5px solid rgba(255,255,255,.25); display: grid; place-items: center; text-align: center; font: 700 18px/1 'Barlow Condensed'; text-transform: uppercase; }
+.d8 .arcbtn small { display: block; font: 600 9px/1.1 'Barlow'; letter-spacing: .08em; color: var(--amber); }
+.d8 .stick { right: 34px; bottom: 34px; width: 140px; height: 140px; }
+.d8 .stick .bg { position: absolute; inset: 0; border-radius: 50%; background: #15181c; box-shadow: 0 0 0 2px var(--amber), 0 0 0 calc(2px + var(--top,0) * 10px) rgba(255,181,71,.5); transition: box-shadow .12s; }
+.d8 .stick .bg::before { content: ""; position: absolute; left: 50%; top: 16px; bottom: 16px; border-left: 2px solid rgba(255,255,255,.18); }
+.d8 .stick .prog { position: absolute; inset: -9px; border-radius: 50%; background: conic-gradient(from 180deg, var(--amber) calc(var(--p) * 180deg), transparent 0); -webkit-mask: radial-gradient(circle, transparent 0 76px, #000 77px 79px, transparent 80px); mask: radial-gradient(circle, transparent 0 76px, #000 77px 79px, transparent 80px); }
+.d8 .stick .knob { position: absolute; left: 42px; top: 42px; width: 56px; height: 56px; border-radius: 50%; background: var(--amber); box-shadow: 0 4px 12px rgba(0,0,0,.4); transform: translate(calc(var(--x) * 16px), calc((var(--p) - var(--u)) * 50px)); }
+.d8 .spin { position: absolute; right: 44px; bottom: 46px; }
+.d8 .callout { position: absolute; left: 14px; top: 220px; font: italic 700 40px/1 'Barlow Condensed'; text-transform: uppercase; color: var(--amber); text-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.d8 .callout small { display: block; font: 500 14px/1.3 'Barlow'; color: #fff; text-transform: none; font-style: normal; }
+
+/* ═════ 9 · Ball Cam Split ═════ */
+.d9 { color: #fff; font-family: 'Oswald', sans-serif; }
+.d9 .inset { position: absolute; left: 10px; right: 10px; top: 52px; height: 250px; border-radius: 16px; overflow: hidden; border: 2px solid rgba(255,255,255,.9); box-shadow: 0 10px 28px rgba(0,0,0,.4); background-size: cover; background-position: 50% 40%; }
+.d9 .inset .lb { position: absolute; left: 10px; top: 10px; font: 600 11px/1 'Oswald'; letter-spacing: .2em; background: #e32b2b; padding: 4px 8px; border-radius: 3px; }
+.d9 .inset .rd { position: absolute; right: 10px; bottom: 10px; text-align: right; font: 700 40px/0.9 'Oswald'; text-shadow: 0 2px 8px rgba(0,0,0,.5); }
+.d9 .inset .rd small { display: block; font: 500 11px/1.4 'Oswald'; letter-spacing: .18em; color: #cfe3ff; }
+.d9 .strip { position: absolute; left: 10px; right: 10px; bottom: 214px; display: flex; gap: 6px; }
+.d9 .strip div { flex: 1; background: rgba(13,22,36,.82); border-radius: 10px; padding: 7px 9px; }
+.d9 .strip small { display: block; font: 500 9px/1 'Oswald'; letter-spacing: .2em; color: #9fb6d3; }
+.d9 .strip b { font: 700 20px/1.2 'Oswald'; }
+.d9 .stick { left: 50%; margin-left: -48px; bottom: 30px; width: 96px; height: 172px; }
+.d9 .stick .t { position: absolute; left: 30px; right: 30px; top: 0; bottom: 0; border-radius: 18px; background: rgba(13,22,36,.75); border: 2px solid #8fb8ff; box-shadow: 0 0 0 calc(var(--top,0) * 7px) rgba(143,184,255,.6); transition: box-shadow .12s; }
+.d9 .stick .knob { position: absolute; left: 14px; top: 58px; width: 68px; height: 56px; border-radius: 16px; background: #fff; color: #0d1624; display: grid; place-items: center; font: 700 12px/1 'Oswald'; letter-spacing: .14em; transform: translate(calc(var(--x) * 12px), calc((var(--p) - var(--u)) * 52px)); box-shadow: 0 6px 14px rgba(0,0,0,.35); }
+.d9 .side { position: absolute; bottom: 44px; width: 104px; background: rgba(13,22,36,.82); border-radius: 12px; padding: 8px 10px; }
+.d9 .side.l { left: 10px; } .d9 .side.r { right: 10px; text-align: right; }
+.d9 .side small { display: block; font: 500 9px/1 'Oswald'; letter-spacing: .2em; color: #9fb6d3; }
+.d9 .side b { font: 700 28px/1.1 'Oswald'; }
+.d9 .spin { position: absolute; left: 50%; margin-left: -62px; bottom: 40px; }
+
+/* ═════ 10 · Caddie Book ═════ */
+.d10 { --paper: #efe6cf; --pencil: #3b3a36; --red: #b23a2b; color: var(--pencil); font-family: 'Courier Prime', monospace; }
+.d10 .page { position: absolute; background: var(--paper); box-shadow: 0 6px 18px rgba(0,0,0,.3); background-image: repeating-linear-gradient(transparent 0 21px, rgba(59,58,54,.12) 21px 22px); }
+.d10 .page.t { left: 14px; right: 14px; top: 54px; padding: 10px 14px; transform: rotate(-.6deg); }
+.d10 .page.t b { font: 22px/1 'Special Elite'; }
+.d10 .page.t .row { display: flex; justify-content: space-between; align-items: baseline; }
+.d10 .page.t .row span { font-size: 13px; }
+.d10 .page.t .yd { font: 40px/1 'Special Elite'; color: var(--red); }
+.d10 .page.b { left: 14px; width: 168px; bottom: 30px; padding: 10px 12px; transform: rotate(.8deg); }
+.d10 .page.b div { display: flex; justify-content: space-between; font-size: 14px; padding: 2px 0; }
+.d10 .page.b div b { font: 18px/1 'Special Elite'; }
+.d10 .circled { border: 2px solid var(--red); border-radius: 50%; padding: 0 6px; color: var(--red); }
+.d10 .stick { right: 22px; bottom: 30px; width: 150px; height: 200px; }
+.d10 .stick .pp { position: absolute; inset: 0; background: var(--paper); box-shadow: 0 6px 18px rgba(0,0,0,.3), 0 0 0 calc(var(--top,0) * 6px) var(--red); transform: rotate(-1deg); transition: box-shadow .12s; }
+.d10 .stick svg.sk { position: absolute; inset: 0; }
+.d10 .stick .knob { position: absolute; left: 47px; top: 72px; width: 56px; height: 56px; border-radius: 50%; border: 3px solid var(--pencil); background: rgba(239,230,207,.9); display: grid; place-items: center; font: 13px 'Special Elite'; transform: translate(calc(var(--x) * 16px), calc((var(--p) - var(--u)) * 58px)); }
+.d10 .scrawl { position: absolute; left: 50%; top: 214px; transform: translateX(-50%) rotate(-3deg); background: var(--paper); padding: 6px 16px; font: 36px/1 'Special Elite'; color: var(--red); box-shadow: 0 4px 12px rgba(0,0,0,.3); white-space: nowrap; }
+.d10 .spin { position: absolute; right: 36px; bottom: 56px; }
+
+/* ═════ 11 · Launch Monitor ═════ */
+.d11 { --o: #ff7a1a; color: #f2f2f2; font-family: 'IBM Plex Sans Condensed', sans-serif; }
+.d11 .panel { position: absolute; background: rgba(12,12,12,.86); border: 1px solid #2a2a2a; }
+.d11 .hdr { left: 0; right: 0; top: 46px; height: 46px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-width: 0 0 1px; }
+.d11 .hdr b { font-weight: 700; font-size: 16px; letter-spacing: .04em; flex: 1; }
+.d11 .hdr span { font: 600 12px 'IBM Plex Mono'; color: var(--o); }
+.d11 .grid { left: 10px; right: 10px; top: 100px; display: grid; grid-template-columns: repeat(3, 1fr); }
+.d11 .grid div { padding: 6px 8px; border-right: 1px solid #2a2a2a; border-bottom: 1px solid #2a2a2a; }
+.d11 .grid div:nth-child(3n) { border-right: 0; }
+.d11 .grid small { display: block; font: 500 9px/1.2 'IBM Plex Mono'; letter-spacing: .08em; color: #8a8a8a; text-transform: uppercase; }
+.d11 .grid b { font: 600 20px/1.1 'IBM Plex Mono'; }
+.d11 .grid b em { font-style: normal; font-size: 11px; color: #8a8a8a; }
+.d11 .grid b.o { color: var(--o); }
+.d11 .stick { right: 18px; bottom: 30px; width: 120px; height: 200px; }
+.d11 .stick .t { position: absolute; inset: 0; background: rgba(12,12,12,.86); border: 1px solid #333; box-shadow: 0 0 0 calc(var(--top,0) * 4px) var(--o); transition: box-shadow .12s; background-image: repeating-linear-gradient(rgba(255,255,255,.06) 0 1px, transparent 1px 10px); }
+.d11 .stick .zero { position: absolute; left: 10px; right: 10px; top: 99px; border-top: 1px solid var(--o); }
+.d11 .stick .knob { position: absolute; left: 24px; top: 80px; width: 72px; height: 40px; background: var(--o); color: #111; display: grid; place-items: center; font: 600 12px 'IBM Plex Mono'; transform: translate(calc(var(--x) * 14px), calc((var(--p) - var(--u)) * 64px)); }
+.d11 .stick .rd { position: absolute; left: 6px; top: 6px; font: 500 9px 'IBM Plex Mono'; color: #8a8a8a; }
+.d11 .club { left: 10px; bottom: 30px; width: 200px; padding: 8px 10px; }
+.d11 .club b { font: 700 28px/1 'IBM Plex Sans Condensed'; }
+.d11 .club span { font: 600 12px 'IBM Plex Mono'; color: var(--o); margin-left: 8px; }
+.d11 .club small { display: block; font: 500 10px/1.5 'IBM Plex Mono'; color: #8a8a8a; }
+.d11 .club + .club { bottom: 108px; }
+.d11 .spin { position: absolute; right: 18px; bottom: 56px; }
+
+/* ═════ 12 · Editorial Mono ═════ */
+.d12 { --red: #e3262e; color: #fff; font-family: 'Barlow', sans-serif; }
+.d12 .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0) 30%, rgba(0,0,0,0) 60%, rgba(0,0,0,.7)); }
+.d12 .huge { position: absolute; left: 14px; top: 50px; font: 160px/0.82 'Anton'; letter-spacing: -.01em; }
+.d12 .huge small { display: block; font: 600 12px/1 'Barlow'; letter-spacing: .3em; margin-top: 8px; }
+.d12 .clubtag { position: absolute; right: 14px; top: 60px; text-align: right; }
+.d12 .clubtag b { font: 44px/1 'Anton'; display: block; }
+.d12 .clubtag span { font: 600 11px/1 'Barlow'; letter-spacing: .24em; }
+.d12 .clubtag i { display: block; width: 36px; height: 4px; background: var(--red); margin: 8px 0 0 auto; }
+.d12 .foot { position: absolute; left: 14px; bottom: 34px; display: grid; gap: 4px; font: 600 11px/1.3 'Barlow'; letter-spacing: .2em; text-transform: uppercase; }
+.d12 .foot b { font: 28px/1 'Anton'; letter-spacing: .02em; }
+.d12 .stick { right: 18px; bottom: 30px; width: 84px; height: 240px; }
+.d12 .stick .line { position: absolute; left: 41px; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,.75); }
+.d12 .stick .line::before, .d12 .stick .line::after { content: ""; position: absolute; left: -9px; width: 20px; height: 2px; background: #fff; }
+.d12 .stick .line::before { top: 0; } .d12 .stick .line::after { bottom: 0; }
+.d12 .stick .knob { position: absolute; left: 22px; top: 100px; width: 40px; height: 40px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 calc(var(--top,0) * 12px) rgba(227,38,46,.35); transform: translate(calc(var(--x) * 14px), calc((var(--p) - var(--u)) * 96px)); transition: box-shadow .12s; }
+.d12 .stick .w { position: absolute; left: -54px; font: 600 10px/1 'Barlow'; letter-spacing: .24em; writing-mode: vertical-rl; transform: rotate(180deg); }
+.d12 .word { position: absolute; left: 14px; top: 230px; font: 84px/0.85 'Anton'; color: var(--red); }
+.d12 .spin { position: absolute; right: 22px; bottom: 50px; }
+
+/* ── joystick lab ── */
+.lab { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 14px; }
+.lab .cell { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.lab .cell h3 { margin: 0; font: 700 20px/1 var(--display); text-transform: uppercase; letter-spacing: .03em; }
+.lab .cell p { font-size: 14px; color: var(--muted); }
+.lab .stage { position: relative; height: 250px; border-radius: 10px; overflow: hidden; background: linear-gradient(180deg, #7fb0d6, #cfe3ea 34%, #3f7a2e 35%, #5c9a40 70%, #6aae47); touch-action: none; }
+.lab .stage .j { left: 50%; top: 50%; }
+.lab .pc { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.lab .pc span { border-radius: 999px; padding: 3px 8px; border: 1px solid var(--line); color: var(--muted); }
+.lab .pc span.y { color: #9fd38a; border-color: #2e4a2a; } .lab .pc span.n { color: #e8a38f; border-color: #4a2e2a; }
+/* lab sticks */
+.j { position: absolute; transform: translate(-50%, -50%); touch-action: none; }
+.j .knob { position: absolute; }
+.j-ring { width: 170px; height: 170px; }
+.j-ring .o { position: absolute; inset: 0; border-radius: 50%; border: 3px solid #fff; background: rgba(10,20,40,.45); box-shadow: 0 0 0 calc(var(--top,0) * 10px) rgba(255,199,44,.65); transition: box-shadow .12s; }
+.j-ring .knob { left: 55px; top: 55px; width: 60px; height: 60px; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 6px #fff, inset 0 0 0 9px #ffc72c, 0 4px 10px rgba(0,0,0,.3); transform: translate(calc(var(--x) * 20px), calc((var(--p) - var(--u)) * 62px)); }
+.j-rail { width: 64px; height: 220px; }
+.j-rail .t { position: absolute; left: 22px; width: 20px; top: 0; bottom: 0; border-radius: 10px; background: rgba(10,20,40,.55); border: 2px solid #fff; box-shadow: 0 0 0 calc(var(--top,0) * 8px) rgba(47,211,255,.6); transition: box-shadow .12s; }
+.j-rail .f { position: absolute; left: 26px; width: 12px; top: 110px; height: calc(var(--p) * 94px); border-radius: 6px; background: #2fd3ff; }
+.j-rail .knob { left: 4px; top: 88px; width: 56px; height: 44px; border-radius: 14px; background: #fff; box-shadow: 0 4px 10px rgba(0,0,0,.3); transform: translate(calc(var(--x) * 10px), calc((var(--p) - var(--u)) * 90px)); }
+.j-arc { width: 220px; height: 220px; }
+.j-arc svg { position: absolute; inset: 0; }
+.j-arc .knob { left: 84px; top: 84px; width: 52px; height: 52px; border-radius: 50%; background: #ffb547; box-shadow: 0 4px 10px rgba(0,0,0,.35), 0 0 0 calc(var(--top,0) * 10px) rgba(255,181,71,.5); transform: translate(calc(var(--x) * 16px + var(--p) * 40px), calc((var(--p) - var(--u)) * 60px)); transition: box-shadow .12s; }
+.j-sling { width: 200px; height: 230px; }
+.j-sling svg { position: absolute; inset: 0; overflow: visible; }
+.j-sling .knob { left: 74px; top: 60px; width: 52px; height: 52px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fff, #d7dde2); box-shadow: 0 4px 10px rgba(0,0,0,.35), 0 0 0 calc(var(--top,0) * 10px) rgba(255,90,90,.55); transform: translate(calc(var(--x) * 18px), calc((var(--p) - var(--u)) * 110px)); transition: box-shadow .12s; }
+.j-bead { width: 220px; height: 230px; }
+.j-bead svg { position: absolute; inset: 0; }
+.j-bead .knob { left: 88px; top: 20px; width: 44px; height: 44px; border-radius: 50%; background: #ffe234; border: 3px solid #0b1a7a; box-shadow: 0 0 0 calc(var(--top,0) * 10px) rgba(92,255,138,.6); transition: box-shadow .12s; }
+.j-orb { width: 180px; height: 180px; }
+.j-orb .o { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.0) 40%, rgba(255,255,255,.35) 41% 43%, rgba(255,255,255,.0) 44%), conic-gradient(from 180deg, #ff6b4a calc(var(--p) * 360deg), rgba(255,255,255,.18) 0); -webkit-mask: radial-gradient(circle, transparent 0 74px, #000 75px); mask: radial-gradient(circle, transparent 0 74px, #000 75px); }
+.j-orb .knob { left: 40px; top: 40px; width: 100px; height: 100px; border-radius: 50%; background: radial-gradient(circle at 40% 30%, #fff, #e9edf0 60%, #aab4bd); box-shadow: 0 0 0 calc(var(--top,0) * 12px) rgba(255,107,74,.5), 0 8px 18px rgba(0,0,0,.35); transform: translate(calc(var(--x) * 14px), calc((var(--p) - var(--u)) * 30px)) scale(calc(1 - var(--p) * .18)); transition: box-shadow .12s; }
+.j-ticks { width: 120px; height: 236px; }
+.j-ticks .t { position: absolute; inset: 0; border-radius: 16px; background: rgba(12,12,12,.7); background-image: repeating-linear-gradient(rgba(255,255,255,.18) 0 2px, transparent 2px 12px); background-size: 40% 100%; background-repeat: no-repeat; background-position: center; box-shadow: 0 0 0 calc(var(--top,0) * 5px) #ff7a1a; transition: box-shadow .12s; }
+.j-ticks .knob { left: 20px; top: 96px; width: 80px; height: 44px; border-radius: 8px; background: #ff7a1a; transform: translate(calc(var(--x) * 12px), calc((var(--p) - var(--u)) * 92px)); }
+.j-split { width: 220px; height: 220px; }
+.j-split .h { position: absolute; left: 0; right: 0; height: 104px; border-radius: 20px; display: grid; place-items: center; font: 700 13px/1 var(--display); letter-spacing: .2em; color: #fff; }
+.j-split .h.a { top: 0; background: rgba(47,211,255,calc(.18 + var(--u) * .6)); border: 2px solid #2fd3ff; }
+.j-split .h.b { bottom: 0; background: rgba(255,199,44,calc(.18 + var(--p) * .6)); border: 2px solid #ffc72c; box-shadow: 0 0 0 calc(var(--top,0) * 8px) rgba(255,199,44,.5); transition: box-shadow .12s; }
+.j-split .knob { left: 86px; top: 86px; width: 48px; height: 48px; border-radius: 50%; background: #fff; transform: translate(calc(var(--x) * 20px), calc((var(--p) - var(--u)) * 80px)); box-shadow: 0 4px 10px rgba(0,0,0,.35); }
+
+.how { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 10px; }
+.how div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 14px; color: var(--muted); }
+.how b { display: block; color: var(--fg); font: 700 17px/1.2 var(--display); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+footer { color: var(--muted); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .toast-live, .stick .knob, [class*="j-"] * { transition: none !important; } }
+</style>
+
+<header class="wrap">
+  <div class="kicker">The Hunt · portrait HUD · art direction round 2</div>
+  <h1>Portrait HUD board</h1>
+  <p class="lede">Twelve directions for playing on a phone held upright. In each one the camera sits behind your trail shoulder, so you fill the lower half of the screen, and the HUD stays out of your way. Every direction has the same controls: club, swing mode, lie with slope, the swing stick, and the spin ball while the ball is in the air. Directions marked Live have a working stick: pull down, wait for the flash, push up.</p>
+  <nav class="toc" aria-label="Directions" id="toc"></nav>
+</header>
+
+<main id="board"></main>
+
+<section class="wrap" id="lab-sec" aria-labelledby="lab-h">
+  <div class="dir" style="border:0;padding:0">
+    <div class="dir-head"><span class="num">Swing stick lab</span><h2 id="lab-h">Eight ways to make the stick obvious</h2>
+    <p>All of these are live. Each one measures the same things: how far you pull, how straight you pull, when you push, and the push angle. Pick the one that feels best in your hand, and any direction above can use it.</p></div>
+  </div>
+  <div class="lab" id="lab"></div>
+</section>
+
+<section class="wrap" aria-labelledby="rules-h">
+  <h2 id="rules-h">What every layout keeps</h2>
+  <div class="how">
+    <div><b>You stay in shot</b>The camera is behind your trail shoulder. You take up the lower-left half, and the range and target fill the sky above you.</div>
+    <div><b>One thumb</b>The stick sits where your thumb rests, bottom right by default (it can mirror). It is 140–200 pt tall, so a full pull is a real gesture.</div>
+    <div><b>Top-of-swing flash</b>When your golfer reaches the top, the stick glows. Push up then. Early reads Quick and late reads Late.</div>
+    <div><b>Spin replaces the stick</b>Once the ball is in the air, the stick's spot turns into the spin ball. Swipe down for backspin, up for topspin, sideways to bend it.</div>
+  </div>
+</section>
+<footer class="wrap">Backgrounds are real renders from the game engine (the golfer model is still being upgraded). The panels are HTML, so every layout can be lifted straight into the game.</footer>
+
+<script>
+(() => {
+'use strict';
+// ── shared art ──
+const avatar = (s = 40) => `<svg class="av" width="${s}" height="${s}" viewBox="0 0 40 40" aria-hidden="true"><defs><linearGradient id="avbg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fc1e8"/><stop offset="1" stop-color="#4f86b8"/></linearGradient></defs><rect width="40" height="40" fill="url(#avbg)"/><path d="M8 40c1-8 6-11 12-11s11 3 12 11z" fill="#d6d3cc"/><rect x="16" y="24" width="8" height="7" fill="#d9a88c"/><ellipse cx="20" cy="18" rx="8.2" ry="10" fill="#e3b49a"/><path d="M12 15c0-7 4-9 8-9s8 2 8 9c-1-3-3-4-8-4s-7 1-8 4z" fill="#3b2b20"/><path d="M10.5 13.5h19l-1 3.4h-17z" fill="#f3efe4"/><path d="M9 16.5c3.5 3 18.5 3 22 0l-1 2c-4 2-16 2-20 0z" fill="#f3efe4"/><path d="M16.5 13.2l2-2h3l2 2z" fill="#d62d20"/><circle cx="17" cy="20" r="1" fill="#2a3a46"/><circle cx="23" cy="20" r="1" fill="#2a3a46"/><path d="M17 25.5q3 2 6 0" stroke="#9a5a50" stroke-width="1" fill="none"/></svg>`;
+const dims = (() => { const n = 70, out = [], g = Math.PI * (3 - Math.sqrt(5)); for (let i = 0; i < n; i++) { const y = 1 - (i + .5) / n * 2, r = Math.sqrt(1 - y * y), t = g * i; const x = Math.cos(t) * r, z = Math.sin(t) * r; if (z > .1) out.push([x, y, z]); } return out; })();
+const ball = (s = 124, ang = -110, amt = .6, acc = '#ffc72c', ring = 'rgba(9,20,44,.72)', label = 'BACKSPIN 60') => {
+  const R = 40, c = 62;
+  const d = dims.map(([x, y, z]) => `<ellipse cx="${(c + x * (R - 3)).toFixed(1)}" cy="${(c + y * (R - 3)).toFixed(1)}" rx="${(2.8 * (.4 + .6 * z)).toFixed(1)}" ry="${(2.8 * (.4 + .6 * z) * (.5 + .5 * z)).toFixed(1)}" transform="rotate(${(Math.atan2(y, x) * 57.3).toFixed(0)} ${(c + x * (R - 3)).toFixed(1)} ${(c + y * (R - 3)).toFixed(1)})" fill="rgba(110,122,132,${(.18 + .3 * z).toFixed(2)})"/>`).join('');
+  const a = ang * Math.PI / 180, L = 18 + 20 * amt;
+  const circ = 2 * Math.PI * 54;
+  return `<svg width="${s}" height="${s}" viewBox="0 0 124 ${label ? 140 : 124}" aria-hidden="true" style="overflow:visible"><defs><radialGradient id="bg${s}" cx="38%" cy="32%"><stop offset="0" stop-color="#fff"/><stop offset=".7" stop-color="#e9edf0"/><stop offset="1" stop-color="#aeb8c1"/></radialGradient></defs>
+  <circle cx="${c}" cy="${c}" r="60" fill="${ring}"/><circle cx="${c}" cy="${c}" r="54" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="5"/>
+  <circle cx="${c}" cy="${c}" r="54" fill="none" stroke="${acc}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${circ * amt} ${circ}" transform="rotate(-90 ${c} ${c})"/>
+  <circle cx="${c}" cy="${c}" r="${R}" fill="url(#bg${s})"/>${d}
+  <g transform="translate(${c} ${c}) rotate(${ang})"><line x1="${-L * .4}" y1="0" x2="${L}" y2="0" stroke="${acc}" stroke-width="5" stroke-linecap="round"/><path d="M${L + 9} 0 L${L - 3} -8 L${L - 3} 8Z" fill="${acc}"/></g>
+  ${label ? `<text x="${c}" y="138" text-anchor="middle" fill="#fff" style="font:700 10px 'Barlow Condensed';letter-spacing:.14em">${label}</text>` : ''}</svg>`;
+};
+const slope = (col = '#ffc72c', ground = '#3ddc84', w = 56) => `<svg width="${w}" height="${w * .55}" viewBox="0 0 72 40" aria-hidden="true"><g transform="translate(36 9)"><path d="M-14 0 L10 0" stroke="${col}" stroke-width="3.5" stroke-linecap="round"/><path d="M-18 0 L-9 -6 L-9 6Z" fill="${col}"/></g><g transform="rotate(12 36 30)"><rect x="6" y="30" width="60" height="7" rx="2" fill="${ground}"/><circle cx="36" cy="26" r="4" fill="#fff"/></g></svg>`;
+const windArrow = (col = '#fff', s = 18, rot = -35) => `<svg width="${s}" height="${s}" viewBox="0 0 20 20" aria-hidden="true"><g transform="rotate(${rot} 10 10)"><path d="M10 2 L16 12 H12 V18 H8 V12 H4Z" fill="${col}"/></g></svg>`;
+const status = () => `<div class="status"><span>9:41</span><span class="island"></span><span class="bat"></span></div><div class="home"></div>`;
+const S = { club: '7i', name: '7 iron', yd: 165, mode: 'Full', lie: 'Fairway', liePct: 96, slopeDeg: 3, wind: 6, carry: 118, speed: 121, apex: 31, spin: '6.4k', land: 152, pin: '7 ft' };
+
+// state → background + stick values
+const ST = {
+  address: { bg: 'address', p: 0, u: 0, x: 0, top: 0, g: 0 },
+  top:     { bg: 'top', p: .92, u: 0, x: .05, top: 1, g: .9 },
+  flight:  { bg: 'flight', p: 0, u: 0, x: 0, top: 0, g: 0 },
+  landing: { bg: 'landing', p: 0, u: 0, x: 0, top: 0, g: 0 },
+  finish:  { bg: 'finish', p: 0, u: 1, x: -.1, top: 0, g: 0 },
+};
+const vars = st => `--p:${st.p};--u:${st.u};--x:${st.x};--top:${st.top};--g:${st.g}`;
+const show = (cond, html) => cond ? html : '';
+
+// ── the twelve directions ──
+const D = [];
+const dir = (o) => D.push(o);
+
+dir({ id: 'd1', name: 'Sunday Slim', blurb: 'The broadcast look from the EA references, made narrow for a phone held upright. Slim navy panels with a gold rule: name and score up top, the club card on the right above your thumb. One big ring stick does everything.', pal: ['#09142c', '#ffffff', '#ffc72c', '#2b6cff', '#3ddc84'], type: 'Barlow Condensed + Barlow', live: true,
+  states: ['address', 'top', 'flight', 'landing'],
+  hud: (s, st) => `
+    <div class="wind">${S.wind}<small>MPH</small>${windArrow('#fff', 16)}</div>
+    <div class="bar"><div class="r1">${avatar(30)}<b>Neil</b><span class="sc">E</span></div><div class="r2"><span>LH <em>6'3"</em></span><span>Range <em>Ball 12</em></span><span>To pin <em>150</em></span></div></div>
+    ${show(s !== 'flight' && s !== 'landing', `<div class="card">
+      <div class="row"><div class="club">${S.club}<span>${S.name}</span></div><div class="yd">${S.yd}<small> yd</small></div></div>
+      <div class="row"><div class="lie">${S.lie}: ${S.liePct}%<small>${slope('#ffc72c', '#3ddc84', 40)} ${S.slopeDeg}° · starts left</small></div><div class="thumb"></div></div>
+      <div class="row"><div class="mode on">Full</div><div class="mode">Punch</div><div class="mode">Pitch</div></div></div>`)}
+    ${show(s === 'address' || s === 'top', `<div class="stick" data-stick data-travel="58" style="${vars(st)}"><span class="cap up">PUSH ▲</span><div class="ring"></div><div class="lane"></div><div class="fill"></div><div class="fillu"></div><div class="knob"></div><span class="cap dn">PULL ▼</span></div>
+      <div class="tempo" style="--g:${st.g}"><b></b><i></i></div>`)}
+    ${show(s === 'top', `<div class="topcue">TOP · PUSH</div>`)}
+    ${show(s === 'flight', `<div class="live"><div><dt>Carry</dt><dd>${S.carry}<small> yd</small></dd></div><div><dt>Ball speed</dt><dd>${S.speed}<small> mph</small></dd></div><div><dt>Apex</dt><dd>${S.apex}<small> yd</small></dd></div><div><dt>Spin</dt><dd>${S.spin}</dd></div></div><div class="spin">${ball(124, -100, .6, '#ffc72c')}</div>`)}
+    ${show(s === 'landing', `<div class="live"><div><dt>Carry</dt><dd>${S.land}<small> yd</small></dd></div><div><dt>To pin</dt><dd>${S.pin}</dd></div><div><dt>Tempo</dt><dd style="color:#3ddc84">Smooth</dd></div><div><dt>Shape</dt><dd>Draw</dd></div></div><div class="topcue" style="color:#3ddc84">ON THE GREEN</div>`)}` });
+
+dir({ id: 'd2', name: 'Clubhouse', blurb: 'Members-only calm. One enamel plate at the top and one rounded tray at the bottom. Serif numbers, brass edges, and a stick like a watch face that wants to be pulled.', pal: ['#103423', '#f4ecd8', '#c9a24a', '#e6c777', '#9fd38a'], type: 'Fraunces + Barlow', live: true,
+  states: ['address', 'top', 'flight', 'landing'],
+  hud: (s, st) => `
+    <div class="plate">${avatar(42)}<div class="nm">Neil<small>Left-handed · 6'3" · ball 12</small></div><div class="yd">${s === 'landing' ? S.pin : '150'}<small>${s === 'landing' ? 'to the pin' : 'to the flag'}</small></div></div>
+    <div class="strip">
+      ${show(s === 'address' || s === 'top', `
+      <div class="cell" style="left:4px;top:6px"><div class="lb">Club</div><div class="v">${S.club} <small>${S.yd} yd</small></div></div>
+      <div class="cell" style="left:4px;top:70px"><div class="lb">Lie · ${S.lie}</div><div class="v">${S.liePct}% <small>${S.slopeDeg}° ←</small></div></div>
+      <div class="modes"><span class="on">Full</span><span>Punch</span><span>Pitch</span><span class="off">Flop</span></div>
+      <div class="stick" data-stick data-travel="52" style="${vars(st)}"><div class="face"></div><div class="ticks"></div><div class="knob">pull</div><div class="lbl">${s === 'top' ? 'At the top.<br>Push now.' : 'Pull<br>to swing'}</div></div>`)}
+      ${show(s === 'flight', `<div class="cell" style="left:4px;top:8px"><div class="lb">Carry</div><div class="v">${S.carry} <small>yd</small></div></div><div class="cell" style="left:4px;top:72px"><div class="lb">Ball speed</div><div class="v">${S.speed} <small>mph</small></div></div><div class="cell" style="left:140px;top:8px"><div class="lb">Apex</div><div class="v">${S.apex} <small>yd</small></div></div><div class="spin">${ball(120, -95, .55, '#e6c777', 'rgba(16,52,35,.9)', '')}</div>`)}
+      ${show(s === 'landing', `<div class="cell" style="left:4px;top:8px"><div class="lb">Carry</div><div class="v">${S.land} <small>yd</small></div></div><div class="cell" style="left:4px;top:72px"><div class="lb">Tempo</div><div class="v">Smooth</div></div><div class="cell" style="left:170px;top:8px"><div class="lb">Shape</div><div class="v">Little draw</div></div>`)}
+    </div>
+    ${show(s === 'top', `<div class="note">Lovely tempo</div>`)}${show(s === 'landing', `<div class="note">On the dance floor</div>`)}` });
+
+dir({ id: 'd3', name: 'Y2K Pro Tour', blurb: 'Loud console golf from the PS2 days: chrome bevels, electric blue, sunburst yellow. The power meter is a horizontal sweep, and the stick is a bezel with a big yellow knob.', pal: ['#1b3fd9', '#d9e1f2', '#ffe234', '#ff8a00', '#5cff8a'], type: 'Russo One + Barlow', live: true,
+  states: ['address', 'top', 'flight'],
+  hud: (s, st) => `
+    <div class="chrome who">${avatar(42)}<span class="sk">NEIL</span><span class="sk y">150</span></div>
+    ${show(s !== 'flight', `<div class="chrome club"><small>CLUB</small><span class="sk">${S.club}</span> <span class="sk" style="font-size:20px;color:#ffe234">${S.yd}</span></div>
+    <div class="chrome lie"><small style="font:11px 'Russo One';color:#ffe234">LIE ${S.liePct}%</small><span class="sk">FAIRWAY</span> ${slope('#ffe234', '#5cff8a', 40)}</div>
+    <div class="chrome meter" style="--g:${s === 'top' ? .82 : .06}"><small style="font:10px 'Russo One';color:#ffe234">POWER · TEMPO</small><div class="track"><i></i><b></b></div></div>
+    <div class="stick" data-stick data-travel="62" style="${vars(st)}"><div class="bezel"></div><div class="knob">GO</div></div>`)}
+    ${show(s === 'top', `<div class="burst">PUSH!</div>`)}
+    ${show(s === 'flight', `<div class="chrome" style="left:10px;bottom:200px;padding:8px 12px"><small style="font:10px 'Russo One';color:#ffe234">CARRY</small><br><span class="sk" style="font-size:40px">${S.carry}</span></div><div class="spin">${ball(124, -60, .7, '#ffe234', 'rgba(11,31,138,.85)', 'SWIPE FOR SPIN')}</div>`)}` });
+
+dir({ id: 'd4', name: 'Frost', blurb: 'Modern phone-native frosted glass. Everything lives in one dock you can reach with your thumb. The stick is a tall capsule, so pulling the full length feels natural, and the top of the swing glows coral.', pal: ['rgba(255,255,255,.3)', '#ffffff', '#ff6b4a', '#10202a'], type: 'Manrope', states: ['address', 'top', 'flight'],
+  hud: (s, st) => `
+    <div class="glass top">${avatar(38)}<b>Neil<small>LH · 6'3" · 150 to flag</small></b><span class="pill">${windArrow('#fff', 12)} ${S.wind} mph</span></div>
+    <div class="glass dock">
+      ${show(s !== 'flight', `<div class="c" style="top:16px"><small>Club</small><b>${S.club} <em>${S.yd} yd</em></b></div>
+      <div class="c" style="top:76px"><small>Lie · ${S.lie}</small><b>${S.liePct}% <em>${S.slopeDeg}° ←</em></b></div>
+      <div class="seg"><span class="on">Full</span><span>Punch</span><span>Pitch</span><span class="off">Flop</span></div>`)}
+      ${show(s === 'flight', `<div class="c" style="top:16px"><small>Carry</small><b>${S.carry} <em>yd</em></b></div><div class="c" style="top:76px"><small>Apex · speed</small><b>${S.apex} <em>yd · ${S.speed} mph</em></b></div><div class="spin">${ball(120, -100, .5, '#ff6b4a', 'rgba(255,255,255,.18)', '')}</div>`)}
+    </div>
+    ${show(s !== 'flight', `<div class="stick" data-stick data-travel="46" style="${vars(st)}"><div class="cap"></div><div class="fill"></div><div class="knob"></div><span class="ar" style="top:10px">PUSH</span><span class="ar" style="bottom:10px">PULL</span></div>`)}
+    ${show(s === 'top', `<div class="big">Now<small>you're at the top</small></div>`)}` });
+
+dir({ id: 'd5', name: 'Hand-hung Board', blurb: 'A nod to the old hand-hung tournament scoreboard: white number tiles on green, red for under par. The stick is a scoreboard post with a red slider.', pal: ['#0f5132', '#f7f4ea', '#c8102e', '#e9e2c9'], type: 'Oswald', states: ['address', 'top', 'landing'],
+  hud: (s, st) => `
+    <div class="board"><div class="hd">Range · Ball 12</div><div class="rw"><span class="k"></span><span class="k">CLUB</span><span class="k">YDS</span><span class="k">LIE</span><span class="k">WIND</span>
+      <span class="nm">NEIL</span><span>${S.club}</span><span class="r">${S.yd}</span><span>${S.liePct}</span><span>${S.wind}</span></div></div>
+    ${show(s !== 'landing', `<div class="tag"><small>Mode</small><b>FULL</b></div><div class="tag"><small>Slope</small><b>${S.slopeDeg}°<em>◀</em></b></div>
+    <div class="stick" data-stick data-travel="62" style="${vars(st)}"><div class="post"></div><span class="num" style="top:4px">PUSH</span><div class="knob">SWING</div><span class="num" style="bottom:4px">PULL</span></div>`)}
+    ${show(s === 'top', `<div class="flag">PUSH</div>`)}
+    ${show(s === 'landing', `<div class="flag">${S.land} · ${S.pin}</div><div class="tag" style="bottom:34px"><small>Tempo</small><b style="color:#0f5132">OK</b></div>`)}` });
+
+dir({ id: 'd6', name: 'Night Range', blurb: 'Under the lights at a range bay at night: neon cyan and magenta glow, monospaced numbers. The stick sits in the middle at the bottom, the easiest spot to reach whichever hand you hold the phone in.', pal: ['#05060f', '#22e1ff', '#ff3ea5', '#e8f9ff'], type: 'Space Mono + Barlow Condensed', states: ['address', 'top', 'flight'],
+  hud: (s, st) => `<div class="tint"></div>
+    <div class="glow bay">BAY 07<b>NEIL · LH</b></div>
+    <div class="glow score"><small>TARGET</small><b>150</b></div>
+    ${show(s !== 'flight', `<div class="glow rail"><div><small>LIE</small><b>${S.liePct}%</b></div><div><small>SLOPE</small><b>${S.slopeDeg}°←</b></div><div><small>MODE</small><b>FULL</b></div><div><small>WIND</small><b>${S.wind}</b></div></div>
+    <div class="glow club"><b>${S.club}</b><small>${S.yd} YD</small></div>
+    <div class="stick" data-stick data-travel="60" style="${vars(st)}"><div class="o"></div><div class="beam"></div><div class="knob"></div><span class="cap" style="top:-16px">PUSH</span><span class="cap" style="bottom:-16px">PULL</span></div>`)}
+    ${show(s === 'top', `<div class="neon">PUSH</div>`)}
+    ${show(s === 'flight', `<div class="glow rail"><div><small>CARRY</small><b>${S.carry}</b></div><div><small>SPEED</small><b>${S.speed}</b></div><div><small>APEX</small><b>${S.apex}</b></div></div><div class="spin">${ball(124, -100, .6, '#ff3ea5', 'rgba(5,10,30,.75)', 'SWIPE · SPIN')}</div>`)}` });
+
+dir({ id: 'd7', name: 'Card Stack', blurb: 'Feels like a modern sports app. A white bottom sheet with swipeable cards for club, mode and lie. The stick is a big pill on a track that spans the full width, and you can\'t miss it.', pal: ['#ffffff', '#111111', '#00c46a', '#f3f4f2'], type: 'Archivo (condensed numerals)', states: ['address', 'top', 'flight'],
+  hud: (s, st) => `
+    <div class="pill">${avatar(34)}<b>Neil</b><span>LH · 6'3"</span></div><div class="wind">${S.wind} mph ↗</div>
+    <div class="sheet"><div class="grab"></div>
+      ${show(s !== 'flight', `<div class="cards"><div class="cardx ac"><small>Club</small><b>${S.club}</b><br><em style="color:#9be3c0">${S.yd} yd</em></div><div class="cardx"><small>Mode</small><b>Full</b></div><div class="cardx"><small>Lie</small><b>${S.liePct}%</b><br><em>${S.slopeDeg}° left</em></div><div class="cardx"><small>Pin</small><b>150</b></div></div>
+      <div class="stick" data-stick data-travel="34" style="${vars(st)}"><div class="track"></div><div class="knob">${s === 'top' ? 'PUSH ▲' : 'PULL ▼'}</div><div class="meter"><i></i><b></b></div></div>`)}
+      ${show(s === 'flight', `<div class="spin">${ball(100, -100, .5, '#00c46a', 'rgba(17,17,17,.9)', '')}</div><div class="result"><div><small>Carry</small><b>${S.carry}</b></div><div><small>Speed</small><b>${S.speed}</b></div><div><small>Apex</small><b>${S.apex}</b></div></div>`)}
+    </div>` });
+
+dir({ id: 'd8', name: 'Thumb Arc', blurb: 'Built for one thumb. Club, mode, lie and wind sit on an arc around the stick, so everything is within one sweep. The big yardage up top reads like a TV distance graphic.', pal: ['#15181c', '#ffffff', '#ffb547', '#2c3138'], type: 'Barlow Condensed + Barlow', states: ['address', 'top', 'flight'],
+  hud: (s, st) => `
+    <div class="who">${avatar(36)}<div>Neil<small>LH · 6'3" · ball 12</small></div></div>
+    <div class="yard">150<small>TO THE FLAG</small></div>
+    <div class="arc"></div>
+    ${show(s !== 'flight', `
+    <div class="arcbtn" style="right:190px;bottom:30px">${S.club}<small>${S.yd}y</small></div>
+    <div class="arcbtn" style="right:180px;bottom:112px">Full<small>mode</small></div>
+    <div class="arcbtn" style="right:130px;bottom:182px">${S.liePct}<small>lie ${S.slopeDeg}°←</small></div>
+    <div class="arcbtn" style="right:48px;bottom:208px">${S.wind}<small>mph ↗</small></div>
+    <div class="stick" data-stick data-travel="50" style="${vars(st)}"><div class="prog"></div><div class="bg"></div><div class="knob"></div></div>`)}
+    ${show(s === 'top', `<div class="callout">Top!<small>Push up through it</small></div>`)}
+    ${show(s === 'flight', `<div class="arcbtn" style="right:190px;bottom:30px;width:70px;height:70px">${S.carry}<small>carry</small></div><div class="arcbtn" style="right:150px;bottom:150px;width:70px;height:70px">${S.speed}<small>mph</small></div><div class="spin">${ball(124, -100, .55, '#ffb547', 'rgba(21,24,28,.9)', '')}</div>`)}` });
+
+dir({ id: 'd9', name: 'Ball Cam Split', blurb: 'Two cameras at once: a TV-style window at the top shows the target or the ball\'s flight, and you stay big below it. You never lose sight of the swing or the shot.', pal: ['#0d1624', '#ffffff', '#8fb8ff', '#e32b2b'], type: 'Oswald', states: ['address', 'top', 'flight'],
+  hud: (s, st) => `
+    <div class="inset" style="background-image:var(--inset-${s === 'flight' ? 'landing' : 'flight'})"><span class="lb">${s === 'flight' ? 'LIVE · BALL CAM' : 'TARGET CAM'}</span><div class="rd">${s === 'flight' ? S.carry : 150}<small>${s === 'flight' ? 'CARRY YDS' : 'TO THE FLAG'}</small></div></div>
+    ${show(s !== 'flight', `<div class="strip"><div><small>CLUB</small><b>${S.club} · ${S.yd}</b></div><div><small>LIE</small><b>${S.liePct}% ${S.slopeDeg}°←</b></div><div><small>MODE</small><b>FULL</b></div></div>
+    <div class="side l">${avatar(30)}<small style="margin-top:4px">NEIL · LH</small></div><div class="side r"><small>WIND</small><b>${S.wind}↗</b></div>
+    <div class="stick" data-stick data-travel="52" style="${vars(st)}"><div class="t"></div><div class="knob">${s === 'top' ? 'PUSH' : 'PULL'}</div></div>`)}
+    ${show(s === 'flight', `<div class="spin">${ball(124, -100, .6, '#8fb8ff', 'rgba(13,22,36,.85)', 'SWIPE FOR SPIN')}</div><div class="side l"><small>SPEED</small><b>${S.speed}</b></div><div class="side r"><small>APEX</small><b>${S.apex}</b></div>`)}` });
+
+dir({ id: 'd10', name: 'Caddie Book', blurb: 'Your yardage book come to life: cream paper, pencil lines, typewriter numbers, red-pen circles. Warm and handmade, and very readable in bright sun.', pal: ['#efe6cf', '#3b3a36', '#b23a2b', '#cfc4a6'], type: 'Special Elite + Courier Prime', states: ['address', 'top', 'landing'],
+  hud: (s, st) => `
+    <div class="page t"><div class="row"><b>Neil · LH</b><span>range · ball 12</span></div><div class="row"><span>to flag</span><span class="yd">150</span><span>wind ${S.wind}↗</span></div></div>
+    ${show(s !== 'landing', `<div class="page b"><div><span>club</span><b>${S.club} · ${S.yd}</b></div><div><span>lie</span><b>${S.lie.toLowerCase()} <span class="circled">${S.liePct}</span></b></div><div><span>slope</span><b>${S.slopeDeg}° ← left</b></div><div><span>shot</span><b>full</b></div></div>
+    <div class="stick" data-stick data-travel="58" style="${vars(st)}"><div class="pp"></div><svg class="sk" viewBox="0 0 150 200" aria-hidden="true"><path d="M75 16 C74 60 77 140 75 186" stroke="#3b3a36" stroke-width="2" fill="none" stroke-dasharray="4 5"/><path d="M68 26 L75 14 L82 26" stroke="#3b3a36" stroke-width="2" fill="none"/><path d="M68 176 L75 188 L82 176" stroke="#b23a2b" stroke-width="2" fill="none"/><text x="10" y="24" font-family="Special Elite" font-size="12" fill="#3b3a36">push</text><text x="10" y="190" font-family="Special Elite" font-size="12" fill="#b23a2b">pull</text></svg><div class="knob">swing</div></div>`)}
+    ${show(s === 'top', `<div class="scrawl">now!</div>`)}
+    ${show(s === 'landing', `<div class="scrawl">${S.land} · ${S.pin} ✓</div><div class="page b"><div><span>tempo</span><b>smooth</b></div><div><span>shape</span><b>draw</b></div><div><span>carry</span><b>${S.land}</b></div></div>`)}` });
+
+dir({ id: 'd11', name: 'Launch Monitor', blurb: 'For the data nerds: a launch-monitor readout with the numbers you would see in a sim bay. The stick is a calibrated slider with tick marks, so you can read your pull length exactly.', pal: ['#0c0c0c', '#f2f2f2', '#ff7a1a', '#8a8a8a'], type: 'IBM Plex Sans Condensed + IBM Plex Mono', states: ['address', 'top', 'flight'],
+  hud: (s, st) => `
+    <div class="panel hdr">${avatar(30)}<b>NEIL · LH · 6'3"</b><span>BALL 012</span></div>
+    <div class="panel grid">${s === 'flight'
+      ? `<div><small>Carry</small><b class="o">${S.carry}<em>yd</em></b></div><div><small>Ball spd</small><b>${S.speed}<em>mph</em></b></div><div><small>Apex</small><b>${S.apex}<em>yd</em></b></div><div><small>Launch</small><b>17.8<em>°</em></b></div><div><small>Spin</small><b>6420<em>rpm</em></b></div><div><small>Side</small><b>4L<em>yd</em></b></div>`
+      : `<div><small>To pin</small><b class="o">150<em>yd</em></b></div><div><small>Wind</small><b>${S.wind}<em>mph ↗</em></b></div><div><small>Lie</small><b>${S.liePct}<em>%</em></b></div><div><small>Slope</small><b>${S.slopeDeg}<em>° L</em></b></div><div><small>Pull</small><b class="o">${Math.round(st.p * 100)}<em>%</em></b></div><div><small>Tempo</small><b>${s === 'top' ? '3.1' : '—'}<em>:1</em></b></div>`}</div>
+    ${show(s !== 'flight', `<div class="panel club"><b>${S.club}</b><span>${S.yd} YD</span><small>7 IRON · 34° · FULL</small></div><div class="panel club"><b>FULL</b><span>MODE</span><small>PUNCH · PITCH (PW–60) · FLOP (56/60)</small></div>
+    <div class="stick" data-stick data-travel="64" style="${vars(st)}"><div class="t"></div><span class="rd">PUSH</span><div class="zero"></div><div class="knob">${Math.round(st.p * 100)}%</div><span class="rd" style="top:auto;bottom:6px">PULL</span></div>`)}
+    ${show(s === 'flight', `<div class="spin">${ball(120, -100, .6, '#ff7a1a', 'rgba(12,12,12,.9)', '')}</div>`)}` });
+
+dir({ id: 'd12', name: 'Editorial Mono', blurb: 'A sports-magazine cover: black and white with one red, the red from your visor. Huge numbers, almost no chrome. The stick is just a line and a red dot.', pal: ['#000000', '#ffffff', '#e3262e'], type: 'Anton + Barlow', states: ['address', 'top', 'landing'],
+  hud: (s, st) => `<div class="shade"></div>
+    <div class="huge">${s === 'landing' ? S.land : 150}<small>${s === 'landing' ? 'YARDS · ' + S.pin.toUpperCase() + ' FROM THE PIN' : 'YARDS TO THE FLAG'}</small></div>
+    ${show(s !== 'landing', `<div class="clubtag"><b>${S.club}</b><span>FULL · ${S.yd}</span><i></i><span style="display:block;margin-top:8px">LIE ${S.liePct} · ${S.slopeDeg}° L</span></div>
+    <div class="foot">${avatar(34)}<b>NEIL</b>LEFT-HANDED · 6'3"</div>
+    <div class="stick" data-stick data-travel="96" style="${vars(st)}"><div class="line"></div><span class="w" style="top:20px">PUSH</span><div class="knob"></div><span class="w" style="bottom:20px">PULL</span></div>`)}
+    ${show(s === 'top', `<div class="word">NOW.</div>`)}
+    ${show(s === 'landing', `<div class="word" style="top:auto;bottom:120px">CLEAN.</div><div class="spin" style="bottom:40px">${ball(110, -100, .5, '#e3262e', 'rgba(0,0,0,.6)', '')}</div>`)}` });
+
+// ── render the board ──
+const labels = { address: 'Address · stick ready', top: 'Top of the swing · push cue', flight: 'Ball in the air · spin ball', landing: 'Result', finish: 'Finish' };
+const board = document.getElementById('board');
+const toc = document.getElementById('toc');
+board.innerHTML = D.map((d, i) => `
+  <section class="wrap dir" id="${d.id}" aria-labelledby="${d.id}-h">
+    <div class="dir-head"><span class="num">Direction ${String(i + 1).padStart(2, '0')} ${d.live ? '<span class="live-tag">Live stick</span>' : ''}</span><h2 id="${d.id}-h">${d.name}</h2><p>${d.blurb}</p>
+      <div class="meta"><span class="chips">${d.pal.map(c => `<i style="background:${c}"></i>`).join('')}</span><span>${d.type}</span></div></div>
+    <div class="frames">${d.states.map(s => `
+      <figure><div class="phone"><div class="glass"><div class="screen ${d.id}" data-state="${s}" ${d.live && s === 'address' ? 'data-live="1"' : ''}>
+        ${d.live && s === 'address' ? `<div class="bgl bg-finish" data-l="finish" style="opacity:0"></div><div class="bgl bg-top" data-l="top" style="opacity:0"></div>` : ''}
+        <div class="bgl bg-${ST[s].bg}" ${d.live && s === 'address' ? 'data-l="address"' : ''}></div>
+        <div class="hud">${d.hud(s, ST[s])}</div>${status()}<div class="toast-live"></div>
+      </div></div></div><figcaption><b>${labels[s]}</b>${d.live && s === 'address' ? ' · try it: pull down, wait for the flash, push up' : ''}</figcaption></figure>`).join('')}
+    </div>
+  </section>`).join('');
+toc.innerHTML = D.map((d, i) => `<a href="#${d.id}">${i + 1} · ${d.name}</a>`).join('') + '<a href="#lab-sec">Stick lab</a>';
+// the split-screen inset uses the flight/landing renders
+(() => {
+  const probe = document.createElement('div'); probe.className = 'bg-flight'; document.body.appendChild(probe);
+  const fl = getComputedStyle(probe).backgroundImage; probe.className = 'bg-landing'; const la = getComputedStyle(probe).backgroundImage; probe.remove();
+  document.querySelectorAll('.d9').forEach(el => { el.style.setProperty('--inset-flight', fl); el.style.setProperty('--inset-landing', la); });
+})();
+
+// scale each 390×844 screen to its frame
+const fitScreens = () => document.querySelectorAll('.phone .glass').forEach(g => g.style.setProperty('--k', (g.clientWidth / 390).toFixed(4)));
+fitScreens();
+new ResizeObserver(fitScreens).observe(document.body);
+
+// ── joystick lab ──
+const LAB = [
+  { k: 'ring', name: 'Ring', d: 'A puck in a circle with a guide lane. Familiar from every mobile game, and it fits any skin.', y: ['Familiar', 'Compact'], n: ['Pull length is short'], html: `<div class="j j-ring" data-stick data-travel="62"><div class="o"></div><div class="knob"></div></div>` },
+  { k: 'rail', name: 'Rail', d: 'A vertical track you slide a bead down. The longest pull for the space it takes, and straightness is easy to judge.', y: ['Long travel', 'Reads at a glance'], n: ['Tall'], html: `<div class="j j-rail" data-stick data-travel="90"><div class="t"></div><div class="f"></div><div class="knob"></div></div>` },
+  { k: 'arc', name: 'Thumb arc', d: 'The track bends the way your thumb naturally sweeps, so the backswing feels like a turn.', y: ['Ergonomic', 'Feels like a swing'], n: ['Harder to judge "straight"'], html: `<div class="j j-arc" data-stick data-travel="60"><svg viewBox="0 0 220 220" aria-hidden="true"><path d="M110 30 Q 190 110 150 190" stroke="rgba(255,255,255,.4)" stroke-width="26" fill="none" stroke-linecap="round"/><path d="M110 30 Q 190 110 150 190" stroke="#fff" stroke-width="2" fill="none" stroke-dasharray="4 6"/></svg><div class="knob"></div></div>` },
+  { k: 'sling', name: 'Slingshot', d: 'An elastic band stretches as you pull, and its tension shows your power. The flash comes when the band is fully loaded.', y: ['Tactile', 'Power reads instantly'], n: ['Playful, less sim'], html: `<div class="j j-sling" data-stick data-travel="110"><svg viewBox="0 0 200 230" aria-hidden="true"><circle cx="40" cy="70" r="7" fill="#fff"/><circle cx="160" cy="70" r="7" fill="#fff"/><path class="bandp" d="M40 70 L100 86 L160 70" stroke="#ff5a5a" stroke-width="5" fill="none" stroke-linecap="round"/></svg><div class="knob"></div></div>` },
+  { k: 'bead', name: 'Bead on a wire', d: 'The bead runs along a curve shaped like your swing plane: back and up, then down and through. You trace the actual swing.', y: ['Teaches the swing', 'Beautiful'], n: ['Needs a smooth curve'], html: `<div class="j j-bead" data-stick data-travel="160" data-path="1"><svg viewBox="0 0 220 230" aria-hidden="true"><path id="wirepath" d="M110 200 C 30 190 20 80 70 40 C 110 10 170 30 175 80" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M110 200 C 30 190 20 80 70 40 C 110 10 170 30 175 80" stroke="rgba(255,255,255,.25)" stroke-width="22" fill="none" stroke-linecap="round"/></svg><div class="knob"></div></div>` },
+  { k: 'orb', name: 'Pressure orb', d: 'Pull the ball down and the ring around it fills like a power meter. The ring is the feedback and the ball is your thumb.', y: ['Very clear power', 'Pretty'], n: ['Short travel'], html: `<div class="j j-orb" data-stick data-travel="30"><div class="o"></div><div class="knob"></div></div>` },
+  { k: 'ticks', name: 'Calibrated slider', d: 'Tick marks every 10%, like an instrument. For players who want to dial in a 70% wedge exactly.', y: ['Precise', 'Partial shots are easy'], n: ['Less exciting'], html: `<div class="j j-ticks" data-stick data-travel="92"><div class="t"></div><div class="knob"></div></div>` },
+  { k: 'split', name: 'Two zones', d: 'Two big areas: the lower one for the backswing and the upper one for the push. Your whole thumb can\'t miss them, and they light up as you go.', y: ['Impossible to miss', 'Great for beginners'], n: ['Uses a lot of screen'], html: `<div class="j j-split" data-stick data-travel="80"><div class="h a">PUSH</div><div class="h b">PULL</div><div class="knob"></div></div>` },
+];
+document.getElementById('lab').innerHTML = LAB.map(l => `<div class="cell"><h3>${l.name}</h3><div class="stage">${l.html}<div class="toast-live" style="top:20px;font-size:30px"></div></div><p>${l.d}</p><div class="pc">${l.y.map(t => `<span class="y">+ ${t}</span>`).join('')}${l.n.map(t => `<span class="n">− ${t}</span>`).join('')}</div></div>`).join('');
+
+// ── stick controller: pull down, golfer turns at his tempo, flash at the top, push up ──
+const TEMPO = 0.95; // seconds to a full top
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function scaleOf(el) { const r = el.getBoundingClientRect(); return r.height / el.offsetHeight || 1; }
+document.querySelectorAll('[data-stick]').forEach(stick => {
+  const screen = stick.closest('.screen'), stage = stick.closest('.stage');
+  const host = screen || stage;
+  const toast = host.querySelector('.toast-live');
+  const travel = +stick.dataset.travel;
+  const layers = screen && screen.dataset.live ? { a: screen.querySelector('[data-l="address"]'), t: screen.querySelector('[data-l="top"]'), f: screen.querySelector('[data-l="finish"]') } : null;
+  let st = null, raf = 0;
+  const set = (p, u, x, top) => { stick.style.setProperty('--p', p.toFixed(3)); stick.style.setProperty('--u', u.toFixed(3)); stick.style.setProperty('--x', x.toFixed(3)); stick.style.setProperty('--top', top ? 1 : 0); const t = host.querySelector('.tempo'); if (t) t.style.setProperty('--g', st ? st.g.toFixed(3) : 0); };
+  const bead = stick.dataset.path ? stick.querySelector('path') : null;
+  const placeBead = (t) => { if (!bead) return; const L = bead.getTotalLength(), pt = bead.getPointAtLength(L * clamp(t, 0, 1)); const k = stick.querySelector('.knob'); k.style.transform = `translate(${pt.x - 110}px, ${pt.y - 42}px)`; };
+  if (bead) placeBead(0);
+  const sling = stick.querySelector('.bandp');
+  const tick = () => {
+    if (!st) return;
+    const now = performance.now(), dt = Math.min(.05, (now - st.t) / 1000); st.t = now;
+    if (st.phase === 'back') {
+      if (st.g < st.p) st.g = Math.min(st.p, st.g + dt / TEMPO);
+      if (st.p - st.g > .03 || now - st.deepAt < 90) st.arr = null; else if (st.arr === null && st.p > .15) st.arr = now;
+    }
+    const atTop = st.phase === 'back' && st.arr !== null;
+    set(st.phase === 'down' ? st.deepP : st.p, st.u, st.x, atTop);
+    if (bead) placeBead(st.phase === 'down' ? st.deepP * .55 + st.u * .45 : st.p * .55);
+    if (sling) { const y = 86 + (st.phase === 'down' ? st.deepP * (1 - st.u) : st.p) * 110; sling.setAttribute('d', `M40 70 L100 ${y} L160 70`); }
+    if (layers) { const g = st.phase === 'down' ? 1 - st.u : st.g; layers.t.style.opacity = clamp(g * 1.2, 0, 1); layers.f.style.opacity = st.phase === 'down' ? clamp(st.u * 1.4 - .3, 0, 1) : 0; }
+    raf = requestAnimationFrame(tick);
+  };
+  stick.addEventListener('pointerdown', e => {
+    stick.setPointerCapture(e.pointerId); e.preventDefault();
+    st = { y0: e.clientY, x0: e.clientX, k: scaleOf(host), p: 0, u: 0, x: 0, g: 0, arr: null, phase: 'back', deep: 0, deepAt: 0, deepP: 0, t: performance.now() };
+    stick.classList.add('dragging'); cancelAnimationFrame(raf); raf = requestAnimationFrame(tick);
+    if (toast) toast.classList.remove('on');
+  });
+  stick.addEventListener('pointermove', e => {
+    if (!st) return;
+    const dy = (e.clientY - st.y0) / st.k, dx = (e.clientX - st.x0) / st.k, now = performance.now();
+    st.x = clamp(dx / travel, -1, 1);
+    if (st.phase === 'back') {
+      st.p = clamp(dy / travel, 0, 1);
+      if (dy > st.deep + 1.5) { st.deep = dy; st.deepAt = now; }
+      if (st.deep > travel * .2 && dy < st.deep - travel * .14) { st.phase = 'down'; st.deepP = clamp(st.deep / travel, 0, 1); st.off = st.arr === null ? -((st.deepP - st.g) * TEMPO * 1000) : now - st.arr; st.t0 = now; }
+    } else {
+      st.u = clamp((st.deep - dy) / (st.deep + travel * .6), 0, 1);
+      if (st.u >= .98) finish(now);
+    }
+  });
+  const finish = (now) => {
+    if (!st) return;
+    const off = st.off ?? 0, word = off < -70 ? 'Quick' : off > 160 ? 'Late' : 'Smooth';
+    if (toast && st.phase === 'down') { toast.innerHTML = `${word}<small>${word === 'Smooth' ? `${Math.round(st.deepP * 100)}% power · ${Math.abs(st.x) < .12 ? 'straight' : st.x < 0 ? 'drawn left' : 'pushed right'}` : word === 'Quick' ? `pushed ${Math.round(-off)} ms before the top` : `hung ${Math.round(off)} ms at the top`}</small>`; toast.style.color = word === 'Smooth' ? '#5cff8a' : '#ffc72c'; toast.classList.add('on'); setTimeout(() => toast.classList.remove('on'), 1700); }
+    cancelAnimationFrame(raf); st = null; stick.classList.remove('dragging');
+    const back = () => { set(0, 0, 0, false); if (bead) placeBead(0); if (sling) sling.setAttribute('d', 'M40 70 L100 86 L160 70'); if (layers) { layers.t.style.opacity = 0; layers.f.style.opacity = 0; } };
+    setTimeout(back, 650);
+  };
+  const end = () => finish(performance.now());
+  stick.addEventListener('pointerup', end); stick.addEventListener('pointercancel', end);
+});
+})();
+</script>

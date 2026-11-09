@@ -47,6 +47,7 @@ const cam = new THREE.PerspectiveCamera(q.get('view') === 'close' ? 22 : 40, inn
 const view = q.get('view') ?? 'behind';
 const lx = golfer.lefty ? 1 : -1; // side of the ball the golfer stands on (world x)
 if (view === 'game') { cam.position.set(-0.85 * lx, 1.62, 5.6); cam.lookAt(0.45 * lx, 0.92, -22); cam.fov = 42; cam.updateProjectionMatrix(); }
+else if (view === 'back') { const h = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(h); cam.position.set(h.x + lx * 0.9, h.y + 0.25, h.z + 0.5); cam.lookAt(h.x, h.y + 0.05, h.z); }
 else if (view === 'hands') { const h = new THREE.Vector3(); golfer.body.bones[8].getWorldPosition(h); cam.position.set(h.x - lx * 0.5, h.y + 0.15, h.z + 0.35); cam.lookAt(h.x, h.y - 0.05, h.z); }
 else if (view === 'portrait') {
   cam.fov = 52; cam.updateProjectionMatrix();
