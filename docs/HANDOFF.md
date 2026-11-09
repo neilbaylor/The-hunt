@@ -55,7 +55,8 @@ Playful, not corporate, and minimal data (details behind a "Shot details" sheet)
 - **Swing view:**
   - Club chip with the shot type picker inside (Full/Punch/Pitch/Flop); "Driver", not 1W.
   - Full lie card (navy 0° when flat), wind chip.
-  - Live 3D face badge with the swing word under it ("Smooth" / "Pured it") and reactions plus a speech bubble.
+  - Live 3D face badge, big (about 84–96 px), stacked vertically: the face, then the "NEIL" name pill, then the timing word (Very early / Early / Slightly early / **Perfect** / Slightly late / Late / Very late) with the shape word under it when it curves (Duck hook / Hook / Draw / Cut / Slice / Banana slice, lefty-aware). Reactions plus a speech bubble to the right.
+  - **The badge must ALWAYS show his face, front-on and level**, never the top of the head, the back or a dark side, in every state (intro, address, top, impact, finish, aim, flight, landing). Render it from a stable face camera in head space with the head's pitch and roll cancelled (or a separate head instance driven only by the expression state), with its own key and fill light, framed head and shoulders.
   - Bigger strike ball.
   - Editorial Mono big distance number.
 - **Swing stick:** no guide text, a bold growing power ring, not blue.
@@ -73,7 +74,7 @@ Playful, not corporate, and minimal data (details behind a "Shot details" sheet)
 - Perf tiers in `src/render/perf.ts` (`?perf=low|med|high`).
 
 ## Style
-"Hand-drawn but realistic": a post finish (soft ink contours, light shadow hatching, paper grain, face kept clean) is the game default; `?style=real` turns it off. Style lab: `src/render/styles.ts`, `style.html`.
+"Hand-drawn but realistic", but only **a bit**: the owner said the full finish was "way too hand-drawn". The post finish is a faint silhouette ink line, almost no hatching, light paper grain, and the face kept clean, as the game default at about 30% intensity (`?ink=0..1` to tune it). `?style=real` turns it off. Style lab: `src/render/styles.ts`, `style.html`.
 
 ## Working rules that matter
 - Agents edit main.ts concurrently: make targeted edits, re-read before editing, keep `npx tsc --noEmit` clean.
