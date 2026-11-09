@@ -337,7 +337,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       }
       geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4)); geo.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
       const m = new THREE.SkinnedMesh(geo, mat); m.frustumCulled = false; m.castShadow = m.receiveShadow = true;
-      root.add(m); m.bind(skeleton); meshes.push(m); if (location.search.includes('dbgnocollar')) m.visible = false; return m;
+      root.add(m); m.bind(skeleton); meshes.push(m); return m;
     };
     const near = (p: THREE.Vector3) => {   // smoothed nearest surface point + normal (6 nearest, inverse-distance weighted)
       const best = nearest6(p);
