@@ -42,7 +42,7 @@ export class FaceBadge {
   private typing: { text: string; i: number; acc: number } | null = null; private bubbleT = 0;
 
   constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private head: () => THREE.Object3D | null,
-    private face: () => FaceLike | undefined, host: HTMLElement, name: string, private body: () => THREE.Object3D | null = () => null) {
+    private face: () => FaceLike | undefined, host: HTMLElement, name: string, _body: () => THREE.Object3D | null = () => null) {
     this.rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
     this.cam.layers.set(AVATAR_LAYER);
     for (const l of [this.key, this.fill]) { l.layers.set(AVATAR_LAYER); scene.add(l, l.target); }
