@@ -1606,11 +1606,12 @@ reflectedLight.indirectSpecular *= 0.3;`);
     const mat = im.material as THREE.MeshStandardMaterial;
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = grassUniforms.uTime;
+      sh.uniforms.uFade = (mat.userData.fade ??= { value: new THREE.Vector2(14, 28) });
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;')
+        .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec2 uFade;')
         .replace('#include <project_vertex>', `
 vec3 ip = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
-float fade = 1.0 - smoothstep(14.0, 28.0, distance(ip.xz, cameraPosition.xz));
+float fade = 1.0 - smoothstep(uFade.x, uFade.y, distance(ip.xz, cameraPosition.xz));
 vec4 mvPosition = instanceMatrix * vec4(transformed * vec3(1.0, fade, 1.0), 1.0);
 float hgt = position.y * position.y;
 float gust = sin(uTime * 1.3 + ip.x * 0.15 + ip.z * 0.09) * 0.5 + 0.5;
@@ -1623,7 +1624,7 @@ gl_Position = projectionMatrix * mvPosition;`);
       prev(sh, r);
       sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''));
     })(mat.onBeforeCompile);
-    mat.customProgramCacheKey = () => 'range-grass-v3';
+    mat.customProgramCacheKey = () => 'range-grass-v4';
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color(), e = new THREE.Euler();
     let n = 0, guard = 0;
     // where the blades go: the front of the tee box (right in front of the camera), the rough lip just past it,
@@ -1636,7 +1637,7 @@ gl_Position = projectionMatrix * mvPosition;`);
     ];
     // one blade at (x, z) into `target` slot i: tee very short and crisp, fairway short, rough taller, darker and
     // more upright with a few seed heads of dry colour; returns false where no blade belongs
-    const blade = (target: THREE.InstancedMesh, i: number, x: number, z: number): boolean => {
+    const blade = (target: THREE.InstancedMesh, i: number, x: number, z: number, hk = 1): boolean => {
       const surf = surfaceAt(x, z);
       if (surf === 'bunker' || surf === 'green') return false;
       const nearEdge = teeSD(x, z) > -0.12 && teeSD(x, z) < 0.25; if (nearEdge) return false;
@@ -1646,7 +1647,7 @@ gl_Position = projectionMatrix * mvPosition;`);
       p.set(x, heightAt(x, z) - 0.002, z);
       const lean = rough ? 0.35 : 0.5;
       e.set((rand() - 0.5) * lean, rand() * Math.PI * 2, (rand() - 0.5) * lean); q.setFromEuler(e);
-      s.set(h * (rough ? 0.75 : 1), h, h * (rough ? 0.75 : 1));
+      s.set(h * (rough ? 0.8 : 1), h * Math.max(0.05, hk), h * (rough ? 0.8 : 1));
       target.setMatrixAt(i, m4.compose(p, q, s));
       groundColorCPU(x, z, c).multiplyScalar((rough ? 0.68 : 0.82) + rand() * 0.3);
       if (rand() < (rough ? 0.12 : 0.05)) c.lerp(COL.roughDry, rough ? 0.5 : 0.2);
@@ -1666,8 +1667,11 @@ gl_Position = projectionMatrix * mvPosition;`);
     scene.add(im);
     // a patch of blades that follows the ball once it is down the range (landing and rest cameras): rough reads
     // tall and breaks the ball's silhouette, fairway reads as cut turf. Re-laid when the ball has moved on.
-    const PATCH = 7000, PR = 7;
-    const patch = new THREE.InstancedMesh(bladeGeo, mat, PATCH);
+    const PATCH = 9000, PR = 4.5;
+    const patchMat = mat.clone(); patchMat.customProgramCacheKey = mat.customProgramCacheKey;
+    patchMat.onBeforeCompile = (sh, r) => { mat.onBeforeCompile(sh, r); sh.uniforms.uFade = patchMat.userData.fade; };
+    patchMat.userData.fade = { value: new THREE.Vector2(30, 46) };
+    const patch = new THREE.InstancedMesh(bladeGeo, patchMat, PATCH);
     patch.count = 0; patch.receiveShadow = true; patch.frustumCulled = false;
     scene.add(patch);
     let lastLay = -1;
@@ -1679,8 +1683,9 @@ gl_Position = projectionMatrix * mvPosition;`);
       const save = seed; seed = (Math.floor(cx * 7.1) * 7919 + Math.floor(cz * 3.3)) | 1;
       for (let t = 0; t < PATCH * 2 && k < PATCH; t++) {
         // denser toward the middle, so the ball sits in grass and the edge fades out
-        const a = rand() * Math.PI * 2, r = PR * Math.pow(rand(), 0.75);
-        if (blade(patch, k, cx + Math.cos(a) * r, cz + Math.sin(a) * r)) k++;
+        // density ~1/r: thick right round the ball so it sits down in the rough, thinning out to nothing at the edge
+        const a = rand() * Math.PI * 2, r = PR * rand();
+        if (blade(patch, k, cx + Math.cos(a) * r, cz + Math.sin(a) * r, 1 - smooth(PR * 0.55, PR, r))) k++;
       }
       seed = save;
       patch.count = k;
