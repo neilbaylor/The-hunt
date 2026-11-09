@@ -298,6 +298,37 @@ if np.mean(np.sum(N[body_idx] * (V[body_idx] - V[body_idx].mean(0)), axis=1)) < 
 def wsum(vi, names):
     return sum(vw[vi].get(BONES.index(n), 0) for n in names if n in BONES)
 
+# ───────────────────────── hands: knuckles, palm and thumb pad ─────────────────────────
+# The base mesh's hands are smooth mitts: add the knuckle heads (MCP joints) on the back of the hand, a little
+# more palm and a fuller thenar pad at the base of the thumb. Per hand, the back-of-hand direction comes from the
+# knuckle line and the metacarpals, signed so the thumb sits on the palm side.
+HC = P.get('hands', {})
+dorsal_dir = {}
+for sfx in 'lr':
+    J_ = lambda n: np.array(joint[BONES.index(f'{n}_{sfx}')])
+    knuck = (J_('index_01') - J_('pinky_01')); meta = (J_('middle_01') - J_('hand'))
+    nrm = np.cross(knuck, meta); nrm /= np.linalg.norm(nrm)
+    if np.dot(J_('thumb_02') - J_('hand'), nrm) > 0: nrm = -nrm      # the thumb is on the palm side
+    dorsal_dir[sfx] = nrm
+if HC:
+    hv = [vi for vi in body_idx if wsum(vi, [f'hand_{s}' for s in 'lr'] + [f for f in FINGERS]) > 0.3]
+    dV = np.zeros_like(V)
+    for vi in hv:
+        sfx = 'l' if V[vi, 0] > 0 else 'r'
+        J_ = lambda n: np.array(joint[BONES.index(f'{n}_{sfx}')])
+        dd = dorsal_dir[sfx]; nd = float(np.dot(N[vi], dd))
+        # knuckle heads: a rounded bump over each MCP joint, on the back of the hand
+        for f in ('index', 'middle', 'ring', 'pinky'):
+            d = np.linalg.norm(V[vi] - J_(f'{f}_01'))
+            if nd > 0.2 and d < 0.02: dV[vi] += N[vi] * HC.get('knuckle', 0.0022) * math.exp(-(d / 0.0085) ** 2) * min(1, (nd - 0.2) / 0.4)
+        # palm: a touch fuller; thenar pad: fuller at the base of the thumb
+        if nd < -0.3 and wsum(vi, [f'hand_{sfx}']) > 0.5: dV[vi] += N[vi] * HC.get('palm', 0.0015) * min(1, (-nd - 0.3) / 0.4)
+        d = np.linalg.norm(V[vi] - (J_('thumb_01') * 0.6 + J_('thumb_02') * 0.4))
+        if nd < 0.3 and d < 0.035: dV[vi] += N[vi] * HC.get('thenar', 0.003) * math.exp(-(d / 0.016) ** 2)
+    V = V + dV
+    N = vertex_normals(V, body_faces)
+    if np.mean(np.sum(N[body_idx] * (V[body_idx] - V[body_idx].mean(0)), axis=1)) < 0: N = -N
+
 # region tests on body vertices
 pelvis_y = joint[BONES.index('pelvis')][1]
 neck_y = joint[BONES.index('neck_01')][1]
