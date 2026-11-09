@@ -50,7 +50,7 @@ const DOWN = K({ lift: -0.04, reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestT
 const LATE = K({ lift: -0.1, reach: 1.01, hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.32, shift: 0.075, drop: 0.0, heel: 0.33, shrug: 0.0, pro: -0.02, hinge: 0.45, beta: -0.08 }, T);
 // delivery: lead arm about parallel on the way down, shaft lagging ~45° behind the hands on plane, hips already open,
 // trail elbow tucked in front of the trail hip
-const DELIV = K({ lift: -0.38, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.3, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
+const DELIV = K({ lift: -0.46, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.3, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
 const I: Keys = { lift: 0, reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.24, shift: 0.08, drop: -0.012, heel: 0.36, shrug: -0.05, pro: -0.11, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
 const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.45, hinge: -0.08, beta: 0.08, pro: -0.02 }, I);
@@ -369,7 +369,7 @@ export class Golfer {
     p.chestTurn = key.chestTurn + st.open * 0.5; p.chestTilt = key.chestTilt + breathe + this.tiltAdj * (s.phase === 'follow' ? 1 - smooth(0.25, 0.9, -phi / Math.abs(PHI_FINISH)) : 1); p.chestSide = key.chestSide + this.sideAdj * (s.phase === 'follow' ? 1 - smooth(0.1, 0.6, -phi / Math.abs(PHI_FINISH)) : 1);
     p.pelvis.copy(this.pelvisBase); p.pelvis.x += key.shift * k; p.pelvis.y -= key.drop * k;
     // clavicles: within anatomical limits (±0.11 rad keeps the shoulder joint within 2 cm of its rest place)
-    const clav = (v: number) => Math.max(-0.11, Math.min(0.11, v));
+    const clav = (v: number) => Math.max(-0.1, Math.min(0.1, v));
     p.shrugL = clav(key.shrug); p.shrugR = clav(-key.shrug * 0.5 + key.pro);
     this.feet(p, key.heel, key.shift);
 
@@ -426,7 +426,7 @@ export class Golfer {
       const shR = this.rig.P[BONE.upperR];
       p.poleR.lerp(shR.clone().add(new THREE.Vector3(-0.12, -0.5, -0.35)), smooth(0.15, 0.85, u));
     }
-    if (s.phase === 'down') p.poleR.lerp(this.pelvisBase.clone().add(new THREE.Vector3(-0.1, -0.7, 0.15)), smooth(0.2, 0.6, 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi)));
+    if (s.phase === 'down') p.poleR.lerp(this.pelvisBase.clone().add(new THREE.Vector3(-0.1, -0.7, 0.28)), smooth(0.2, 0.6, 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi)));
     // elbows that let the wrists stay natural: aim each elbow at the point the forearm would come from if it
     // continued the hand's line on the grip (the hand's direction is fixed by the grip), so the wrist bends only a
     // little. Mostly for the trail arm, half for the lead; the follow-through sets its own elbows below.
