@@ -53,7 +53,7 @@ for (const s of [-1, 1]) add(new THREE.CapsuleGeometry(0.05, 0.55, 6, 10), shirt
 add(new THREE.CylinderGeometry(0.006, 0.006, 0.95, 8), new THREE.MeshStandardMaterial({ color: '#c8ccd2', metalness: 1, roughness: 0.25 }), [-0.35, 0.42, 0], [0, 0, 0.95]);
 golfer.position.set(0.95, 0, 0);
 // Neil's stand bag, placed as in the game
-if (qs.get('bag') !== '0') { const b = createStandBag(); b.position.set(2.3, 0, -1.5); b.rotation.y = Math.atan2(1.6, -5.1) + 0.4; scene.add(b); }
+if (qs.get('bag') !== '0') { const b = createStandBag(); b.position.set(1.75, 0, -2.6); b.rotation.y = Math.atan2(1.05, -6.2) + 0.4; scene.add(b); }
 if (qs.get('golfer') === 'capsule') scene.add(golfer);
 else {
   // the real golfer (as in the game) so the frame reads like the game's

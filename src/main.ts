@@ -80,7 +80,7 @@ const divots = createDivots(scene, (x, z) => range?.heightAt(x, z) ?? 0);
 // Neil's Jones Rover stand bag on the tee, to his trail side and a little ahead: in the swing cam and the intro,
 // clear of the ball and the line; the front pocket turned toward the swing camera
 const standBag = createStandBag();
-{ const bx = golfer.lefty ? 2.3 : -2.3, bz = -1.5; standBag.position.set(bx, range?.heightAt(bx, bz) ?? 0, bz);
+{ const bx = golfer.lefty ? 1.75 : -1.75, bz = -2.6; standBag.position.set(bx, range?.heightAt(bx, bz) ?? 0, bz);
   standBag.rotation.y = Math.atan2(-((golfer.lefty ? 0.7 : -0.7) - bx), -(3.6 - bz)) + (golfer.lefty ? 0.4 : -0.4); scene.add(standBag); }
 const tee = new THREE.Mesh(new THREE.LatheGeometry([
   [0.0002, -0.031], [0.0013, -0.027], [0.002, -0.017], [0.0022, 0.006], [0.0027, 0.012], [0.0046, 0.018], [0.0066, 0.0214],
