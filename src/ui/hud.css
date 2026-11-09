@@ -472,10 +472,6 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 .hud.skin-f .strike-btn canvas { width: 56px; height: 56px; box-shadow: 0 0 0 3px #fffaf0, 0 4px 0 3px var(--edge), 0 8px 16px rgba(0,0,0,.3); }
 .hud.skin-f .strike-btn .dot { top: calc(28px + var(--sy, 0) * 21px - 7px); left: calc(31px + var(--sx, 0) * 21px - 7px); width: 14px; height: 14px; border-width: 2.5px; }
 .hud.skin-f .strike-btn span { font-size: 9.5px; padding: 3px 7px; }
-/* lie: a tiny pill (the turf picture) that opens on tap */
-.hud.skin-f .lie-card.lie-w.mini { width: auto; height: auto; padding: 4px; grid-template-columns: 40px; gap: 0; border-radius: 16px; }
-.lie-w.mini .lie-txt { display: none; }
-.lie-w.mini .lie-scene { width: 40px; height: 34px; border-radius: 12px; }
 /* after the shot: one friendly line, smaller than the tempo sticker */
 .skin-f .toast .word.line { font-size: calc(30px * var(--s, 1)); padding: 6px 20px 9px; transform: rotate(-2deg); }
 /* the 'Shot details' pill shows on phones too */
@@ -498,8 +494,3 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 .hud .pop .seg button { all: unset; flex: 1; text-align: center; cursor: pointer; padding: 8px 6px; border-radius: 999px; font: 600 14px/1 var(--h-display); color: var(--navy); background: rgba(19,41,75,.07); }
 .hud .pop .seg button[aria-pressed="true"] { background: var(--navy); color: #fff6e3; box-shadow: 0 0 0 2px var(--flag); }
 .hud .pop .seg button:focus-visible { outline: 2px solid var(--h-accent); }
-/* lie pill: the word, a quality dot and the slope when there is one */
-.hud.skin-f .lie-pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px 8px 10px; border-radius: 999px; font: 600 14px/1 var(--h-display); color: var(--navy); white-space: nowrap; }
-.lie-pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--h-good); box-shadow: 0 0 0 2px rgba(255,255,255,.8); }
-.lie-pill .dot.warn { background: var(--h-warn); } .lie-pill .dot.bad { background: var(--h-bad); }
-.lie-pill small { font: 800 11px/1 var(--h-body); color: var(--red); }
