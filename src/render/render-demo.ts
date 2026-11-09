@@ -90,7 +90,7 @@ if (view === 'portrait') {
   ball.position.set(bx, by + 0.0214, bz); focus.set(bx, by + 0.0214, bz);
   camera.position.set(bx - 1.4, by + 0.9, bz + 2.2); camera.lookAt(bx, by + 0.05, bz);
 } else if (view === 'aim') { camera.position.set(0.5, 50, 22); camera.lookAt(0, 0, -110); focus.set(0, 0, -80);
-} else if (view === 'bunker') { camera.position.set(-1, 3.2, -112); camera.lookAt(-6.5, 0, -126); focus.set(-6.5, 0, -126);
+} else if (view === 'bunker') { camera.position.set(9, 3.2, -111); camera.lookAt(4, 0, -124); focus.set(4, 0, -124);
 } else if (view === 'cup') { const t = range.featured ?? range.targets[0]; camera.position.set(t.pos.x + 0.7, t.pos.y + 0.9, t.pos.z + 1.0); camera.lookAt(t.pos.x, t.pos.y + 0.25, t.pos.z); focus.copy(t.pos);
 } else if (view === 'bg') { camera.fov = 18; camera.updateProjectionMatrix(); camera.position.set(0.7, 1.75, 3.6); camera.lookAt(0, 12, -500);
 } else if (view === 'trees') { camera.position.set(22, 1.9, -30); camera.lookAt(62, 6.0, -22); focus.set(45, 0, -28);

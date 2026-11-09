@@ -179,7 +179,9 @@ function rawHeight(x: number, z: number, withCanopy = true): number {
   // raised greens with a soft collar
   for (const g of GREENS) {
     const d = greenD(g, x, z);
-    if (d < 1.6) h += 0.32 * (1 - smooth(1.0, 1.45, d)) + 0.06 * Math.max(0, 1 - d * d);
+    if (d < 1.6) h += 0.32 * (1 - smooth(1.0, 1.45, d)) + 0.06 * Math.max(0, 1 - d * d)
+      // tilted gently from back to front (about 1.2%), as greens are, so putts and chips break a little
+      + 0.16 * (1 - smooth(0.95, 1.5, d)) * clamp(-(z - g.z) / g.r, -1.2, 1.2);
   }
   // bunkers dug in
   for (const b of BUNKERS) {
@@ -479,6 +481,7 @@ float inside(float d, float e) { float w = max(fwidth(d), 1e-4) * 0.75; return 1
 float stripes(float x) { float w = max(fwidth(x), 1e-4); float t = abs(fract(x * 0.5) - 0.5) * 2.0; return smoothstep(0.5 - w, 0.5 + w, t); }
 float gRough = 1.0;
 float gBump = 1.0;
+float gSheen = 0.0;
 vec3 gSandB = vec3(0.0);
 // turf detail: two rotated scales so the tile never shows; returns a colour factor around 1.0
 vec4 turfAt(vec2 p, float scale) {
@@ -570,6 +573,22 @@ vec3 groundColor(vec2 p) {
   fwc *= 0.9 + 0.18 * (0.6 * n1 + 0.4 * n2);
   col = mix(col, fwc, fw);
   gRough = mix(gRough, 0.92, fw);
+#ifndef LOW_DETAIL
+  // divot scars where shots land: mostly filled with pale sand-and-seed, a few fresh; faded out before they alias
+  if (fw > 0.5 && p.y < -40.0 && fwidth(p.x) < 0.06) {
+    vec2 sc = floor(p / 0.8);
+    float hs = fract(sin(dot(sc, vec2(91.7, 37.3))) * 43758.55);
+    if (hs < 0.06) {
+      vec2 c = (sc + 0.2 + 0.6 * vec2(fract(hs * 13.1), fract(hs * 7.7))) * 0.8;
+      float ang = (fract(hs * 3.3) - 0.5) * 0.6;
+      vec2 q = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * (p - c);
+      float e = length(q / vec2(0.03, 0.065)) + 0.12 * sin(atan(q.y, q.x) * 7.0 + hs * 40.0);
+      float cov = (1.0 - smoothstep(0.8, 1.0, e)) * (1.0 - smoothstep(0.03, 0.06, fwidth(p.x)));
+      vec3 dc = mix(${v3(lin('#a39a72'))} * (0.9 + 0.2 * n1), ${v3(lin('#4a3a28'))}, step(0.8, fract(hs * 29.0)));
+      col = mix(col, dc, cov * 0.7);
+    }
+  }
+#endif
   // greens: fringe collar then the putting surface, both slightly raised in the mesh
   for (int i = 0; i < ${GREENS.length}; i++) {
     vec4 g = GREENS[i];
@@ -578,18 +597,34 @@ vec3 groundColor(vec2 p) {
     float gd = length(d) / (g.z * (1.0 + 0.11 * sin(2.0 * a + g.w) + 0.06 * sin(3.0 * a + 2.0 * g.w) + 0.03 * sin(5.0 * a + 3.0 * g.w)));
     if (gd > 1.6) continue;
     float fr = inside(gd, 1.0 + ${FRINGE.toFixed(2)} / g.z);
+    // first cut: a band of slightly longer, darker grass outside the fringe collar
+    col = mix(col, ${v3(COL.cut)} * (0.84 + 0.2 * n1), inside(gd, 1.0 + ${(FRINGE + 1.6).toFixed(2)} / g.z) * (1.0 - fr) * 0.85);
     col = mix(col, ${v3(COL.fringe)} * (0.92 + 0.14 * n1), fr);
     float gm = inside(gd, 1.0);
     vec3 gc = mix(${v3(COL.green)}, ${v3(COL.greenLight)}, 0.35);
     gc *= 1.0 + 0.11 * mowSheen(stripes(p.y / 2.8), vec2(0.0, 1.0)) + 0.05 * mowSheen(stripes(p.x / 2.8), vec2(1.0, 0.0));
     gc *= 0.95 + 0.08 * n1;
+#ifndef LOW_DETAIL
+    // pitch marks round the hole: small dark pits with a lifted rim, only where they would not alias
+    if (gd < 0.7) {
+      vec2 bc = floor(d / 0.45);
+      float hb = fract(sin(dot(bc + g.w, vec2(41.3, 289.1))) * 43758.55);
+      if (hb < 0.22) {
+        vec2 c = (bc + 0.25 + 0.5 * vec2(fract(hb * 17.0), fract(hb * 31.0))) * 0.45;
+        float r = length(d - c);
+        float pit = 1.0 - smoothstep(0.008, 0.014, r), rim = smoothstep(0.009, 0.013, r) * (1.0 - smoothstep(0.013, 0.02, r));
+        gc *= 1.0 - (0.35 * pit - 0.12 * rim) * (1.0 - smoothstep(0.004, 0.012, fwidth(p.x)));
+      }
+    }
+#endif
     // the cut edge of the turf right round the hole, and a crisp darker line where the putting surface meets the fringe
     float hr = length(d);
     gc *= 1.0 - 0.35 * (1.0 - smoothstep(0.054, 0.066, hr));
     gc *= 1.0 - 0.12 * smoothstep(0.93, 1.0, gd) * gm;
     col = mix(col, gc, gm);
-    gRough = mix(gRough, 0.82, gm);
+    gRough = mix(gRough, 0.74, gm);
     gBump = mix(gBump, 0.28, gm);
+    gSheen = max(gSheen, gm);
   }
   // the featured green (moves with the club in hand): same fringe, putting surface and hole collar
   if (uFeat.w > 0.0) {
@@ -608,8 +643,9 @@ vec3 groundColor(vec2 p) {
       gc *= 1.0 - 0.35 * (1.0 - smoothstep(0.054, 0.066, length(d)));
       gc *= 1.0 - 0.12 * smoothstep(0.93, 1.0, gd);
       col = mix(col, gc, gm);
-      gRough = mix(gRough, 0.82, gm);
+      gRough = mix(gRough, 0.74, gm);
       gBump = mix(gBump, 0.28, gm);
+      gSheen = max(gSheen, gm);
     }
   }
   // bunkers: dark grass lip, then raked sand
@@ -647,6 +683,12 @@ vec3 groundColor(vec2 p) {
   // tee box wear: a few lighter scuffs and divots near the ball
   float wear = smoothstep(0.62, 0.8, texture2D(uNoise, p * 0.9 + 3.1).g) * (1.0 - smoothstep(1.5, 4.0, length(p - vec2(0.3, -0.6))));
   tc = mix(tc, ${v3(COL.roughDry)} * 0.9, wear * 0.12);
+  // feet and carts wear the turf thin round the tee markers
+  for (int m = 0; m < 2; m++) {
+    vec2 mp = m == 0 ? vec2(-3.4, -1.3) : vec2(4.3, -1.1);
+    float dm = length((p - mp) * vec2(1.0, 1.4));
+    tc = mix(tc, ${v3(COL.roughDry)} * 0.85, (1.0 - smoothstep(0.25, 0.95, dm)) * 0.32 * (0.6 + 0.4 * n1));
+  }
   // divots: old ones filled with a pale sand-and-seed mix with green coming through, fresh ones dark soil
 #ifdef LOW_DETAIL
   vec3 dv = vec3(0.0);
@@ -688,9 +730,9 @@ vec3 groundColor(vec2 p) {
 #endif`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = gRough;')
       // turf is a poor mirror: damp the sky sheen that makes grass look plastic at grazing angles
-      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular *= 0.3;\nreflectedLight.indirectSpecular *= 0.25;');
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n// greens keep a soft putting-surface sheen\nreflectedLight.directSpecular *= mix(0.3, 0.5, gSheen);\nreflectedLight.indirectSpecular *= mix(0.25, 0.32, gSheen);');
   };
-  m.customProgramCacheKey = () => 'range-ground-v9';
+  m.customProgramCacheKey = () => 'range-ground-v10';
   return m;
 }
 
@@ -1318,6 +1360,51 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
     scene.add(wallMesh, restMesh);
   }
 
+  // a little life: the ball-picker cart working the far end of the range, and a few birds wheeling over it
+  const picker = (() => {
+    const parts: THREE.BufferGeometry[] = [];
+    const box = (w: number, h: number, d: number, x: number, y: number, z: number, col: string) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); parts.push(paint(g, (_x, _y, _z, _a, ny, _c, c) => c.copy(lin(col)).multiplyScalar(0.85 + 0.15 * ny))); };
+    box(1.25, 0.55, 2.0, 0, 0.55, 0, '#e9ecef');          // body
+    box(1.2, 0.08, 1.6, 0, 1.75, -0.1, '#1e4d2b');          // roof
+    for (const [x, z] of [[-0.55, -0.75], [0.55, -0.75], [-0.55, 0.55], [0.55, 0.55]]) box(0.05, 1.0, 0.05, x, 1.25, z, '#2b2f33');
+    box(0.5, 0.45, 0.6, 0, 0.95, 0.35, '#1e4d2b');         // seat back
+    box(1.9, 0.5, 0.9, 0, 0.32, -1.6, '#7d848b');          // the picking cage in front
+    box(1.95, 0.06, 0.95, 0, 0.6, -1.6, '#5c636a');
+    for (const [x, z] of [[-0.62, -0.7], [0.62, -0.7], [-0.62, 0.7], [0.62, 0.7]]) { const w = new THREE.CylinderGeometry(0.22, 0.22, 0.16, 10); w.rotateZ(Math.PI / 2); w.translate(x, 0.22, z); parts.push(paint(w, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#1c1c1c')))); }
+    const m = new THREE.Mesh(finish(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }));
+    m.name = 'picker'; m.castShadow = true;
+    scene.add(m);
+    return m;
+  })();
+  const birds = (() => {
+    // a shallow V: two wings whose tips flap (scale y of the instance)
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.12, -0.5, 0.12, -0.08, 0, 0, -0.12, 0, 0, 0.12, 0, 0, -0.12, 0.5, 0.12, -0.08], 3));
+    g.computeVertexNormals();
+    const im = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: '#2a2a2e', side: THREE.DoubleSide }), 7);
+    im.name = 'birds'; im.frustumCulled = false;
+    scene.add(im);
+    return im;
+  })();
+  const life = { m: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(), p: new THREE.Vector3(), e: new THREE.Euler() };
+  function updateLife(t: number) {
+    // the picker drives slow loops up and down the far end
+    const z = -240 + 32 * Math.sin(t * 0.017), x = fwCenter(z) + 15 * Math.sin(t * 0.043);
+    const dz = 32 * 0.017 * Math.cos(t * 0.017), dx = 15 * 0.043 * Math.cos(t * 0.043);
+    picker.position.set(x, rawHeight(x, z), z);
+    picker.rotation.y = Math.atan2(-dx, -dz);
+    // birds: a loose flock circling over the 100–150 yard greens, each flapping in its own rhythm
+    for (let i = 0; i < birds.count; i++) {
+      const a = t * 0.11 + i * 0.5 + 0.3 * Math.sin(t * 0.3 + i), r = 22 + 5 * Math.sin(i * 1.7);
+      life.p.set(-20 + Math.cos(a) * r + i * 1.3, 32 + 4 * Math.sin(t * 0.21 + i * 1.1), -125 + Math.sin(a) * r * 0.7);
+      life.e.set(0, -a, 0.25); life.q.setFromEuler(life.e);
+      const flap = Math.sin(t * (7 + i * 0.6) + i * 2.0);
+      life.s.set(1.6, 1.6 * flap, 1.6);
+      birds.setMatrixAt(i, life.m.compose(life.p, life.q, life.s));
+    }
+    birds.instanceMatrix.needsUpdate = true;
+  }
+
   // greens: yellow flagsticks with waving crest flags, cups, and yardage boards
   const targets: RangeTarget[] = GREENS.map(g => ({ yards: g.yards, pos: new THREE.Vector3(g.x, heightAt(g.x, g.z), g.z), radius: g.r, color: FLAG_YELLOW }));
   // wind for the flags: x, z = direction it blows toward, w = strength 0..1 (eased); a light breeze when there is none
@@ -1894,6 +1981,7 @@ gl_Position = projectionMatrix * mvPosition;`);
       }
       su.time.value = time;
       flagUniforms.uTime.value = time;
+      updateLife(time);
       {
         // the range's wind (setWind), or a light breeze; strength eases so gusts and changes don't snap
         const w = windIn.lengthSq() > 0.09 ? windIn : BREEZE, sp = Math.hypot(w.x, w.z);
