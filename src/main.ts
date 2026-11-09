@@ -535,6 +535,7 @@ function frame(now: number) {
   golfer.smileToward(Math.max(state === 'intro' || good ? 1 : 0, faceBadge.smile), dt);
 
   hud.setState(state === 'ready', state === 'flight', !card);
+  hud.el.classList.toggle('in-shot', state === 'flight' || state === 'result');   // the top controls step away for the shot
   aimCtl.setEnabled(state === 'ready');
   aimCtl.update(dt, state === 'ready' || state === 'swinging');
 

@@ -550,3 +550,10 @@ body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-orig
 /* during the face shot it stays, but faint, so the follow-through reads */
 .hud.cine-face .bc .spin { opacity: .28; pointer-events: none; }
 .hud.cine-face .bc * { pointer-events: none !important; }
+
+/* from impact until the next ball: the club chip, lie card and wind step out; the face badge slides up into the corner */
+.hud .tl .row, .hud .tr, .hud .who { transition: opacity .35s ease, transform .5s cubic-bezier(.3,1.2,.4,1); }
+.hud.in-shot .tl .row { opacity: 0; transform: translateY(-36px); pointer-events: none; }
+.hud.in-shot .tr { opacity: 0; transform: translateY(-36px) scale(var(--s, 1)); pointer-events: none; }
+.hud.in-shot .who { transform: translateY(-74px); }
+@media (prefers-reduced-motion: reduce) { .hud .tl .row, .hud .tr, .hud .who { transition: opacity .2s; } .hud.in-shot .tl .row, .hud.in-shot .tr { transform: none; } }
