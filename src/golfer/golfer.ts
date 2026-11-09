@@ -40,7 +40,7 @@ interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: n
 const K = (o: Partial<Keys>, base: Keys): Keys => ({ ...base, ...o });
 // address: spine bent toward the ball and tilted away from the target (trail shoulder low, lead hip high)
 const A: Keys = { lift: 0, reach: 1, hipTurn: 0.04, hipTilt: 0.28, hipSide: 0.07, chestTurn: 0.04, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15, hinge: 0, beta: 0 };
-const TAKE = K({ hipTurn: -0.16, hipSide: 0.05, chestTurn: -0.7, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.37, beta: -0.06 }, A);
+const TAKE = K({ hipTurn: -0.16, hipSide: 0.05, chestTurn: -0.7, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.41, beta: -0.06 }, A);
 const HALF = K({ lift: 0.06, reach: 1.06, hipTurn: -0.4, hipSide: 0.02, chestTurn: -1.15, chestTilt: 0.67, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.1 }, A);
 const B3Q = K({ lift: 0.18, reach: 1.3, hipTurn: -0.6, hipTilt: 0.26, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.69, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.28 }, A);
 const T: Keys = { lift: 0.3, reach: 1.42, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.25, pro: 0.1, hinge: 0.88, beta: -0.32 };
@@ -373,7 +373,10 @@ export class Golfer {
     const pivot = this.pelvisBase.clone();
     hands.sub(pivot).applyAxisAngle(new THREE.Vector3(0, 1, 0), beta).add(pivot);
     const psi = phi + hinge;
-    const qc = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), beta).multiply(new THREE.Quaternion().setFromAxisAngle(this.axis, psi));
+    // the hands are carried round the body by beta; the club turns with them only half as much going back (keeps it on
+    // line, pointing down the target line at the top, rather than across it)
+    const betaClub = s.phase === 'back' || s.phase === 'down' ? beta * 0.53 : beta;
+    const qc = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), betaClub).multiply(new THREE.Quaternion().setFromAxisAngle(this.axis, psi));
     const g = this.club.group;
     g.position.copy(hands).sub(this.club.gripLead.clone().applyQuaternion(qc));
     // shaft lean: around address and impact the hands sit ahead of the club head (toward the target).
@@ -443,13 +446,25 @@ export class Golfer {
       const wF = s.phase === 'back' ? smooth(0, 0.12, phi / PHI_TOP) : smooth(0, 0.25, Math.max(0, phi) / Math.max(0.01, s.topPhi));
       if (wF > 0.001) {
         const sh = this.rig.P[BONE.upperL], len = (this.rig.len.upper + this.rig.len.fore) * 0.995;
-        // the lead arm raised toward vertical by the keyed lift: the hands above the trail shoulder at the top (traced)
+        // the lead arm raised toward vertical by the keyed lift (the hands above the trail shoulder at the top, traced)
         const armDir = p.wristL.clone().sub(sh).normalize(), up = new THREE.Vector3(0, 1, 0);
         const kAx = new THREE.Vector3().crossVectors(armDir, up);
+        // (the club keeps its orientation: it stays pointing down the target line at the top)
         if (key.lift > 0 && kAx.lengthSq() > 1e-6) armDir.applyAxisAngle(kAx.normalize(), Math.min(key.lift, armDir.angleTo(up) - 0.05));
         const wT = sh.clone().add(armDir.multiplyScalar(len));
         const mv = wT.sub(p.wristL).multiplyScalar(wF);
         g.position.add(mv); p.wristL.add(mv); p.wristR.add(mv);
+        // near the top the shaft points down the target line (not across it): take out most of its sideways part,
+        // turning the club about the lead wrist
+        const wAim = s.phase === 'back' ? smooth(0.55, 1, phi / PHI_TOP) : smooth(0.6, 1, Math.max(0, phi) / Math.max(0.01, s.topPhi)) * Math.min(1, s.topPhi / PHI_TOP);
+        if (wAim > 0.001) {
+          const cur = this.club.shaftDir.clone().applyQuaternion(qc).negate().normalize();   // grip → head
+          const want = cur.clone(); want.z *= 1 - 0.8 * wAim; want.normalize();
+          const qa = new THREE.Quaternion().setFromUnitVectors(cur, want);
+          qc.premultiply(qa); g.quaternion.copy(qc);
+          g.position.copy(p.wristL).sub(this.hands.wristLead.clone().applyQuaternion(qc));
+          p.wristR.copy(this.hands.wristTrail.clone().applyQuaternion(qc).add(g.position));
+        }
         this.rig.apply(p);
       }
     }

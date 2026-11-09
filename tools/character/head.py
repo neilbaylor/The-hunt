@@ -268,7 +268,7 @@ def sstep(a, b, x): t = np.clip((x - a) / (b - a), 0, 1); return t * t * (3 - 2 
 _eb = FV[(FV[:, 1] > lm_f[13, 1]) & (FV[:, 1] < eyeYf + 0.01)]
 ear_tips = [(sx_, _eb[np.argmax(_eb[:, 0] * sx_)].copy()) for sx_ in (-1, 1)]
 def reshape(P, q):
-    wid, temple, jaw, chin, lower, nose = q
+    wid, temple, jaw, chin, lower, nose = q[:6]; mid = q[6] if len(q) > 6 else 1.0
     P = P.copy(); x, y, z = P[:, 0], P[:, 1], P[:, 2]
     front = sstep(ear_zf - 0.03, ear_zf + 0.01, z)                       # the face, not the back of the head
     tj = sstep(yZ, yC + 0.012, y)                                        # 0 at the cheekbones, 1 at the jaw line
@@ -289,12 +289,81 @@ def reshape(P, q):
     # a slightly taller forehead (the hairline sits higher above the brows)
     fh_ = sstep(eyeYf + 0.012, eyeYf + 0.04, y)
     P[:, 1] += (A.forehead - 1) * np.maximum(y - (eyeYf + 0.012), 0) * (1 - fh_) + (A.forehead - 1) * 0.028 * fh_
-    below = y < yN
-    P[below, 1] = yN - (yN - y[below]) * lower
+    # lengths: eye→nose base scaled by mid, below the nose by lower (the eyes stay put)
+    midz = (y < eyeYf) & (y >= yN); below = y < yN
+    P[midz, 1] = eyeYf - (eyeYf - y[midz]) * mid
+    P[below, 1] = eyeYf - (eyeYf - yN) * mid - (yN - y[below]) * lower
     return P
 from scipy.optimize import least_squares
 r0 = ratios(cam_fit(lm_f))
-if A.reshape:
+# ── his own photos (front, 3/4, smiling, selfies; neil.json face.views + faceShape.photos) plus the portrait: one
+#    shape fitted to all of them at once. Each photo gets its own camera (focal from a sweep, pose by PnP); the shape
+#    parameters minimise the landmark reprojection error over every view, real photos weighted highest ──
+STABLE = np.ones(478, bool)
+for i_ in [0, 267, 269, 270, 409, 37, 39, 40, 185, 17, 314, 405, 321, 375, 84, 181, 91, 146, 13, 14, 312, 311, 310, 415, 82, 81, 80, 191, 317, 402, 318, 324, 87, 178, 88, 95, 78, 308, 61, 291]: STABLE[i_] = False   # lips: the expressions differ
+for i_ in [159, 145, 160, 144, 158, 153, 157, 154, 386, 374, 387, 373, 385, 380, 384, 381] + list(range(468, 478)): STABLE[i_] = False   # lids and irises
+views = []
+try:
+    cfg_ = json.load(open(os.path.join(HERE, 'neil.json')))
+    seen_ = set()
+    for v_ in cfg_['face'].get('views', []) + cfg_.get('faceShape', {}).get('photos', []):
+        if v_['photo'] in seen_ or not os.path.exists(v_['photo'] + '.lm.json'): continue
+        seen_.add(v_['photo'])
+        L_ = json.load(open(v_['photo'] + '.lm.json')); P2_ = np.array(L_['pts'], float)[:, :2]; W_, H_ = L_['size']
+        real = 'portrait' not in os.path.basename(v_['photo'])
+        views.append({'photo': v_['photo'], 'lm': P2_, 'W': W_, 'H': H_, 'w': (2.0 if real else 0.6) * v_.get('weight', 1.0), 'real': real})
+except Exception as e_:
+    print('  (no photo views:', e_, ')')
+okv = ~np.isnan(lm_f).any(1) & STABLE
+def view_cam(L3, v, init=None):
+    """focal (sweep, first time) + pose for one photo; returns projected landmarks and the camera"""
+    W_, H_ = v['W'], v['H']; best = None
+    for fm in ([v['fm']] if 'fm' in v else (0.7, 0.85, 1.0, 1.2, 1.6, 2.0, 2.6, 3.4)):
+        K = np.array([[fm * max(W_, H_), 0, W_ / 2], [0, fm * max(W_, H_), H_ / 2], [0, 0, 1]])
+        if init is not None and 'fm' in v: okp, rv, tv = cv2.solvePnP(L3[okv], v['lm'][okv], K, None, init[0].copy(), init[1].copy(), True, cv2.SOLVEPNP_ITERATIVE)
+        else:
+            okp, rv, tv, inl = cv2.solvePnPRansac(L3[okv], v['lm'][okv], K, None, reprojectionError=0.02 * np.linalg.norm(v['lm'][10] - v['lm'][152]), iterationsCount=300, flags=cv2.SOLVEPNP_EPNP)
+            if not okp: continue
+            rv, tv = cv2.solvePnPRefineLM(L3[okv], v['lm'][okv], K, None, rv, tv)
+        pr = cv2.projectPoints(L3, rv, tv, K, None)[0][:, 0]
+        err = np.median(np.linalg.norm(pr[okv] - v['lm'][okv], axis=1))
+        if best is None or err < best[0]: best = (err, fm, pr, K, rv, tv)
+    return best
+def mv_resid(L3, cams=None):
+    out_ = []
+    for k_, v in enumerate(views):
+        b_ = view_cam(L3, v, cams[k_] if cams else None)
+        fpx = np.linalg.norm(v['lm'][10] - v['lm'][152])
+        r_ = np.linalg.norm(b_[2][okv] - v['lm'][okv], axis=1) / fpx
+        r_ = np.minimum(r_, 0.08)                                   # a mis-detected landmark can't dominate
+        out_.append(r_ * math.sqrt(v['w'] / okv.sum()))
+    return np.concatenate(out_)
+def mv_report(L3, tag):
+    rep = []
+    for v in views:
+        b_ = view_cam(L3, v); fpx = np.linalg.norm(v['lm'][10] - v['lm'][152])
+        rep.append((os.path.basename(v['photo']), float(np.median(np.linalg.norm(b_[2][okv] - v['lm'][okv], axis=1)) / fpx * 100)))
+    print(f'  {tag}: landmark error (median, % of face height): ' + ', '.join(f'{n[:8]} {e:.2f}' for n, e in rep))
+    return rep
+if A.reshape and views:
+    for v in views:                                                  # fix each photo's focal at the start shape
+        b_ = view_cam(lm_f, v); v['fm'] = b_[1]
+    mv_before = mv_report(lm_f, 'before')
+    q0 = np.array([A.head_width_face, 1.0, 1.0, 1.0, A.face_length, 1.0, 1.0])
+    def resid(q): return np.r_[mv_resid(reshape(lm_f, q)), 0.02 * np.log(q)]
+    fit = least_squares(resid, q0, bounds=([0.88, 0.88, 0.8, 0.75, 0.95, 0.9, 0.95], [1.06, 1.08, 1.08, 1.1, 1.15, 1.15, 1.1]), diff_step=2e-3, max_nfev=60)
+    qf = fit.x
+    # the user reads the face as short: never shorter below the nose than the fit's own answer or his 'face-length'
+    FV = reshape(FV, qf); lm_f = reshape(lm_f, qf)
+    mv_after = mv_report(lm_f, 'after')
+    print('face shape from %d views: width %.3f, temples %.3f, jaw %.3f, chin %.3f, below the nose %.3f, nose width %.3f, eye→nose %.3f' % ((len(views),) + tuple(qf)))
+    mv_cams = []
+    for v in views:
+        b_ = view_cam(lm_f, v)
+        mv_cams.append({'photo': v['photo'], 'K': b_[3].tolist(), 'R': cv2.Rodrigues(b_[4])[0].tolist(), 't': b_[5][:, 0].tolist(), 'real': v['real']})
+    r1 = ratios(cam_fit(lm_f))
+    if DBG: json.dump({'cams': mv_cams, 'before': mv_before, 'after': mv_after, 'q': list(map(float, qf))}, open(os.path.join(DBG, 'views.json'), 'w'))
+elif A.reshape:
     q0 = np.array([A.head_width_face, 1.0, 1.0, 1.0, A.face_length, 1.0])
     def resid(q): return np.r_[np.log(ratios(cam_fit(reshape(lm_f, q))) / r_ref), 0.15 * np.log(q)]
     # the face reads round next to the portrait: keep it 2-5 % leaner overall and never shorten the lower face
@@ -438,7 +507,7 @@ if A.neck == 'loft':
     top = LV[loop]
     ta = np.arctan2(top[:, 0] - axis_c[0], top[:, 2] - axis_c[1])
     OVER = 0.012   # the neck runs on past the seam, down inside the collar, over the body's neck
-    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) + 0.0015), 0, axis_c[1] + math.cos(a) * (neck_r(a) + 0.0015)] for a in ta]); bot[:, 1] = np.minimum(y_seam_at(bot[:, 2]) - OVER, top[:, 1] - 0.025)   # at the back the collar rides high: the neck still runs down
+    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) + 0.003), 0, axis_c[1] + math.cos(a) * (neck_r(a) + 0.003)] for a in ta]); bot[:, 1] = np.minimum(y_seam_at(bot[:, 2]) - OVER, top[:, 1] - 0.025)   # at the back the collar rides high: the neck still runs down
     # smooth the bottom ring a little round the neck
     for _ in range(3): bot = 0.5 * bot + 0.25 * (np.roll(bot, 1, 0) + np.roll(bot, -1, 0))
     ROWS = 7
@@ -964,7 +1033,7 @@ meta = {
     'faceShape': {'params': (list(map(float, qf)) if qf is not None else None), 'ratios': ratio_table},
     'arrays': desc, 'bones': [B[i] for i in bones_used],
     'eye': list(map(float, eye_mh)), 'ipd': float(ipd_mh),
-    'seam': {'point': list(map(float, mir(cen))), 'normal': list(map(float, mir(pn))), 'band': BAND},
+    'seam': {'point': list(map(float, mir(cen - pn * (0.010 if A.neck == 'loft' else 0.0)))), 'normal': list(map(float, mir(pn))), 'band': BAND},
     'skinTint': list(map(float, tint)), 'skinXform': [list(map(float, r_)) for r_ in skin_xform], 'seamTone': seam_tone, 'skinColor': list(map(float, skin_c / 255)), 'hairColor': list(map(float, hair_c / 255)),
     'mirrored': mirror, 'source': os.path.basename(A.raw), 'photos': [os.path.basename(p) for p in photos],
     'tris': int(len(UF)), 'tex': T, 'morphs': mnames, 'morphUnit': 1e-5, 'eyes': eyes_uv,

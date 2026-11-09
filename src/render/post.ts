@@ -17,9 +17,12 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FXAAPass } from 'three/examples/jsm/postprocessing/FXAAPass.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
+import { HandDrawnPass } from './styles';
 
 export type Quality = 'low' | 'med' | 'high';
 export type Grade = 'golden' | 'midday';
+/** 'hand': the hand-drawn realism finish (styles.ts) on med/high; 'real': the plain realistic render */
+export type Finish = 'hand' | 'real';
 
 export interface PostOptions {
   quality?: Quality;
@@ -27,6 +30,7 @@ export interface PostOptions {
   /** 'agx' is softer and more filmic in the highlights; 'aces' is punchier */
   toneMapping?: 'agx' | 'aces';
   exposure?: number;
+  finish?: Finish;
 }
 
 export interface Post {
@@ -36,6 +40,10 @@ export interface Post {
   setGrade(g: Grade): void;
   /** depth of field: amount 0..1 (eased), sharp out to `start` metres, fully soft by `end` */
   setDof(amount: number, start?: number, end?: number): void;
+  setFinish(f: Finish): void;
+  /** the golfer's head (world), so the hand-drawn finish keeps the face clean; null for none */
+  setFace(pos: THREE.Vector3 | null, radius?: number): void;
+  readonly finish: Finish;
   readonly quality: Quality;
 }
 
@@ -181,6 +189,9 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
   let gradePass: ShaderPass | null = null;
   let dofPass: DofPass | null = null;
   let sharpPass: ShaderPass | null = null;
+  let handPass: HandDrawnPass | null = null;
+  let finish: Finish = opts.finish ?? 'hand';
+  let face: { pos: THREE.Vector3; r: number } | null = null;
   const dof = { amount: 0, target: 0, start: 90, end: 420 };
   let time = 0;
 
@@ -197,7 +208,7 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
 
   function build() {
     composer?.dispose();
-    composer = null; bloom = null; gradePass = null; dofPass = null; sharpPass = null;
+    composer = null; bloom = null; gradePass = null; dofPass = null; sharpPass = null; handPass?.dispose(); handPass = null;
     if (quality === 'low') { applyGrade(); return; }
     const pr = renderer.getPixelRatio();
     const rt = new THREE.WebGLRenderTarget(size.x * pr, size.y * pr, { type: THREE.HalfFloatType, samples: quality === 'high' ? 4 : 0 });
@@ -210,6 +221,12 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
       t.depthTexture.type = THREE.UnsignedIntType;
     }
     composer.addPass(new RenderPass(scene, camera));
+    // hand-drawn finish straight after the scene render (needs the scene depth intact), before depth of field
+    handPass = new HandDrawnPass(camera, quality === 'high' ? 'high' : 'med', () => renderer.toneMappingExposure);
+    handPass.setSize(size.x * pr, size.y * pr, pr);
+    handPass.enabled = finish === 'hand';
+    if (face) handPass.setFace(face.pos, face.r);
+    composer.addPass(handPass);
     dofPass = new DofPass(camera);
     // blur radius in render pixels: a subtle ~0.45% of the screen height at full strength (phones: ~3–5 px)
     dofPass.uniforms.maxRadius.value = Math.max(2.5, size.y * pr * 0.0045);
@@ -234,7 +251,7 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
     if (quality === 'med') composer.addPass(new FXAAPass());
     sharpPass = new ShaderPass(SharpenShader);
     sharpPass.uniforms.resolution.value.set(size.x * pr, size.y * pr);
-    sharpPass.uniforms.amount.value = quality === 'high' ? 0.5 : 0.7;
+    sharpPass.uniforms.amount.value = (quality === 'high' ? 0.5 : 0.7) * (finish === 'hand' ? 0.5 : 1);
     composer.addPass(sharpPass);
     applyGrade();
   }
@@ -242,6 +259,9 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
 
   return {
     get quality() { return quality; },
+    get finish() { return finish; },
+    setFinish(f) { if (f !== finish) { finish = f; build(); } },
+    setFace(pos, radius = 0.14) { face = pos ? { pos: (face?.pos ?? new THREE.Vector3()).copy(pos), r: radius } : null; handPass?.setFace(pos, radius); },
     render(dt) {
       time += dt;
       if (!composer) { renderer.render(scene, camera); return; }
@@ -263,6 +283,7 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
         const pr = renderer.getPixelRatio();
         if (dofPass) { dofPass.setSize(w * pr, h * pr); dofPass.uniforms.maxRadius.value = Math.max(2.5, h * pr * 0.0045); }
         if (sharpPass) sharpPass.uniforms.resolution.value.set(w * pr, h * pr);
+        handPass?.setSize(w * pr, h * pr, pr);
       }
     },
     setQuality(q) { if (q !== quality) { quality = q; build(); } },

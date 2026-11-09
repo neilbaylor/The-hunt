@@ -42,7 +42,8 @@ const perfInit = initialTier(renderer, QS);
 try { range = createRange(renderer, scene, { detail: perfInit.tier }); range.setTimeOfDay(QS.get('time') === 'midday' ? 'midday' : 'golden'); } catch (e) { console.error('range failed', e); }
 // post-processing: high on desktop, medium on phones (falls back to low if frames run long)
 const coarse = matchMedia('(pointer: coarse)').matches;
-const post = createPost(renderer, scene, camera, { quality: (QS.get('q') as any) ?? (coarse ? 'med' : 'high'), grade: range?.timeOfDay ?? 'golden', toneMapping: 'agx' });
+const post = createPost(renderer, scene, camera, { quality: (QS.get('q') as any) ?? (coarse ? 'med' : 'high'), grade: range?.timeOfDay ?? 'golden', toneMapping: 'agx', finish: QS.get('style') === 'real' ? 'real' : 'hand' });
+const _faceHead = new THREE.Vector3();
 // tiers drive the pixel-ratio cap, post quality and range detail, and step down while frames run long (>20 ms)
 const perf = new PerfGovernor(renderer, { post, range, resize: () => onViewport() }, perfInit, QS);
 // sharp, soft-edged shadows around the golfer while he swings; wide ones when the ball flies
@@ -386,11 +387,13 @@ function updateCamera(dt: number, now: number) {
       const end = new THREE.Vector3(), endLook = new THREE.Vector3(); addressCam(end, endLook);
       const a0 = Math.atan2(introFly.pos.z - piv.z, introFly.pos.x - piv.x), a1 = Math.atan2(end.z - piv.z, end.x - piv.x);
       let da = a1 - a0; da = Math.atan2(Math.sin(da), Math.cos(da));
-      if (Math.sign(da) !== -side && Math.abs(da) > 0.2) da -= Math.sign(da) * Math.PI * 2;   // go round the trail side
       const r0 = Math.hypot(introFly.pos.x - piv.x, introFly.pos.z - piv.z), r1 = Math.hypot(end.x - piv.x, end.z - piv.z);
       const a = a0 + da * e, r = r0 + (r1 - r0) * e;
       want.set(piv.x + Math.cos(a) * r, introFly.pos.y + (end.y - introFly.pos.y) * e + Math.sin(Math.PI * e) * 0.7, piv.z + Math.sin(a) * r);
-      wantLook.lerpVectors(introFly.look, endLook, e * e * (3 - 2 * e));
+      want.y = Math.max(want.y, (range?.heightAt(want.x, want.z) ?? 0) + 1.1);
+      // keep him in frame through the orbit; the eye only swings down the range at the very end
+      const chest = new THREE.Vector3(piv.x, 1.05, piv.z);
+      wantLook.lerpVectors(introFly.look, chest, Math.min(1, e * 3)).lerp(endLook, smooth(0.6, 1, e));
       camFlying = true;
       if (k >= 1) { camMode = 'address'; state = 'ready'; hud.el.classList.remove('hidden'); camFly.t0 = -1e9; }
     }
@@ -467,8 +470,9 @@ const introFly = { t0: 0, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
   const head = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(head);
   const piv = golfer.ballWorld(new THREE.Vector3()).add(new THREE.Vector3(0.5 * side, 0, 0));
-  const th = (golfer.lefty ? Math.PI : 0) + 0.55 * side + 0.06 * Math.sin(now / 1000 * 0.25);   // in front of him, a quarter round
-  pos.set(piv.x + Math.cos(th) * 3.3, 1.38 + Math.sin(now / 1000 * 0.18) * 0.04, piv.z + Math.sin(th) * 3.3);
+  const th = (golfer.lefty ? Math.PI : 0) + 0.32 * side + 0.06 * Math.sin(now / 1000 * 0.25);   // in front of him, a little round
+  pos.set(piv.x + Math.cos(th) * 3.1, 0, piv.z + Math.sin(th) * 3.1);
+  pos.y = Math.max(1.38 + Math.sin(now / 1000 * 0.18) * 0.04, (range?.heightAt(pos.x, pos.z) ?? 0) + 1.2);
   look.set(piv.x * 0.9 + head.x * 0.1, 1.08, piv.z);
 }
 function startPlay() {
@@ -594,6 +598,8 @@ function frame(now: number) {
   // dynamic resolution: keep frames under ~20 ms
   perf.frame(frameTimes[frameTimes.length - 1]);
   const r0 = performance.now();
+  // the hand-drawn finish keeps his face clean: it needs the head's screen position each frame
+  if (post.finish === 'hand' && golfer.body.bones[5]) post.setFace(golfer.body.bones[5].getWorldPosition(_faceHead), 0.15);
   post.render(dt);
   faceBadge.draw(state !== 'intro' && !aimCtl.active && !document.hidden);
   (window as any).__frameMs = performance.now() - r0;
