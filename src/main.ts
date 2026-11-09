@@ -621,7 +621,7 @@ let pressT = 0;
 renderer.domElement.addEventListener('pointerup', () => { if (state === 'flight' && pressT && performance.now() - pressT < 230) skipToLanding(); pressT = 0; });
 for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) renderer.domElement.addEventListener(ev, () => { ff.held = false; });
 // the live face badge: the head (and the lights) also live on the badge camera's layer
-const faceBadge = new FaceBadge(renderer, scene, () => golfer.body.bones[5] ?? null, () => (golfer.body as { face?: import('./ui/facebadge').FaceLike }).face, document.getElementById('who')!, profile.name);
+const faceBadge = new FaceBadge(renderer, scene, () => golfer.body.bones[5] ?? null, () => (golfer.body as { face?: import('./ui/facebadge').FaceLike }).face, document.getElementById('who')!, profile.name, () => (golfer as unknown as { char: THREE.Object3D }).char);
 golfer.root.traverse(o => o.layers.enable(AVATAR_LAYER));
 scene.traverse(o => { if ((o as THREE.Light).isLight) o.layers.enable(AVATAR_LAYER); });
 requestAnimationFrame(t => { last = t; frame(t); });

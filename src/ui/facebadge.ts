@@ -40,7 +40,7 @@ export class FaceBadge {
   private typing: { text: string; i: number; acc: number } | null = null; private bubbleT = 0;
 
   constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private head: () => THREE.Object3D | null,
-    private face: () => FaceLike | undefined, host: HTMLElement, name: string) {
+    private face: () => FaceLike | undefined, host: HTMLElement, name: string, private body: () => THREE.Object3D | null = () => null) {
     this.rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
     this.cam.layers.set(AVATAR_LAYER);
     const mat = new THREE.ShaderMaterial({
@@ -111,12 +111,14 @@ export class FaceBadge {
     if ((this.frame++ & 1) === 0) {
       const h = this.head(); if (!h) return;
       const hp = new THREE.Vector3(); h.getWorldPosition(hp);
-      const f = new THREE.Vector3(0, 0, 1).transformDirection(h.matrixWorld); f.y = Math.max(-0.2, Math.min(0.35, f.y)); f.normalize();
+      // face-on from the body's front (the head bows over the ball at address, so the head's own axis looks at the turf)
+      const bo = this.body() ?? h;
+      const f = new THREE.Vector3(0, 0, 1).transformDirection(bo.matrixWorld); f.y = 0; if (f.lengthSq() < 1e-4) f.set(0, 0, 1); f.normalize();
       this.fwd.lerp(f, 0.35).normalize();
       const side = new THREE.Vector3(-this.fwd.z, 0, this.fwd.x).normalize();
       const sway = this.shake > 0 ? Math.sin(this.t * 22) * 0.12 * this.shake : 0;
-      const aim = hp.clone().add(new THREE.Vector3(0, 0.07, 0)).addScaledVector(this.fwd, 0.04);
-      this.cam.position.copy(aim).addScaledVector(this.fwd, 0.78).addScaledVector(side, sway).add(new THREE.Vector3(0, 0.03, 0));
+      const aim = hp.clone().add(new THREE.Vector3(0, 0.02, 0)).addScaledVector(this.fwd, 0.07);
+      this.cam.position.copy(aim).addScaledVector(this.fwd, 0.8).addScaledVector(side, sway).add(new THREE.Vector3(0, -0.1, 0));
       this.cam.lookAt(aim);
       const prevBg = this.scene.background, prevFog = this.scene.fog, shadowAuto = R.shadowMap.autoUpdate;
       this.scene.background = this.bg; this.scene.fog = null; R.shadowMap.autoUpdate = false;
