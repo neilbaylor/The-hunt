@@ -299,28 +299,61 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   }
   // shoes: modern spikeless golf shoes sized to the feet (on the foot bones): rubber sole, leather upper,
   // laces, toe perforations and an accent stripe, all from one UV-mapped texture
-  const shoeTex = canvasTex(512, 256, g => {
-    // u: round the shoe (0 = outer side bottom → top → inner side), v: heel (0) → toe (1)
-    const base = O.shoes, trim = O.shoeTrim;
-    g.fillStyle = base; g.fillRect(0, 0, 512, 256);
-    for (let i = 0; i < 3000; i++) { g.fillStyle = rand() < 0.5 ? 'rgba(0,0,0,.025)' : 'rgba(255,255,255,.05)'; g.fillRect(rand() * 512, rand() * 256, 2, 2); }
-    // heel counter panel
-    g.fillStyle = 'rgba(0,0,0,.06)'; g.fillRect(0, 0, 512, 46);
-    // accent stripe sweeping up both sides
-    g.fillStyle = trim;
-    for (const x0 of [60, 452]) { g.beginPath(); g.moveTo(x0 - 26, 60); g.quadraticCurveTo(x0, 120, x0 + (x0 < 256 ? 70 : -70), 180); g.lineTo(x0 + (x0 < 256 ? 82 : -82), 168); g.quadraticCurveTo(x0 + 6, 104, x0 - 10, 52); g.fill(); }
-    // toe cap seam + perforations
-    g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 2; g.beginPath(); g.moveTo(90, 200); g.quadraticCurveTo(256, 170, 422, 200); g.stroke();
-    g.fillStyle = 'rgba(0,0,0,.22)';
-    for (let r = 0; r < 4; r++) for (let i = 0; i < 18; i++) { const x = 150 + i * 12 + (r % 2) * 6, y = 210 + r * 9; g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.fill(); }
-    // stitching lines
-    g.strokeStyle = 'rgba(0,0,0,.12)'; g.setLineDash([4, 4]); g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(0, 52); g.lineTo(512, 52); g.moveTo(90, 206); g.quadraticCurveTo(256, 176, 422, 206); g.stroke(); g.setLineDash([]);
+  // classic white wingtip golf shoes (pebble leather, brogue punching), stacked brown sole, spikes
+  const shoeTex = canvasTex(1024, 512, g => {
+    // u: round the shoe (0 = outer side at the sole → over the top → 1 = inner side), v: heel (0) → toe (1)
+    const W = 1024, H = 512;
+    g.fillStyle = '#f2f1ec'; g.fillRect(0, 0, W, H);
+    // pebble grain
+    for (let i = 0; i < 26000; i++) { const x = rand() * W, y = rand() * H, r = 1.2 + rand() * 2.2; g.fillStyle = rand() < 0.5 ? 'rgba(0,0,0,.035)' : 'rgba(255,255,255,.5)'; g.beginPath(); g.ellipse(x, y, r, r * 0.8, rand() * 3, 0, 7); g.fill(); }
+    const vy = (v: number) => (1 - v) * H; // v → canvas y (texture flipY)
+    // seams with brogue rows beside them: a curve as a list of (u, v) points
+    const seam = (pts: [number, number][], holes = true, big = false) => {
+      g.strokeStyle = 'rgba(70,66,60,.6)'; g.lineWidth = 3; g.beginPath();
+      pts.forEach(([u, v], i) => (i ? g.lineTo(u * W, vy(v)) : g.moveTo(u * W, vy(v)))); g.stroke();
+      // stitching
+      g.strokeStyle = 'rgba(90,86,80,.35)'; g.setLineDash([5, 5]); g.lineWidth = 1.2; g.beginPath();
+      pts.forEach(([u, v], i) => (i ? g.lineTo(u * W, vy(v) + 7) : g.moveTo(u * W, vy(v) + 7))); g.stroke(); g.setLineDash([]);
+      if (!holes) return;
+      // punched holes along the seam
+      for (let k = 0; k < pts.length - 1; k++) {
+        const [u0, v0] = pts[k], [u1, v1] = pts[k + 1]; const len = Math.hypot((u1 - u0) * W, (vy(v1) - vy(v0)));
+        for (let t = 0; t < len; t += big ? 13 : 10) {
+          const x = u0 * W + (u1 - u0) * W * t / len, y = vy(v0) + (vy(v1) - vy(v0)) * t / len;
+          g.fillStyle = 'rgba(40,36,32,.85)'; g.beginPath(); g.arc(x, y - 9, big ? 3.6 : 2.6, 0, 7); g.fill();
+        }
+      }
+    };
+    // wingtip: a W-shaped seam across the toe, with wings sweeping back along both sides
+    const wing: [number, number][] = [];
+    for (let i = 0; i <= 40; i++) { const u = i / 40; const v = 0.66 + 0.12 * Math.abs(Math.cos(u * Math.PI)) - 0.06 * Math.exp(-Math.pow((u - 0.5) / 0.08, 2)); wing.push([u, v]); }
+    seam(wing, true, true);
+    for (const side of [0, 1]) { // wings back along the sides
+      const pts: [number, number][] = []; for (let i = 0; i <= 20; i++) { const t = i / 20; pts.push([side ? 1 - (0.12 + 0.06 * t) : 0.12 + 0.06 * t, 0.66 - 0.5 * t]); }
+      seam(pts, true);
+    }
+    // quarter (heel panel) seam and eyestay (lace panel) outline
+    seam([[0.08, 0.22], [0.2, 0.3], [0.34, 0.4], [0.4, 0.5]], true); seam([[0.92, 0.22], [0.8, 0.3], [0.66, 0.4], [0.6, 0.5]], true);
+    seam([[0.4, 0.5], [0.43, 0.38], [0.5, 0.33], [0.57, 0.38], [0.6, 0.5]], false);
+    // heel counter
+    seam([[0.0, 0.12], [0.15, 0.17], [0.85, 0.17], [1.0, 0.12]], true);
+    // small gold badge on the outer side panel
+    g.fillStyle = '#c9a35a'; g.fillRect(0.2 * W, vy(0.4), 18, 16); g.fillStyle = '#6d5326'; g.font = 'bold 12px Arial'; g.fillText('FJ', 0.2 * W + 2, vy(0.4) + 13);
   }, true, 1);
   shoeTex.wrapS = shoeTex.wrapT = THREE.ClampToEdgeWrapping; shoeTex.repeat.set(1, 1);
-  const upperMat = new THREE.MeshPhysicalMaterial({ map: shoeTex, roughness: 0.42, clearcoat: 0.55, clearcoatRoughness: 0.28, sheen: 0.2 });
-  const soleMat = new THREE.MeshStandardMaterial({ color: '#efeee9', roughness: 0.7 });
-  const outsoleMat = new THREE.MeshStandardMaterial({ color: '#3a3b3e', roughness: 0.9 });
+  const upperMat = new THREE.MeshPhysicalMaterial({ map: shoeTex, roughness: 0.38, clearcoat: 0.6, clearcoatRoughness: 0.22, sheen: 0.15 });
+  // stacked leather-look sole: brown with fine horizontal layers, a dark welt line on top
+  const soleMat = new THREE.MeshStandardMaterial({ color: '#8a5a36', roughness: 0.6 });
+  soleMat.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvY = position.y;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vY;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        float layer = 0.5 + 0.5 * sin(vY * 2600.0);
+        diffuseColor.rgb *= 0.82 + 0.25 * layer;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.08, 0.06), smoothstep(0.0345, 0.0375, vY));`);
+  };
+  soleMat.customProgramCacheKey = () => 'stacked-sole';
+  const outsoleMat = new THREE.MeshStandardMaterial({ color: '#2a2420', roughness: 0.9 });
   const laceMat = new THREE.MeshStandardMaterial({ color: '#f4f3ef', roughness: 0.75 });
   for (const sfx of ['l', 'r'] as const) {
     const f = M.feet[sfx], fb = M.bones.indexOf(`foot_${sfx}`);
@@ -343,6 +376,12 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       sole.computeVertexNormals();
       const m = new THREE.Mesh(sole, [soleMat, soleMat]); grp.add(m);
       const out = new THREE.Mesh(sole.clone().scale(1, 0.18, 1), outsoleMat); out.position.y = -0.0045 * 0; grp.add(out);
+      // spikes: a few soft cleats under the forefoot and heel
+      const spikeMat = new THREE.MeshStandardMaterial({ color: '#3b3226', roughness: 0.6, metalness: 0.2 });
+      for (const [t, xo] of [[0.12, -0.5], [0.12, 0.5], [0.24, 0], [0.55, -0.6], [0.55, 0.6], [0.68, -0.2], [0.68, 0.45], [0.8, -0.45], [0.8, 0.35], [0.9, 0]] as [number, number][]) {
+        const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.005, 0.005, 8), spikeMat);
+        sp.position.set(f.x + xo * outline(t) * 0.7, 0.0005, z0 + t * len); grp.add(sp);
+      }
     }
     // upper: lofted rings, heel to toe
     const prof: [number, number][] = [[0, 0.068], [0.05, 0.088], [0.16, 0.097], [0.3, 0.102], [0.44, 0.097], [0.58, 0.086], [0.7, 0.074], [0.8, 0.066], [0.88, 0.058], [0.95, 0.048], [0.99, 0.036], [1.0, 0.03]];

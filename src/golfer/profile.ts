@@ -83,7 +83,7 @@ export const NEIL: GolferProfile = {
     topTrim: '#1c4739',
     emblem: '#b3262e',
     pants: '#c8b38a',     // khaki shorts
-    shoes: '#f3f2ee',
+    shoes: '#f3f2ee',     // white wingtips (classic tour shoe)
     shoeTrim: '#e6e5e0',
     glove: '#f6f5f1',
     chestLogo: 'malbon-m',
