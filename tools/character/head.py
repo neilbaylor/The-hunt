@@ -26,7 +26,8 @@ ap.add_argument('--out', default=os.path.join(ROOT, 'src/assets/neil'))
 ap.add_argument('--bin', default=None, help='character.bin (default <out>/character.bin)')
 ap.add_argument('--tris', type=int, default=16000)
 ap.add_argument('--tex', type=int, default=2048)
-ap.add_argument('--unwrap', default=os.path.join(HERE, 'data/face_unwrap.jpg'), help="front-on cylindrical face texture (+ .lm.json); 'none' to skip")
+ap.add_argument('--unwrap', default=None, help="front-on cylindrical face texture (+ .lm.json; default: neil.json face.unwrap); 'none' to skip")
+ap.add_argument('--hair', default=None, help='hair colour (default: the profile look.hair in src/golfer/profile.ts, else #4a3628)')
 ap.add_argument('--unwrap-weight', type=float, default=4.0, help='how strongly the unwrap wins over the portrait where both see')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
@@ -228,6 +229,10 @@ nbr = [np.unique(n_) for n_ in nbr]
 for it in range(6):
     lap = np.array([LV[n_].mean(0) - LV[i] if len(n_) else np.zeros(3) for i, n_ in enumerate(nbr)])
     LV += (0.5 if it % 2 == 0 else -0.53) * lap * hairish[:, None]   # Taubin: smooth without shrinking
+# a bit more length on top (his hair is longer on top, swept back), most at the front of the crown
+_vn0 = vnormals(LV, LF)
+lift = np.clip((LV[:, 1] - (eyeY0 + 0.07)) / 0.04, 0, 1) ** 1.2 * (0.7 + 0.3 * np.clip((LV[:, 2] - (eye_lmh[2] - 0.12)) / 0.1, 0, 1))
+LV += _vn0 * (0.006 * lift)[:, None]
 # the generator cuts the head off flat at about chin level: grow a neck down from that cut to the body's own neck
 # (a loft from the cut ring to the body's neck surface just above the collar), so the seam lies on the body's skin
 edges = np.r_[LF[:, [0, 1]], LF[:, [1, 2]], LF[:, [2, 0]]]
@@ -411,17 +416,23 @@ for ph in photos:
         if mirrored: w *= 0.35 * (wsum < 0.5)          # only where the real view is weak
         col += c * w[:, None]; wsum += w
 # ── the unwrapped face texture (front + ears + hair, cylindrical, evenly lit): fitted by landmarks, like build.py ──
+ear_pts = []
+try: UCFG = json.load(open(os.path.join(HERE, 'neil.json')))['face'].get('unwrap') or {}
+except Exception: UCFG = {}
+if A.unwrap is None: A.unwrap = UCFG.get('photo', 'none')
+elif A.unwrap != UCFG.get('photo'): UCFG = {}       # another image: its ears aren't known
+print('unwrap', A.unwrap)
 # head points → (arc round the head centre, height) → thin-plate spline from our mesh's landmarks to the image's
 if A.unwrap != 'none' and os.path.exists(A.unwrap):
     from scipy.interpolate import RBFInterpolator
     U = np.asarray(Image.open(A.unwrap).convert('RGB')).astype(float); UH, UW = U.shape[:2]
     Lu = np.array(json.load(open(A.unwrap + '.lm.json'))['pts'], float)[:, :2]     # the true (unmirrored) image: this mesh is true until written
-    hc_ = np.array(M['headCenter'])
+    # the cylinder's axis: through the middle of the skull (front to back), so the ears sit near ±90°
+    hc_ = np.array([eye_lmh[0], (lm_f[IRIS[0], 1] + lm_f[IRIS[1], 1]) / 2, (FV[:, 2].min() + FV[:, 2].max()) / 2])
     def cyl(P): d = P - hc_; return np.c_[np.arctan2(d[:, 0], d[:, 2]) * 0.09, d[:, 1]]
     okl = ~np.isnan(lm_f).any(1)
     src, dst = cyl(lm_f[okl]), Lu[okl]
-    try: ears_img = json.load(open(os.path.join(HERE, 'neil.json')))['face']['unwrap']['ears']
-    except Exception: ears_img = None
+    ears_img = UCFG.get('ears')
     if ears_img:
         # the ears painted at the sides: anchor the mesh's outermost points between mouth and eye height to them
         Pm = np.asarray(hm.vertices); mouth_y = lm_f[13, 1]
@@ -431,7 +442,7 @@ if A.unwrap != 'none' and os.path.exists(A.unwrap):
             ep = band_[np.argmax(np.abs(band_[:, 0] - hc_[0]))][None]
             pred = np.c_[cyl(ep), [[1]]] @ aff
             j = int(np.argmin([np.linalg.norm(np.array(e) - pred[0]) for e in ears_img]))
-            src = np.r_[src, cyl(ep)]; dst = np.r_[dst, [ears_img[j]]]
+            src = np.r_[src, cyl(ep)]; dst = np.r_[dst, [ears_img[j]]]; ear_pts.append(ep[0])
             print(f'  unwrap ear {sx:+d}: predicted {pred[0].round(0)}, painted {ears_img[j]}')
     uw = RBFInterpolator(src, dst, kernel='thin_plate_spline', smoothing=0.5, degree=1)
     print('unwrap fit residual', np.linalg.norm(uw(src) - dst, axis=1).mean().round(1), 'px over', len(src), 'points')
@@ -439,7 +450,7 @@ if A.unwrap != 'none' and os.path.exists(A.unwrap):
     cu = np.stack([map_coordinates(U[..., k], [xy[:, 1] - 0.5, xy[:, 0] - 0.5], order=1, mode='nearest') for k in range(3)], 1)
     ang = np.abs(np.arctan2(cp[:, 0] - hc_[0], cp[:, 2] - hc_[2]))
     wu = np.clip(np.minimum.reduce([xy[:, 0] - 4, UW - 4 - xy[:, 0], xy[:, 1] - 4, UH - 4 - xy[:, 1]]) / 14, 0, 1)
-    wu *= np.clip((np.radians(105) - ang) / 0.25, 0, 1)
+    wu *= np.clip((np.radians(UCFG.get('maxAngle', 105)) - ang) / 0.25, 0, 1)
     wu *= np.clip((cp[:, 1] - (lm_f[152, 1] - 0.05)) / 0.02, 0, 1)
     # the unwrap's flat orange margins (round the ears, the corners) are not skin detail
     # where the unwrap sees, the portrait steps back (two lightings side by side read as seams)
@@ -482,10 +493,49 @@ def vnoise(p, f):
     g = np.floor(p * f).astype(np.int64); h = ((g[:, 0] * 73856093) ^ (g[:, 1] * 19349663) ^ (g[:, 2] * 83492791)) % 1000003
     return (h / 1000003.0)
 relief = np.clip(np.einsum('ij,ij->i', hiN, tn), 0, 1)
-strand = 0.75 + 0.5 * (0.6 * vnoise(cp * [1, 0.35, 1], 900) + 0.4 * vnoise(cp, 300))
+def snoise(q):
+    # smooth value noise (trilinear), q already scaled
+    i = np.floor(q).astype(np.int64); f = q - i; f = f * f * (3 - 2 * f)
+    def h(o): g = i + o; return (((g[:, 0] * 73856093) ^ (g[:, 1] * 19349663) ^ (g[:, 2] * 83492791)) % 1000003) / 1000003.0
+    c = [h(np.array([a, b, c_])) for a in (0, 1) for b in (0, 1) for c_ in (0, 1)]
+    x0 = [c[k] * (1 - f[:, 2]) + c[k + 1] * f[:, 2] for k in (0, 2, 4, 6)]
+    y0 = [x0[0] * (1 - f[:, 1]) + x0[1] * f[:, 1], x0[2] * (1 - f[:, 1]) + x0[3] * f[:, 1]]
+    return y0[0] * (1 - f[:, 0]) + y0[1] * f[:, 0]
+# strands follow the way the hair grows: swept straight back on top, down and back at the sides and nape
+topk = np.clip((cp[:, 1] - (eyeY + 0.04)) / 0.05, 0, 1)
+gd = np.c_[np.zeros(len(cp)), -1 + 1.0 * topk, -0.6 - 0.6 * topk]
+gd -= hiN * np.einsum('ij,ij->i', gd, hiN)[:, None]; gd /= np.linalg.norm(gd, axis=1, keepdims=True) + 1e-9
+def aniso(F_perp, F_par):
+    q = cp * F_perp + gd * np.einsum('ij,ij->i', cp, gd)[:, None] * (F_par - F_perp); return snoise(q)
+strand = 0.62 + 0.55 * (0.55 * aniso(2600, 70) + 0.3 * aniso(900, 30) + 0.15 * snoise(cp * 150))
 fill = hair_amt[:, None] * hair_c * strand[:, None] * (0.55 + 0.45 * relief[:, None]) + (1 - hair_amt[:, None]) * skin_c * (0.92 + 0.08 * relief[:, None])
 # soft hair edge at the nape
 out = col * conf[:, None] + fill * (1 - conf[:, None])
+# ── hair colour: his own dark brown, whatever the textures say (the unwrap's hair is lighter and redder) ──
+def hexrgb(h): h = h.lstrip('#'); return np.array([int(h[i:i + 2], 16) for i in (0, 2, 4)], float)
+hair_hex = A.hair
+if hair_hex is None:
+    import re
+    try: hair_hex = re.search(r"hair:\s*'(#[0-9a-fA-F]{6})'", open(os.path.join(ROOT, 'src/golfer/profile.ts')).read()).group(1)
+    except Exception: hair_hex = '#4a3628'
+hair_t = hexrgb(hair_hex)
+L_ = out.mean(1); skinL = skin_c.mean()
+near_eye = np.minimum(np.linalg.norm(cp - lm_f[IRIS[0]], axis=1), np.linalg.norm(cp - lm_f[IRIS[1]], axis=1)) < 0.03
+sideang = np.abs(np.arctan2(cp[:, 0] - eye_lmh[0], cp[:, 2] - (eye_lmh[2] - 0.09)))
+near_ear = np.zeros(len(cp), bool)
+for e_ in ear_pts: near_ear |= np.linalg.norm((cp - e_) * [1.6, 0.8, 1], axis=1) < 0.04   # the ears stay skin
+region = ~near_ear & ((cp[:, 1] > eyeY + 0.03) | ((sideang > np.radians(55)) & (cp[:, 1] > eyeY - 0.06))) & ~near_eye
+dark = np.clip((0.8 * skinL - L_) / (0.2 * skinL), 0, 1) * region
+H_ = np.maximum(hair_amt * ~near_ear, dark)
+H_ = H_ * np.clip(1 - 0.7 * near_eye, 0, 1)
+hm_mean = np.median(L_[H_ > 0.8]) if (H_ > 0.8).sum() > 100 else L_.mean()
+rec = hair_t[None, :] * np.clip(L_ / max(hm_mean, 1), 0.35, 1.8)[:, None] ** 0.9
+# a small thin spot at the crown: a little scalp shows through
+crown = np.array([eye_lmh[0], FV[:, 1].max() - 0.012, eye_lmh[2] - 0.11])
+cr = np.clip(1 - np.linalg.norm(cp - crown, axis=1) / 0.022, 0, 1) ** 1.5 * 0.35
+rec = rec * (1 - cr[:, None]) + skin_c * 0.8 * cr[:, None]
+out = out * (1 - H_[:, None]) + rec * H_[:, None]
+print('hair recoloured to', hair_hex, 'over', int((H_ > 0.5).sum()), 'texels; source hair lum', round(float(hm_mean), 1))
 # the neck band fades to the body's skin tone (the body is tinted to the face below)
 nk = np.clip(((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn / (BAND + 0.012), 0, 1) ** 0.7
 out = out * nk[:, None] + skin_c * 0.93 * (1 - nk[:, None])
