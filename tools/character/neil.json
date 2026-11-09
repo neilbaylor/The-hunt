@@ -10,19 +10,25 @@
     "proportions": 0.8
   },
   "details": {
-    "head/head-oval": 0.3,
-    "head/head-scale-vert-incr": 0.3,
-    "head/head-scale-horiz-decr": 0.12,
-    "chin/chin-height-incr": 0.45,
-    "chin/chin-prominent-incr": 0.15,
-    "chin/chin-width-incr": 0.25,
-    "nose/nose-scale-vert-incr": 0.75,
+    "chin/chin-prominent-incr": 0.3,
+    "chin/chin-width-incr": 0.45,
     "nose/nose-hump-incr": 0.1,
     "mouth/mouth-upperlip-volume-decr": 0.35,
     "mouth/mouth-lowerlip-volume-decr": 0.1,
-    "ears/l-ear-wing-incr": 0.35,
-    "ears/r-ear-wing-incr": 0.35,
-    "mouth/mouth-trans-down": 0.8
+    "ears/l-ear-wing-incr": 0.8,
+    "ears/r-ear-wing-incr": 0.8,
+    "cheek/l-cheek-volume-incr": 0.35,
+    "cheek/r-cheek-volume-incr": 0.35,
+    "head/head-fat-incr": 0.25,
+    "ears/l-ear-scale-incr": 0.45,
+    "ears/r-ear-scale-incr": 0.45,
+    "ears/l-ear-flap-incr": 0.4,
+    "ears/r-ear-flap-incr": 0.4,
+    "eyes/l-eye-height2-decr": 0.45,
+    "eyes/r-eye-height2-decr": 0.45,
+    "eyes/l-eye-eyefold-down": 0.35,
+    "eyes/r-eye-eyefold-down": 0.35,
+    "mouth/mouth-angles-up": 0.7
   },
   "expressions": {
     "smile": {
@@ -101,20 +107,20 @@
     "foreheadTop": 0.075
   },
   "eyes": [
-    104,
-    120,
-    128
+    80,
+    92,
+    98
   ],
   "hair": {
     "front": 0.62,
     "temple": 0.74,
     "side": 0.38,
     "color": [
-      52,
-      40,
-      31
+      58,
+      46,
+      38
     ],
-    "volume": 0.007,
+    "volume": 0.013,
     "keys": [
       [
         0,
@@ -194,8 +200,20 @@
         "weight": 0.4
       }
     ],
-    "depth": 0.15,
+    "depth": 0.25,
     "strength": 0.85,
-    "maxMove": 0.012
+    "maxMove": 0.012,
+    "dirs": [
+      "head",
+      "forehead",
+      "eyebrows",
+      "eyes",
+      "nose",
+      "mouth",
+      "chin",
+      "cheek"
+    ],
+    "ridge": 0.004,
+    "maxWeight": 0.8
   }
 }

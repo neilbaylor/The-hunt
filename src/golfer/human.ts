@@ -164,7 +164,9 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const L = layer;
       m.onBeforeCompile = sh => {
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float mask;\nvarying float vMask;\nvarying vec3 vObj;')
-          .replace('#include <begin_vertex>', `#include <begin_vertex>\nvMask = mask; vObj = position;\ntransformed += objectNormal * ${(0.0011 * L).toFixed(5)} * mask;`);
+          .replace('#include <begin_vertex>', `#include <begin_vertex>\nvMask = mask; vObj = position;
+            float tus = sin(position.x * 91.0 + sin(position.z * 57.0) * 2.0) * sin(position.z * 83.0 + position.y * 40.0);
+            transformed += objectNormal * (${(0.0016 * L).toFixed(5)} + 0.0035 * max(0.0, tus) * ${(L / 4).toFixed(2)}) * mask;`);
         sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vMask;\nvarying vec3 vObj;
 float hh(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }`)
           .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
@@ -316,7 +318,7 @@ float hh(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * 
     const ir = M.iris;
     const eyeTex = canvasTex(256, 128, g => {
       // equirectangular: u = longitude, v = latitude; the front (+Z) is u = 0.25 for three's sphere UVs
-      g.fillStyle = '#d9d0c8'; g.fillRect(0, 0, 256, 128);
+      g.fillStyle = '#bfb2a6'; g.fillRect(0, 0, 256, 128);
       const cx = 0.25 * 256, cy = 64;
       for (let i = 0; i < 30; i++) { g.strokeStyle = 'rgba(190,90,80,.25)'; g.lineWidth = 0.6; g.beginPath(); const a = rand() * 7; g.moveTo(cx + Math.cos(a) * 60, cy + Math.sin(a) * 30); g.lineTo(cx + Math.cos(a) * 24, cy + Math.sin(a) * 12); g.stroke(); }
       const gr = g.createRadialGradient(cx, cy, 2, cx, cy, 23);
@@ -367,9 +369,10 @@ float hh(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * 
   }
 
   const setSmile = (v0: number) => {
-    const v = 0.14 + 0.86 * v0; // a relaxed resting face, not the photo's frown
+    const v = v0;
     if (skin.morphTargetInfluences) skin.morphTargetInfluences[0] = v;
     if (teeth?.morphTargetInfluences) teeth.morphTargetInfluences[0] = v;
+    if (teeth) teeth.visible = v > 0.08; // closed mouth: keep teeth from showing through the lips
   };
   return { root, bones, skel, meshes, materials: { skin: skinMat, glove }, setSmile, extras };
 }

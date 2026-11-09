@@ -2,30 +2,32 @@
 // retro logo on the front. Built in head space: head centre at the origin, face toward +Z, metres.
 import * as THREE from 'three';
 import type { Headwear } from './profile';
+import pizzaHutUrl from '../assets/brand/pizza-hut-classic.svg?url';
 
+// The front patch is drawn from the classic logo's vector art (src/assets/brand), so it's sharp at any size.
 function logoTexture(kind: Headwear['logo'], base: string) {
-  const c = document.createElement('canvas'); c.width = 1024; c.height = 160;
+  const W = 4096, H = 384;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d')!;
-  g.fillStyle = base; g.fillRect(0, 0, 1024, 160);
-  // a little fabric texture
-  for (let i = 0; i < 5000; i++) { g.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,.025)' : 'rgba(255,255,255,.05)'; g.fillRect(Math.random() * 1024, Math.random() * 160, 2, 1); }
-  // stitched edges top and bottom
-  g.strokeStyle = 'rgba(0,0,0,.12)'; g.setLineDash([6, 5]); g.lineWidth = 2;
-  g.beginPath(); g.moveTo(0, 10); g.lineTo(1024, 10); g.moveTo(0, 150); g.lineTo(1024, 150); g.stroke(); g.setLineDash([]);
+  g.fillStyle = base; g.fillRect(0, 0, W, H);
+  // twill fabric
+  for (let y = 0; y < H; y += 3) for (let x = (y / 3) % 2 ? 0 : 1.5; x < W; x += 6) { g.fillStyle = 'rgba(0,0,0,.035)'; g.fillRect(x, y, 3, 1.4); }
+  for (let i = 0; i < 9000; i++) { g.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,.03)' : 'rgba(255,255,255,.06)'; g.fillRect(Math.random() * W, Math.random() * H, 3, 1.5); }
+  // two rows of stitching top and bottom
+  g.strokeStyle = 'rgba(0,0,0,.16)'; g.setLineDash([12, 9]); g.lineWidth = 3;
+  for (const y of [18, 34, H - 18, H - 34]) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  g.setLineDash([]);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   if (kind === 'pizza-hut') {
-    const cx = 512;
-    // the red roof
-    g.fillStyle = '#d62d20';
-    g.beginPath(); g.moveTo(cx - 84, 44); g.lineTo(cx - 48, 22); g.lineTo(cx - 28, 22); g.lineTo(cx - 17, 10); g.lineTo(cx + 17, 10); g.lineTo(cx + 28, 22); g.lineTo(cx + 48, 22); g.lineTo(cx + 84, 44); g.closePath(); g.fill();
-    // the words, in a chunky brush-script feel
-    g.fillStyle = '#1b1715'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-    g.font = 'italic 900 40px "Brush Script MT", "Georgia", serif';
-    g.fillText('Pizza', cx - 4, 80);
-    g.font = 'italic 900 38px "Brush Script MT", "Georgia", serif';
-    g.fillText('Hut', cx + 8, 114);
-    g.font = '700 10px Arial, sans-serif'; g.fillText('®', cx + 44, 108);
+    const img = new Image();
+    img.onload = () => {
+      // the patch spans about a fifth of the band, centred on the front (u = 0.5)
+      const h = H * 0.72, w = h * (img.width / img.height || 1.254);
+      g.drawImage(img, W / 2 - w / 2, H / 2 - h / 2 - 4, w, h);
+      t.needsUpdate = true;
+    };
+    img.src = pizzaHutUrl;
   }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   return t;
 }
 
@@ -43,8 +45,8 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
     // the strap sits proud of the hair at the sides and back
     const fr = Math.max(0, Math.cos(a));
     const pr = rAt(a);
-    const x = pr !== null ? Math.sin(a) * (pr + 0.005) : Math.sin(a) * (rx + 0.009 * sideB + 0.006 * back);
-    const z = pr !== null ? Math.cos(a) * (pr + 0.005) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
+    const x = pr !== null ? Math.sin(a) * (pr + 0.011) : Math.sin(a) * (rx + 0.009 * sideB + 0.006 * back);
+    const z = pr !== null ? Math.cos(a) * (pr + 0.011) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
     const front = 0.5 + 0.5 * Math.cos(a);
     const hh = height * (0.55 + 0.45 * front);
     const tilt = -0.006 * front - 0.024 * back;                    // front lower
@@ -62,13 +64,25 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   const roll = new THREE.Mesh(new THREE.TorusGeometry(1, 0.0032 / rx, 6, 72), new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.8 }));
   roll.scale.set(rx * 0.985, rz * 0.985, rx); roll.rotation.x = Math.PI / 2; roll.position.set(0, y0 + height / 2 - 0.006, zc);
   if (!profile) group.add(roll);
+  else {
+    // closed top edge: a lip from the band's top edge in to the hair, so you never see through the gap
+    const lp: number[] = [], li: number[] = [];
+    for (let i = 0; i <= seg; i++) {
+      const x = pos[(i * 2 + 1) * 3], y = pos[(i * 2 + 1) * 3 + 1], z = pos[(i * 2 + 1) * 3 + 2];
+      const a = -Math.PI + (i / seg) * Math.PI * 2, pr = rAt(a)!;
+      lp.push(x, y, z, Math.sin(a) * (pr - 0.008), y - 0.004, Math.cos(a) * (pr - 0.008) + zc);
+    }
+    for (let i = 0; i < seg; i++) { const a = i * 2; li.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); lg.setIndex(li); lg.computeVertexNormals();
+    group.add(new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: new THREE.Color(h.color).multiplyScalar(0.82), roughness: 0.9, side: THREE.DoubleSide })));
+  }
   // brim: a curved, slightly drooping shell with a white top and dark underside
   const bs = 48, rows = 8, bp: number[] = [], bidx: number[] = [], under: number[] = [];
   for (let r = 0; r <= rows; r++) for (let i = 0; i <= bs; i++) {
     const a = -1.32 + (i / bs) * 2.64;
     const L = 0.064 * Math.pow(Math.cos(a * 0.95), 0.8) * (r / rows);
     const pr = rAt(a);
-    const bx = pr !== null ? Math.sin(a) * (pr + 0.005) : Math.sin(a) * rx, bz = pr !== null ? Math.cos(a) * (pr + 0.005) + zc : Math.cos(a) * rz + zc;
+    const bx = pr !== null ? Math.sin(a) * (pr + 0.011) : Math.sin(a) * rx, bz = pr !== null ? Math.cos(a) * (pr + 0.011) + zc : Math.cos(a) * rz + zc;
     const dx = Math.sin(a), dz = Math.cos(a) * 1.15;
     const t = r / rows;
     const side = Math.abs(Math.sin(a));

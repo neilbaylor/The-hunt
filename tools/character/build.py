@@ -145,26 +145,48 @@ if FS:
     dd, jj = cKDTree(V[headish]).query(MH)
     lm_idx = np.where(ok & (dd < 0.012), headish[jj], -1)
     use = lm_idx >= 0
-    shapes, wts = [], []
+    photo_lms, wts = [], []
     for v in FS['photos']:
         L = json.load(open(lm_file(v['photo'], P['handed'] == 'left')))
         Q = np.array(L["pts"], float); Q = np.c_[Q[:, 0], -Q[:, 1], Q[:, 2]]   # y up; MediaPipe z already points toward the camera here
-        al = umeyama(Q[use], V[lm_idx[use]])
-        shapes.append(al); wts.append(v['weight'])
-    Navg = np.average(np.array(shapes), axis=0, weights=wts)
-    disp = (Navg - V[lm_idx[use]])
-    disp[:, 2] *= FS['depth']
-    disp *= FS['strength']
-    mag = np.linalg.norm(disp, axis=1, keepdims=True); disp *= np.minimum(1, FS['maxMove'] / np.maximum(mag, 1e-9))
-    print(f'face fit: {use.sum()} landmarks, mean move {np.linalg.norm(disp, axis=1).mean() * 1000:.1f} mm, max {np.linalg.norm(disp, axis=1).max() * 1000:.1f} mm')
-    src_pts = V[lm_idx[use]]
-    # anchors that stay put: the rest of the head and the neck, away from the face landmarks
-    region = np.nonzero(V[:, 1] > top_y - 0.36)[0]
-    dl, _ = cKDTree(src_pts).query(V[region])
-    anc = region[dl > 0.04][::3]
-    rbf = RBFInterpolator(np.r_[src_pts, V[anc]], np.r_[disp, np.zeros((len(anc), 3))], kernel='thin_plate_spline', smoothing=2e-6)
-    fall = np.clip(1 - (dl - 0.02) / 0.03, 0, 1)[:, None]
-    V[region] += rbf(V[region]) * fall
+        photo_lms.append(Q); wts.append(v['weight'])
+    # Fit in MakeHuman's own shape space (anatomical sliders), not a free warp: the head stays a plausible human head.
+    from scipy.optimize import lsq_linear
+    import glob, re
+    unit = 0.1 * s   # target files are in MakeHuman decimetres before our height scale
+    groups = {}
+    for d in FS['dirs']:
+        for f in sorted(glob.glob(f'{D}/targets/{d}/*.target.gz')):
+            name = os.path.basename(f)[:-10]
+            key = re.sub(r'(^|-)(l|r)-', r'\1x-', name).replace('-left-', '-x-').replace('-right-', '-x-')
+            groups.setdefault(key, []).append(f)
+    names = sorted(groups); cols = []
+    LI = lm_idx[use]
+    for k in names:
+        dsum = np.zeros((len(LI), 3))
+        for f in groups[k]: dsum += load_target(f)[LI] * unit
+        cols.append(dsum)
+    zw = FS['depth']
+    def solve(target_pts, cur):
+        A = np.stack([np.c_[c[:, 0], c[:, 1], c[:, 2] * zw].ravel() for c in cols], axis=1)
+        r = target_pts - cur; bvec = np.c_[r[:, 0], r[:, 1], r[:, 2] * zw].ravel()
+        lam = FS['ridge']
+        A2 = np.r_[A, np.sqrt(lam) * np.eye(len(names))]; b2 = np.r_[bvec, np.zeros(len(names))]
+        return lsq_linear(A2, b2, bounds=(0, FS['maxWeight'])).x
+    wsol = np.zeros(len(names))
+    for it in range(3):
+        cur = V[LI] + sum(w * c for w, c in zip(wsol, cols))
+        shapes = [umeyama(q[use], cur) if False else None for q in []]
+        tgt = np.average(np.array([umeyama(Qs[use], cur) for Qs in photo_lms]), axis=0, weights=wts)
+        before = np.sqrt(((tgt - cur) ** 2)[:, :2].sum(1).mean()) * 1000
+        wsol = solve(tgt, V[LI])
+        after = np.sqrt((((V[LI] + sum(w * c for w, c in zip(wsol, cols))) - tgt) ** 2)[:, :2].sum(1).mean()) * 1000
+        print(f'face fit iter {it}: landmark rms (x,y) {before:.1f} mm -> {after:.1f} mm')
+    top = sorted(zip(wsol, names), reverse=True)[:14]
+    print('  sliders:', ', '.join(f'{n} {w:.2f}' for w, n in top if w > 0.02))
+    for w, k in zip(wsol, names):
+        if w > 1e-3:
+            for f in groups[k]: V += w * unit * load_target(f)
 
 # ───────────────────────── skeleton ─────────────────────────
 rig = json.load(open(f'{D}/rigs/standard/rig.game_engine.json'))
@@ -726,7 +748,9 @@ def skin_fn(p, n):
             px = np.clip(xy[:, 0], 0, img.shape[1] - 1).astype(int); py = np.clip(xy[:, 1], 0, img.shape[0] - 1).astype(int)
             col = img[py, px] * v['gain']
             # only trust pixels that look like skin (not the kitchen behind, not hair)
-            skinlike = np.exp(-np.sum((col - skin_rgb) ** 2, axis=1) / (2 * 0.14 ** 2))
+            # stubble and shadow are darker/greyer than bare skin: be more forgiving low on the face
+            sig = np.where(p[:, 1] < hc[1] - 0.03, 0.26, 0.15)
+            skinlike = np.exp(-np.sum((col - skin_rgb) ** 2, axis=1) / (2 * sig ** 2))
             w = facing * yband * near * inside * v['weight'] * skinlike
             acc += col * w[:, None]; wsum += w
         cov = np.clip(wsum / 0.35, 0, 1)[:, None]
