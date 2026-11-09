@@ -24,33 +24,18 @@ vec3 bumpN(vec3 pos, vec3 n, float h){
 const BODY: Record<FabricKind, string> = {
   polo: /* glsl */ `
     float hem = vC.x, seam = vC.y;
-    // pique knit: tiny honeycomb cells; faded out as it gets smaller than a pixel
-    vec3 q = vB * 520.0;
-    float cell = abs(sin(q.x) * sin(q.y + 0.5 * sin(q.z)));
-    float fine = 1.0 - smoothstep(0.0006, 0.0025, fwidth(vB.y));
-    h += 0.00005 * cell * fine;   // fine jersey knit (smooth performance polo)
-    // drape: soft diagonal folds from the shoulders and vertical folds where the boxy body hangs
-    float folds = fbm3(vB * vec3(7.0, 16.0, 7.0));
-    float hang = smoothstep(uBeltY + 0.22, uBeltY - 0.05, vB.y);
-    float vfold = 0.5 + 0.5 * sin(atan(vB.x, vB.z + 0.02) * 9.0 + fbm3(vB * 6.0) * 4.0);
-    float diag = 0.5 + 0.5 * sin((vB.y * 1.3 + abs(vB.x) * 1.6) * 48.0 + fbm3(vB * 9.0) * 3.0) * smoothstep(1.2, 1.45, vB.y);
-    h += 0.0022 * folds + 0.0012 * hang * vfold + 0.0008 * diag;
-    // seams: a narrow groove with stitching either side
-    float sg = 1.0 - smoothstep(0.0, 0.003, seam);
-    h -= 0.00012 * sg;
-    float stitch = (1.0 - smoothstep(0.0025, 0.0045, abs(seam - 0.005))) * step(0.5, fract(vB.y * 180.0 + vB.x * 60.0));
-    // hems: a turned-back band with a line of stitching 1.5 cm in
-    float band = 1.0 - smoothstep(0.016, 0.02, hem);
-    h += 0.0008 * band;
-    float hemStitch = (1.0 - smoothstep(0.001, 0.0022, abs(hem - 0.014))) * step(0.45, fract(vB.x * 170.0 + vB.z * 170.0 + vB.y * 120.0));
-    col *= 1.0 - 0.06 * band;
-    col *= 1.0 - 0.03 * sg; stitch += 0.0; hemStitch += 0.0;
-    col *= 0.94 + 0.12 * fbm3(vB * 60.0); // melange
-    // sleeve bands: two thin contrast stripes just above the hem (sleeves only: away from the torso hem)
-    float sleeve = step(uBeltY + 0.25, vB.y) * step(0.16, abs(vB.x));
-    float tip1 = 1.0 - smoothstep(0.0012, 0.0024, abs(hem - 0.022));
-    float tip2 = 1.0 - smoothstep(0.0008, 0.0018, abs(hem - 0.029));
-    col = mix(col, uTip, sleeve * max(tip1, tip2 * 0.85));
+    // smooth matte poly/cotton jersey: no knit texture, just a few large soft drape undulations
+    float drape = fbm3(vB * vec3(3.0, 5.0, 3.0));
+    float hang = smoothstep(uBeltY + 0.25, uBeltY - 0.05, vB.y);   // more give where the body hangs free
+    h += 0.0016 * drape * (0.5 + 0.5 * hang);
+    // seams: a very shallow groove
+    float sg = 1.0 - smoothstep(0.0, 0.0025, seam);
+    h -= 0.00008 * sg;
+    // hems: a turned-back band (slightly raised, a touch darker at the fold line)
+    float band = 1.0 - smoothstep(0.014, 0.018, hem);
+    h += 0.0004 * band;
+    col *= 1.0 - 0.03 * band;
+    col *= 1.0 - 0.02 * sg;
     // embroidered crest on the chest (planar projection from the front)
     vec2 cuv = vec2((vB.x - uCrestC.x) / uCrestS + 0.5, (vB.y - uCrestC.y) / abs(uCrestS) * 1.2 + 0.5);
     float inC = step(uCrestC.z - 0.03, vB.z) * step(0.0, cuv.x) * step(cuv.x, 1.0) * step(0.0, cuv.y) * step(cuv.y, 1.0);

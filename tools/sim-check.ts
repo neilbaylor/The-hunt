@@ -38,3 +38,11 @@ for (const [lab, s] of [['centre', { x: 0, y: 0 }], ['low on ball', { x: 0, y: -
   const P = plan(6, 'full', { strike: s }); const a = fly(P.launch);
   console.log(`  ${lab.padEnd(13)} launch ${(P.launch.launch * 57.3).toFixed(1)}° spin ${Math.round(P.launch.spinRpm)} carry ${f(a.c)} total ${f(a.t)} side ${a.side.toFixed(1)} yd → ${P.shape}`);
 }
+
+console.log('\naim view intent, 7i (left-hander; a lefty draw curves right):');
+for (const [lab, a] of [['straight', { curve: 0, loft: 0 }], ['curve +1 (bends right)', { curve: 1, loft: 0 }], ['curve -1 (bends left)', { curve: -1, loft: 0 }], ['curve +0.5', { curve: 0.5, loft: 0 }], ['loft +1 (higher)', { curve: 0, loft: 1 }], ['loft -1 (lower)', { curve: 0, loft: -1 }]] as [string, any][]) {
+  const P = plan(6, 'full', { aim: a }); const r = fly(P.launch);
+  console.log(`  ${lab.padEnd(24)} start ${(P.launch.azimuth * 57.3).toFixed(1).padStart(5)}° tilt ${(P.launch.tilt * 57.3).toFixed(0).padStart(3)}° launch ${(P.launch.launch * 57.3).toFixed(1)}° spin ${Math.round(P.launch.spinRpm)} carry ${f(r.c)} total ${f(r.t)} lands ${r.side.toFixed(1)} yd off line → ${P.shape}`);
+}
+const both = plan(6, 'full', { aim: { curve: 1, loft: 0 }, angle: 8 }); const rb = fly(both.launch);
+console.log(`  curve +1 plus a push 8° right: lands ${rb.side.toFixed(1)} yd off line → ${both.shape}`);

@@ -86,8 +86,11 @@ const hud = new Hud(document.body, profile);
 hud.el.classList.add('hidden');
 const sound = new Sound();
 hud.club = 6; hud.mode = 'full'; hud.lie = 0; hud.render(null);
-hud.onClub = i => { sound.ui(); golfer.setClub(i, hud.mode); teeUp(); aimCtl.clubChanged(); };
-hud.onMode = m => { sound.ui(); golfer.setClub(hud.club, m); teeUp(); aimCtl.clubChanged(); };
+hud.onClub = i => { sound.ui(); golfer.setClub(i, hud.mode); teeUp(); aimCtl.clubChanged(); featureTarget(); };
+hud.onMode = m => { sound.ui(); golfer.setClub(hud.club, m); teeUp(); aimCtl.clubChanged(); featureTarget(); };
+// the range sets a target green (yellow crest flag) at the full carry of the club and shot in hand
+function featureTarget() { range?.setFeaturedTarget(SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id)); }
+featureTarget();
 // ── aiming (src/game/aim.ts): ground arrow in the swing cam, overhead aim view with a draggable ring ──
 const aimCtl = new AimController({
   scene, camera, canvas: renderer.domElement, range, lefty: golfer.lefty,
@@ -212,7 +215,7 @@ function strike(now: number, p: [number, number], released: boolean) {
   const drift = SW.driftN ? SW.driftSum / SW.driftN / 80 : 0;
   // the pad's left/right is the screen's left/right; for a lefty the ball still curves the way you push
   const strikePt = (hud as unknown as { strike?: { x: number; y: number } }).strike ?? { x: 0, y: 0 };
-  plan = planShot({ power, offMs: SW.off, pushMs: now - SW.tTrans, angle, drift, released, strike: strikePt }, hud.club, hud.mode, LIES[hud.lie], golfer.lefty);
+  plan = planShot({ power, offMs: SW.off, pushMs: now - SW.tTrans, angle, drift, released, strike: strikePt, aim: { curve: aim.curve, loft: aim.loft } }, hud.club, hud.mode, LIES[hud.lie], golfer.lefty);
   plan.launch.azimuth += aim.dir; // aimed off the straight line (aim view)
   ball.hit(plan.launch);
   tracer.clear(); tracer.push(ball.pos);
@@ -471,7 +474,7 @@ requestAnimationFrame(t => { last = t; frame(t); });
   golfer, ball, hud, aim, aimCtl, get state() { return state; },
   /** debug: plan and fly a shot on the real range terrain, synchronously (distances in yards) */
   sim(club: number, mode: 'full' | 'punch' | 'pitch' | 'flop' = 'full', lie = 0, top = 0, strike = { x: 0, y: 0 }) {
-    const P = planShot({ power: 1, offMs: 0, pushMs: 200, angle: 0, drift: 0, released: false, strike }, club, mode, LIES[lie], golfer.lefty);
+    const P = planShot({ power: 1, offMs: 0, pushMs: 200, angle: 0, drift: 0, released: false, strike, aim: { curve: aim.curve, loft: aim.loft } }, club, mode, LIES[lie], golfer.lefty);
     const b = new Ball(range); b.tee(golfer.ballWorld()); b.hit(P.launch);
     for (let i = 0; i < 120 * 40 && b.phase !== 'stopped'; i++) { if (b.phase === 'flight' && b.t > 0.5) b.setAftertouch(top, 0); b.step(1 / 120); }
     return { carry: b.carry() / YD, total: b.total() / YD, roll: b.roll() / YD, apex: b.apex / YD, surface: b.lastSurface };

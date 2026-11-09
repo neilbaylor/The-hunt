@@ -5,7 +5,7 @@ import type { Headwear } from './profile';
 import pizzaHutUrl from '../assets/brand/pizza-hut-classic.svg?url';
 
 // The front patch is drawn from the classic logo's vector art (src/assets/brand), so it's sharp at any size.
-function logoTexture(kind: Headwear['logo'], base: string) {
+function logoTexture(kind: Headwear['logo'], base: string, sx = 1) {
   const W = 4096, H = 512;
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d')!;
@@ -22,8 +22,9 @@ function logoTexture(kind: Headwear['logo'], base: string) {
     const img = new Image();
     img.onload = () => {
       // the patch spans about a fifth of the band, centred on the front (u = 0.5)
-      const h = H * 0.8, w = h * (img.width / img.height || 1.254);
-      g.drawImage(img, W / 2 - w / 2, H / 2 - h / 2 - 4, w, h);
+      // sx: texture pixels per metre round the band ÷ pixels per metre up it, so the logo keeps its true proportions
+      const h = H * 0.78, w = h * (img.width / img.height || 1.254) * sx;
+      g.drawImage(img, W / 2 - w / 2, H / 2 - h / 2, w, h);   // dead centre of the band (the whole band face is visible)
       t.needsUpdate = true;
     };
     img.src = pizzaHutUrl;
@@ -34,9 +35,15 @@ function logoTexture(kind: Headwear['logo'], base: string) {
 /** A visor sized for a head of half-widths rx (side) and rz (front/back) at band height. */
 export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 0.032, mirrored = false, profile?: number[]) {
   // measured radius of the head/hair round the band (64 angles from the back, a = -PI)
-  const rAt = (a: number) => { if (!profile) return null; const t = ((a + Math.PI) / (2 * Math.PI)) * 64; const i = Math.floor(t) % 64, f = t - Math.floor(t); return profile[i] * (1 - f) + profile[(i + 1) % 64] * f; };
+  // smoothed (closing: dilate then blur) so the band is a clean curve that never dips into the hair
+  let prof = profile;
+  if (profile) {
+    const n = profile.length, dil = profile.map((_, i) => Math.max(...[-2, -1, 0, 1, 2].map(k => profile[(i + k + n) % n])));
+    prof = dil;
+    for (let pass = 0; pass < 3; pass++) prof = prof.map((_, i) => [-3, -2, -1, 0, 1, 2, 3].reduce((s, k) => s + prof![(i + k + n) % n] * Math.exp(-(k * k) / 4), 0) / [-3, -2, -1, 0, 1, 2, 3].reduce((s, k) => s + Math.exp(-(k * k) / 4), 0));
+  }
+  const rAt = (a: number) => { if (!prof) return null; const n = prof.length, t = ((a + Math.PI) / (2 * Math.PI)) * n; const i = Math.floor(t) % n, f = t - Math.floor(t); return prof[i] * (1 - f) + prof[(i + 1) % n] * f; };
   const group = new THREE.Group(); group.name = 'visor';
-  const fabric = new THREE.MeshStandardMaterial({ map: logoTexture(h.logo, h.color), roughness: 0.85, side: THREE.DoubleSide });
   // band: an open ring, a bit taller at the front, tilted so the front sits lower on the forehead
   const seg = 96, height = 0.038, pos: number[] = [], uv: number[] = [], idx: number[] = [];
   for (let i = 0; i <= seg; i++) {
@@ -49,12 +56,15 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
     const z = pr !== null ? Math.cos(a) * (pr + 0.011) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
     const front = 0.5 + 0.5 * Math.cos(a);
     const hh = height * (0.55 + 0.45 * front);
-    const tilt = -0.006 * front - 0.024 * back;                    // front lower
+    const tilt = -0.004 * front - 0.012 * back;                    // sits nearly level, a touch lower at the back
     pos.push(x, y0 + tilt - hh / 2, z, x * 0.985, y0 + tilt + hh / 2, z * 0.985 + zc * 0.015);
     const u = mirrored ? 1 - i / seg : i / seg; // a left-hander's body is mirrored, so mirror the logo back
     uv.push(u, 0, u, 1);
   }
   for (let i = 0; i < seg; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  let perim = 0;
+  for (let i = 0; i < seg; i++) perim += Math.hypot(pos[(i * 2 + 2) * 3] - pos[i * 2 * 3], pos[(i * 2 + 2) * 3 + 2] - pos[i * 2 * 3 + 2]);
+  const fabric = new THREE.MeshStandardMaterial({ map: logoTexture(h.logo, h.color, (height / perim) * (4096 / 512)), roughness: 0.85, side: THREE.DoubleSide });
   const band = new THREE.BufferGeometry();
   band.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   band.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -83,19 +93,30 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
     const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); lg.setIndex(li); lg.computeVertexNormals();
     group.add(new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.85, side: THREE.DoubleSide })));
   }
-  // brim: a curved, slightly drooping shell with a white top and dark underside
-  const bs = 48, rows = 8, bp: number[] = [], bidx: number[] = [], under: number[] = [];
+  // brim: one smooth, rounded front edge (an ellipse in plan, no point), joined to the band's bottom edge,
+  // curving down a little towards the sides; white on top, darker underneath
+  const bs = 64, rows = 10, bp: number[] = [], bidx: number[] = [];
+  const AE = 1.38;                                     // the brim runs round to just behind the temples
+  const bandAt = (a: number) => {                      // the band's bottom edge at angle a (same formulas as above)
+    const pr = rAt(a), sideB = Math.abs(Math.sin(a)), back = Math.max(0, -Math.cos(a)), fr = Math.max(0, Math.cos(a));
+    const x = pr !== null ? Math.sin(a) * (pr + 0.011) : Math.sin(a) * (rx + 0.009 * sideB + 0.006 * back);
+    const z = pr !== null ? Math.cos(a) * (pr + 0.011) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
+    const front = 0.5 + 0.5 * Math.cos(a), hh = height * (0.55 + 0.45 * front), tilt = -0.004 * front - 0.012 * back;
+    return new THREE.Vector3(x, y0 + tilt - hh / 2, z);
+  };
+  const side0 = bandAt(Math.PI / 2), front0 = bandAt(0);
+  const Xo = Math.abs(side0.x) + 0.012, Zo = front0.z - zc + 0.068;  // outer edge: half-width and reach of the brim
   for (let r = 0; r <= rows; r++) for (let i = 0; i <= bs; i++) {
-    const a = -1.32 + (i / bs) * 2.64;
-    const L = 0.056 * Math.pow(Math.cos(a * 0.95), 0.8) * (r / rows);
-    const pr = rAt(a);
-    const bx = pr !== null ? Math.sin(a) * (pr + 0.011) : Math.sin(a) * rx, bz = pr !== null ? Math.cos(a) * (pr + 0.011) + zc : Math.cos(a) * rz + zc;
-    const dx = Math.sin(a), dz = Math.cos(a) * 1.15;
-    const t = r / rows;
+    const s = -1 + (i / bs) * 2, a = s * AE, t = r / rows;
+    const inner = bandAt(a);
+    // outer edge on an ellipse round the head centre, eased into the band at the two ends
+    const ox = Math.sin(a) * Xo, oz = Math.cos(a) * Zo + zc;
+    const w = Math.min(1, (1 - Math.abs(s)) / 0.32), ease = w * w * (3 - 2 * w);
+    const ex = inner.x + (ox - inner.x) * ease, ez = inner.z + (oz - inner.z) * ease;
+    const L = Math.hypot(ex - inner.x, ez - inner.z) * t;
     const side = Math.abs(Math.sin(a));
-    const yb = y0 - height * 0.42 - 0.006 * (0.5 + 0.5 * Math.cos(a));
-    bp.push(bx + dx * L * 0.55, yb + L * (0.1 - 0.5 * side) - 0.004 * t * t, bz + dz * L);
-    under.push(0);
+    const tt = t * t * (3 - 2 * t) * 0.35 + t * 0.65;
+    bp.push(inner.x + (ex - inner.x) * tt, inner.y + 0.0006 + L * (0.12 - 0.42 * side) - 0.006 * t * t, inner.z + (ez - inner.z) * tt);
   }
   for (let r = 0; r < rows; r++) for (let i = 0; i < bs; i++) { const a = r * (bs + 1) + i, b = a + 1, c = a + bs + 1, d = c + 1; bidx.push(a, c, b, b, c, d); }
   const brim = new THREE.BufferGeometry();
@@ -104,10 +125,10 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   const top = new THREE.Mesh(brim, new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.75, side: THREE.FrontSide }));
   const bottom = new THREE.Mesh(brim.clone().translate(0, -0.0025, 0), new THREE.MeshStandardMaterial({ color: h.under, roughness: 0.9, side: THREE.BackSide }));
   group.add(top, bottom);
-  // edge piping round the front of the brim
+  // a soft rolled edge round the brim
   const edge: THREE.Vector3[] = [];
   for (let i = 0; i <= bs; i++) { const k = (rows * (bs + 1) + i) * 3; edge.push(new THREE.Vector3(bp[k], bp[k + 1] - 0.0012, bp[k + 2])); }
-  group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(edge), 64, 0.0018, 6), new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.7 })));
+  group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(edge), 96, 0.0017, 8), new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.7 })));
   if (false && h.logo === 'pizza-hut' && profile) {
     const PW = 1024, PH = 512, pc = document.createElement('canvas'); pc.width = PW; pc.height = PH;
     const pg = pc.getContext('2d')!;

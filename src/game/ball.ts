@@ -214,6 +214,18 @@ export function simulateCarry(L: Launch) {
   return { carry: b.carry(), apex: b.apex, time: b.t, side: b.landing ? b.landing.x : 0 };
 }
 
+/** Fly a launch on flat ground; return carry (m), sideways landing offset (m) and how far the ball bows
+ *  away from the start→landing chord halfway down (m, + = right). Used to plan a shaped shot. */
+export function simulateShape(L: Launch) {
+  const b = new Ball(null);
+  b.tee(new THREE.Vector3(0, BALL.r, 0)); b.hit(L);
+  const pts: [number, number][] = [];
+  for (let i = 0; i < 2400 && !b.landing; i++) { b.step(1 / 120); pts.push([-b.pos.z, b.pos.x]); }
+  const land = b.landing ?? b.pos, fz = -land.z, sx = land.x;
+  let mid = 0; for (const [z, x] of pts) if (z >= fz / 2) { mid = x - sx * (z / Math.max(fz, 1e-6)); break; }
+  return { carry: Math.hypot(fz, sx), side: sx, midDev: mid };
+}
+
 /** Find the ball speed that carries `carry` metres with this launch angle and spin. */
 export function speedForCarry(carry: number, launch: number, spinRpm: number) {
   let lo = 3, hi = 95;

@@ -124,7 +124,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const smileAmt = { value: 0 };
   applyFabric(skinMat, 'skin', data.skinSmile ? { ...fu, smile: { map: tex(data.skinSmile), amount: smileAmt } } : fu);
   const skin = add('skin', skinMat)!;
-  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.72, sheen: 0.9, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.45), sheenRoughness: 0.42, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.84, sheen: 0.35, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
     // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
     const crest = O.chestLogo === 'malbon-m' ? canvasTex(512, 512, g => {

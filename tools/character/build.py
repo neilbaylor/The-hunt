@@ -365,6 +365,49 @@ def smooth_positions(mask, it, amount=0.5):
 Vshirt = smooth_positions(shirt, 3)
 Vpants = smooth_positions(pants, 3)
 
+# relaxed fit: the polo drapes off the chest and shoulder blades and hangs straight down instead of
+# shrink-wrapping into the waist, the small of the back and under the pecs; the short sleeves stand off the arm
+if C.get('hang', 0) > 0:
+    Vs = Vshirt + N * shirt_off[:, None]
+    ids = np.nonzero(shirt)[0]
+    armw_s = np.array([wsum(vi, ['upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r']) for vi in ids])
+    tors = ids[armw_s < 0.3]
+    chest_y = float(joint[BONES.index('upperarm_l')][1]) - C.get('hangFrom', 0.1)
+    band = Vs[tors][np.abs(Vs[tors, 1] - chest_y) < 0.03]
+    zc = float((band[:, 2].max() + band[:, 2].min()) / 2)
+    th = np.arctan2(Vs[tors, 0], Vs[tors, 2] - zc); rr = np.hypot(Vs[tors, 0], Vs[tors, 2] - zc); yy = Vs[tors, 1]
+    NBIN = 90; b = ((th + math.pi) / (2 * math.pi) * NBIN).astype(int) % NBIN
+    delta = np.zeros(NV)
+    for k in range(NBIN):
+        sel = np.nonzero((b == k) | (b == (k + 1) % NBIN) | (b == (k - 1) % NBIN))[0]   # this bin and its neighbours
+        own = sel[b[sel] == k]
+        if not len(own): continue
+        o = np.argsort(-yy[sel]); ys, rs = yy[sel][o], rr[sel][o]
+        rs = np.where(ys > chest_y + 0.03, 0, rs); cm = np.maximum.accumulate(rs)   # running max from the chest down
+        for i in own:
+            if yy[i] > chest_y: continue
+            j = np.searchsorted(-ys, -yy[i], side='right') - 1
+            rh = cm[max(j, 0)]
+            w = min(1.0, (chest_y - yy[i]) / 0.1); w = w * w * (3 - 2 * w) * C['hang']
+            delta[tors[i]] = w * max(0.0, rh - rr[i])
+    delta, _ = smooth_field(delta, shirt, 8)
+    for i, vi in enumerate(tors):
+        if delta[vi] <= 0: continue
+        d = np.array([Vs[vi, 0], 0.0, Vs[vi, 2] - zc]); d /= max(np.linalg.norm(d), 1e-6)
+        Vs[vi] += d * delta[vi]
+    # sleeves: a rounder, roomier tube that stands off the upper arm towards the hem
+    for sfx in 'lr':
+        sh_j = joint[BONES.index(f'upperarm_{sfx}')]; el = joint[BONES.index(f'lowerarm_{sfx}')]
+        ax = el - sh_j; L2 = float(np.dot(ax, ax))
+        arm = [vi for vi in ids if wsum(vi, [f'upperarm_{sfx}', f'lowerarm_{sfx}']) > 0.5]
+        tt = np.array([np.dot(Vs[vi] - sh_j, ax) / L2 for vi in arm])
+        cc = sh_j + tt[:, None] * ax; rv = Vs[arm] - cc; rl = np.linalg.norm(rv, axis=1)
+        rmax = np.array([rl[np.abs(tt - t) < 0.06].max() for t in tt])
+        bl = np.clip((tt - 0.12) / 0.3, 0, 1); bl = bl * bl * (3 - 2 * bl)
+        want = rl + bl * (C.get('sleeveEase', 0.008) + 0.7 * (rmax - rl))
+        Vs[arm] = cc + rv / np.maximum(rl, 1e-6)[:, None] * want[:, None]
+    Vshirt = Vs; shirt_off = np.zeros(NV)
+
 # straight-cut trouser legs: push each leg out to a minimum radius round the hip→ankle line
 for sfx in 'lr':
     hip = joint[BONES.index(f'thigh_{sfx}')]; ank = joint[BONES.index(f'foot_{sfx}')]; knee = joint[BONES.index(f'calf_{sfx}')]

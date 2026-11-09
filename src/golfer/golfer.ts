@@ -253,10 +253,10 @@ export class Golfer {
       const Yv = new THREE.Vector3(0, 1, 0);
       const toe = p.toeR.clone(); toe.x += 0.03 * heel;
       const v = p.ankleR.clone().sub(p.toeR), up = Yv.clone();
-      const yaw = 1.15 * smooth(0.1, 0.9, heel);          // + about Y swings the heel toward -X (away from the target)
+      const yaw = 1.25 * smooth(0.35, 1, heel);           // + about Y swings the heel toward -X (away from the target); comes after the lift
       v.applyAxisAngle(Yv, yaw); up.applyAxisAngle(Yv, yaw);
       const lat = new THREE.Vector3().crossVectors(Yv, v).normalize();
-      const lift = 1.2 * smooth(0, 0.85, heel);
+      const lift = 1.05 * smooth(0, 0.8, heel);
       const sgn = v.clone().applyAxisAngle(lat, 0.3).y > v.y ? 1 : -1;
       v.applyAxisAngle(lat, sgn * lift); up.applyAxisAngle(lat, sgn * lift);
       p.ankleR.copy(toe).add(v);
@@ -264,8 +264,12 @@ export class Golfer {
       p.footUpR = up;
     }
     p.kneePoleL.set(p.ankleL.x + 0.15 + shift, 0.5, fz + 1.0);
-    // trail knee kicks in toward the lead knee as the heel comes up
-    p.kneePoleR.set(p.ankleR.x + 0.25 + 1.6 * heel, 0.45, fz + 1.0 - 0.3 * heel);
+    // trail knee: points the way the trail foot points (kicks in toward the lead knee as the foot pivots), so the shin
+    // never twists against the shoe
+    const toeDir = p.toeR.clone().sub(p.ankleR).setY(0);
+    if (toeDir.lengthSq() < 1e-6) toeDir.set(0, 0, 1);
+    toeDir.normalize().lerp(new THREE.Vector3(1, 0, 0), 0.35 * heel).normalize();
+    p.kneePoleR.copy(p.ankleR).addScaledVector(toeDir, 1.0).setY(0.5);
   }
 
   /** Pose the golfer for a swing state. Returns the club-head position (world). */
@@ -350,7 +354,7 @@ export class Golfer {
         const ARC = [   // [f, grip (from the neck, × body scale), shaft butt→head]
           [0.12, [0.06, -0.5, 0.4], [0.45, -0.22, 0.9]],
           [0.33, [0.12, -0.25, 0.45], [0.15, 0.95, 0.25]],
-          [0.55, [0.15, 0.02, 0.3], [-0.35, 0.55, -0.75]],
+          [0.55, [0.15, 0.02, 0.3], [0.12, 0.75, -0.65]],   // shaft up over the lead shoulder, heading behind the head
         ] as [number, number[], number[]][];
         let j = 0; while (j < ARC.length - 2 && f > ARC[j + 1][0]) j++;
         const t = smooth(ARC[j][0], ARC[j + 1][0], f);

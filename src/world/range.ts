@@ -27,6 +27,13 @@ export interface Range {
   /** soft ambient-occlusion blob on the ground under the golfer (null hides it). strength 0..1, radius in m. */
   contactShadow(position: THREE.Vector3 | null, strength?: number, radius?: number): void;
   setTimeOfDay(t: TimeOfDay): void;
+  /**
+   * Put the featured target green (yellow crest flag, real cup) at this carry distance in yards, a little off the
+   * line so it clears the scenery greens and bunkers; it slides there if already shown. null hides it.
+   * While shown it is also in `targets` (so 'On the green' and the landing camera know about it).
+   */
+  setFeaturedTarget(yards: number | null): void;
+  readonly featured: RangeTarget | null;
   readonly timeOfDay: TimeOfDay;
   /** unit vector pointing at the sun (world) */
   readonly sunDirection: THREE.Vector3;
@@ -78,6 +85,11 @@ const GREENS: Green[] = [
 ];
 // the clubhouse on the rise beyond the range: white clapboard, dark roof, a flag on the gable
 const CLUBHOUSE = { x: -42, z: -585, w: 34, d: 14, h: 8, yaw: 0.12 };
+// the featured target: one green that moves to the carry distance of the club in hand (setFeaturedTarget)
+const FEAT = { x: 0, z: -9999, r: 9, on: 0 };
+const FEAT_U = { value: new THREE.Vector4(0, -9999, 9, 0) }; // x, z, radius, visibility (ground shader)
+const featWob = (a: number) => 1 + 0.06 * Math.sin(2 * a + 1.1) + 0.04 * Math.sin(3 * a + 2.3);
+const featD = (x: number, z: number) => Math.hypot(x - FEAT.x, z - FEAT.z) / (FEAT.r * featWob(Math.atan2(z - FEAT.z, x - FEAT.x)));
 interface Bunker { x: number; z: number; rx: number; rz: number; rot: number; p: number }
 const BUNKERS: Bunker[] = [
   { x: -6.5, z: -126, rx: 4.8, rz: 2.4, rot: 0.45, p: 0.7 },
@@ -172,6 +184,7 @@ function heightAt(x: number, z: number): number { return teeSD(x, z) <= 0 ? 0 : 
 function surfaceAt(x: number, z: number): Surface {
   if (teeSD(x, z) <= 0) return 'tee';
   for (const b of BUNKERS) if (bunkerD(b, x, z) < 1) return 'bunker';
+  if (FEAT.on > 0.5) { const d = featD(x, z); if (d < 1) return 'green'; if (d < 1 + FRINGE / FEAT.r) return 'fairway'; }
   for (const g of GREENS) { const d = greenD(g, x, z); if (d < 1) return 'green'; if (d < 1 + FRINGE / g.r) return 'fairway'; }
   const h = fwHalf(z, 0);
   if (h > 0 && Math.abs(x - fwCenter(z)) < h) return 'fairway';
@@ -420,6 +433,7 @@ function groundMaterial(noise: THREE.Texture, forest: THREE.Texture, turf: THREE
     sh.uniforms.uNoise = { value: noise };
     sh.uniforms.uForest = { value: forest };
     sh.uniforms.uTurf = { value: turf };
+    sh.uniforms.uFeat = FEAT_U;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNrm = normalize(mat3(modelMatrix) * objectNormal);');
@@ -430,6 +444,7 @@ varying vec3 vWNrm;
 uniform sampler2D uNoise;
 uniform sampler2D uForest;
 uniform sampler2D uTurf;
+uniform vec4 uFeat;
 const vec4 GREENS[${GREENS.length}] = vec4[](${greens});
 const vec4 BUNKA[${BUNKERS.length}] = vec4[](${bunkA});
 const vec2 BUNKB[${BUNKERS.length}] = vec2[](${bunkB});
@@ -557,6 +572,24 @@ vec3 groundColor(vec2 p) {
     gRough = mix(gRough, 0.82, gm);
     gBump = mix(gBump, 0.28, gm);
   }
+  // the featured green (moves with the club in hand): same fringe, putting surface and hole collar
+  if (uFeat.w > 0.0) {
+    vec2 d = p - uFeat.xy;
+    float a = atan(d.y, d.x);
+    float gd = length(d) / (uFeat.z * (1.0 + 0.06 * sin(2.0 * a + 1.1) + 0.04 * sin(3.0 * a + 2.3)));
+    if (gd < 1.6) {
+      col = mix(col, ${v3(COL.fringe)} * (0.92 + 0.14 * n1), inside(gd, 1.0 + ${FRINGE.toFixed(2)} / uFeat.z) * uFeat.w);
+      float gm = inside(gd, 1.0) * uFeat.w;
+      vec3 gc = mix(${v3(COL.green)}, ${v3(COL.greenLight)}, 0.35);
+      gc *= 1.0 + 0.11 * mowSheen(stripes(p.y / 2.8), vec2(0.0, 1.0)) + 0.05 * mowSheen(stripes(p.x / 2.8), vec2(1.0, 0.0));
+      gc *= 0.95 + 0.08 * n1;
+      gc *= 1.0 - 0.35 * (1.0 - smoothstep(0.054, 0.066, length(d)));
+      gc *= 1.0 - 0.12 * smoothstep(0.93, 1.0, gd);
+      col = mix(col, gc, gm);
+      gRough = mix(gRough, 0.82, gm);
+      gBump = mix(gBump, 0.28, gm);
+    }
+  }
   // bunkers: dark grass lip, then raked sand
   for (int i = 0; i < ${BUNKERS.length}; i++) {
     vec4 b = BUNKA[i]; vec2 bb = BUNKB[i];
@@ -628,7 +661,7 @@ vec3 groundColor(vec2 p) {
       // turf is a poor mirror: damp the sky sheen that makes grass look plastic at grazing angles
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular *= 0.3;\nreflectedLight.indirectSpecular *= 0.25;');
   };
-  m.customProgramCacheKey = () => 'range-ground-v7';
+  m.customProgramCacheKey = () => 'range-ground-v8';
   return m;
 }
 
@@ -710,6 +743,48 @@ function teeBoxGeometry(): THREE.BufferGeometry {
   g.deleteAttribute('uv');
   g.computeVertexNormals();
   return g;
+}
+
+// ───────────────────────── the cup ─────────────────────────
+// 108 mm hole: 25 mm of soil and roots, then the white liner's rim, the liner, a dark bottom. Drawn as a real hole:
+// a mask disc pushes the depth to the far plane right after the terrain, then the inside of the cup is drawn into it.
+const CUP = { HR: 0.054, LIP: 0.025, DEEP: 0.102, UP: 0.012 };
+/** [lip wall, liner wall, rim, bottom] at the origin (walls are seen from inside), and the mask disc */
+function cupGeometries(): { parts: THREE.BufferGeometry[]; mask: THREE.BufferGeometry } {
+  const { HR, LIP, DEEP, UP } = CUP;
+  // the terrain mesh can sit a few mm off the analytic height, so the mask floats just above it and the
+  // soil lip reaches up to the mask (every ray through the mask then lands on the inside of the cup)
+  const lip = new THREE.CylinderGeometry(HR, HR, LIP + UP, 32, 1, true); lip.translate(0, (UP - LIP) / 2, 0);
+  const liner = new THREE.CylinderGeometry(HR - 0.002, HR - 0.002, DEEP - LIP, 32, 1, true); liner.translate(0, -LIP - (DEEP - LIP) / 2, 0);
+  const rim = new THREE.RingGeometry(HR - 0.0075, HR, 32); rim.rotateX(-Math.PI / 2); rim.translate(0, -LIP, 0);
+  const bottom = new THREE.CircleGeometry(HR, 32); bottom.rotateX(-Math.PI / 2); bottom.translate(0, -DEEP, 0);
+  for (const w of [lip, liner]) { const n = w.getAttribute('normal') as THREE.BufferAttribute; for (let v = 0; v < n.count; v++) n.setXYZ(v, -n.getX(v), -n.getY(v), -n.getZ(v)); }
+  const ao = (y: number) => 0.3 + 0.7 * Math.pow(clamp(1 + y / DEEP, 0, 1), 1.6); // darker toward the bottom
+  const mask = new THREE.CircleGeometry(HR, 32); mask.rotateX(-Math.PI / 2); mask.translate(0, UP, 0);
+  return {
+    parts: [
+      paint(lip, (x, y, z, _a, _b, _c, c) => c.copy(lin('#4a3826')).lerp(lin('#3f5a22'), clamp(1 + y / 0.008, 0, 1) * 0.8).multiplyScalar(y > 0 ? 0.6 : 1).multiplyScalar(ao(y) * (0.8 + 0.4 * hash2(Math.round(Math.atan2(z, x) * 30), 3)))),
+      paint(liner, (_x, y, _z, _a, _b, _c, c) => c.copy(lin('#efefea')).multiplyScalar(ao(y))),
+      paint(rim, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#f6f6f2'))),
+      paint(bottom, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#2a2a26')).multiplyScalar(0.35)),
+    ],
+    mask,
+  };
+}
+/** a flagstick (from 8 cm down in the cup), its top ferrule and the crest flag, at the origin */
+function pinGeometries(H: number, fw: number, fh: number, pr: number, k: number, kf: number, phase: number) {
+  const pole = new THREE.CylinderGeometry(pr, pr * 1.08, H, 16, 1, false); pole.translate(0, H / 2 - 0.08, 0);
+  const tip = new THREE.CylinderGeometry(pr * 1.5, pr * 1.3, 0.05 * k, 10); tip.translate(0, H - 0.08 + 0.02 * k, 0);
+  // flag: hangs from the top of the pole, streams with the wind (toward +x, slightly away)
+  const flag = new THREE.PlaneGeometry(fw, fh, 18, 8); flag.translate(fw / 2 + pr, 0, 0);
+  flag.rotateY(-0.25);
+  flag.translate(0, H - 0.08 - fh / 2 - 0.03 * kf, 0);
+  const n = flag.getAttribute('position').count;
+  flag.setAttribute('aPhase', new THREE.BufferAttribute(new Float32Array(n).fill(phase), 1));
+  flag.setAttribute('aLen', new THREE.BufferAttribute(new Float32Array(n).fill(fw), 1));
+  // the base ferrule, seated in the bottom of the cup
+  const fer = new THREE.CylinderGeometry(pr * 1.35, pr * 1.2, 0.045, 12); fer.translate(0, -CUP.DEEP + 0.0225, 0);
+  return { pole, tip, flag, fer };
 }
 
 // ───────────────────────── trees ─────────────────────────
@@ -1191,6 +1266,9 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
   // greens: yellow flagsticks with waving crest flags, cups, and yardage boards
   const targets: RangeTarget[] = GREENS.map(g => ({ yards: g.yards, pos: new THREE.Vector3(g.x, heightAt(g.x, g.z), g.z), radius: g.r, color: FLAG_YELLOW }));
   const flagUniforms = { uTime: { value: 0 } };
+  const featGroup = new THREE.Group(), featPin = new THREE.Group();
+  const featTarget: RangeTarget = { yards: 150, pos: new THREE.Vector3(0, 0, -9999), radius: 9, color: FLAG_YELLOW };
+  const feat = { from: new THREE.Vector2(), to: new THREE.Vector2(), r0: 9, r1: 9, t: 1, s0: 1, s1: 1 };
   const signSpots: { x: number; z: number; w: number }[] = [];
   {
     const poles: THREE.BufferGeometry[] = [], tips: THREE.BufferGeometry[] = [], flags: THREE.BufferGeometry[] = [], cups: THREE.BufferGeometry[] = [], holes: THREE.BufferGeometry[] = [], ferrules: THREE.BufferGeometry[] = [];
@@ -1205,41 +1283,12 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
       // a touch bigger far away so they still read from the tee; the cloth more so, so the crest reads on a phone
       const k = 1.1 + g.yards / 300, kf = 1.75 + g.yards / 160;
       const H = 2.3 * k, fw = 0.56 * kf, fh = 0.4 * kf, pr = 0.0095 * k * 1.25;
-      const pole = new THREE.CylinderGeometry(pr, pr * 1.08, H, 16, 1, false); pole.translate(g.x, y0 + H / 2 - 0.08, g.z);
-      poles.push(pole);
-      const ferrule = new THREE.CylinderGeometry(pr * 1.5, pr * 1.3, 0.05 * k, 10); ferrule.translate(g.x, y0 + H - 0.08 + 0.02 * k, g.z);
-      tips.push(ferrule);
-      // flag: hangs from the top of the pole, streams with the wind (toward +x, slightly away)
-      const flag = new THREE.PlaneGeometry(fw, fh, 18, 8); flag.translate(fw / 2 + pr, 0, 0);
-      flag.rotateY(-0.25);
-      flag.translate(g.x, y0 + H - 0.08 - fh / 2 - 0.03 * kf, g.z);
-      const ph = new Float32Array(flag.getAttribute('position').count).fill(i * 1.7 + 0.4);
-      flag.setAttribute('aPhase', new THREE.BufferAttribute(ph, 1));
-      const sz = new Float32Array(flag.getAttribute('position').count).fill(fw);
-      flag.setAttribute('aLen', new THREE.BufferAttribute(sz, 1));
-      flags.push(flag);
-      // cup: white liner ring and the dark hole
-      // the cup: 108 mm hole; 25 mm of soil and roots, then the white liner's rim, the liner, a dark bottom
-      const HR = 0.054, LIP = 0.025, DEEP = 0.102;
-      // the terrain mesh can sit a few mm off the analytic height, so the mask floats just above it and the
-      // soil lip reaches up to the mask (every ray through the mask then lands on the inside of the cup)
-      const UP = 0.012;
-      const lip = new THREE.CylinderGeometry(HR, HR, LIP + UP, 32, 1, true); lip.translate(0, (UP - LIP) / 2, 0);
-      const liner = new THREE.CylinderGeometry(HR - 0.002, HR - 0.002, DEEP - LIP, 32, 1, true); liner.translate(0, -LIP - (DEEP - LIP) / 2, 0);
-      const rim = new THREE.RingGeometry(HR - 0.0075, HR, 32); rim.rotateX(-Math.PI / 2); rim.translate(0, -LIP, 0);
-      const bottom = new THREE.CircleGeometry(HR, 32); bottom.rotateX(-Math.PI / 2); bottom.translate(0, -DEEP, 0);
-      for (const w of [lip, liner]) { const n = w.getAttribute('normal') as THREE.BufferAttribute; for (let v = 0; v < n.count; v++) n.setXYZ(v, -n.getX(v), -n.getY(v), -n.getZ(v)); }
-      const ao = (y: number) => 0.3 + 0.7 * Math.pow(clamp(1 + y / DEEP, 0, 1), 1.6); // darker toward the bottom
-      cups.push(
-        paint(lip, (x, y, z, _a, _b, _c, c) => c.copy(lin('#4a3826')).lerp(lin('#3f5a22'), clamp(1 + y / 0.008, 0, 1) * 0.8).multiplyScalar(y > 0 ? 0.6 : 1).multiplyScalar(ao(y) * (0.8 + 0.4 * hash2(Math.round(Math.atan2(z, x) * 30), 3)))),
-        paint(liner, (_x, y, _z, _a, _b, _c, c) => c.copy(lin('#efefea')).multiplyScalar(ao(y))),
-        paint(rim, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#f6f6f2'))),
-        paint(bottom, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#2a2a26')).multiplyScalar(0.35)),
-      );
-      cups.slice(-4).forEach(c => c.translate(g.x, y0, g.z));
-      const hole = new THREE.CircleGeometry(HR, 32); hole.rotateX(-Math.PI / 2); hole.translate(g.x, y0 + UP, g.z); holes.push(hole);
-      // the flagstick's base ferrule, seated in the bottom of the cup
-      const fer = new THREE.CylinderGeometry(pr * 1.35, pr * 1.2, 0.045, 12); fer.translate(g.x, y0 - DEEP + 0.0225, g.z); ferrules.push(fer);
+      const pin = pinGeometries(H, fw, fh, pr, k, kf, i * 1.7 + 0.4);
+      for (const geo of [pin.pole, pin.tip, pin.flag, pin.fer]) geo.translate(g.x, y0, g.z);
+      poles.push(pin.pole); tips.push(pin.tip); flags.push(pin.flag); ferrules.push(pin.fer);
+      const cup = cupGeometries();
+      for (const geo of [...cup.parts, cup.mask]) geo.translate(g.x, y0, g.z);
+      cups.push(...cup.parts); holes.push(cup.mask);
       // yardage board beside the green on the outside, turned to face the tee
       const side = g.x < 0 ? -1 : 1;
       const W = 2.0 + g.yards * 0.012, BH = W * 0.5, T = 0.08, lift = 0.5 + W * 0.1;
@@ -1335,6 +1384,21 @@ reflectedLight.indirectSpecular *= 0.3;`);
     const postMesh = new THREE.Mesh(mergeGeometries(posts.map(p => p.index ? p.toNonIndexed() : p), false)!, signMat);
     postMesh.castShadow = true; postMesh.receiveShadow = true;
     scene.add(poleMesh, tipMesh, cupMesh, cupWalls, holeMesh, ferMesh, flagMesh, boardMesh, postMesh);
+
+    // the featured target's pin and cup: built once at the 150-yd size; the pin is scaled with distance
+    {
+      const k = 1.1 + 150 / 300, kf = 1.75 + 150 / 160;
+      const pin = pinGeometries(2.3 * k, 0.56 * kf, 0.4 * kf, 0.0095 * k * 1.25, k, kf, 0.9);
+      const cup = cupGeometries();
+      const mk = (g: THREE.BufferGeometry, m: THREE.Material, order = 0, shadow = false) => { const o = new THREE.Mesh(g, m); o.renderOrder = order; o.castShadow = shadow; return o; };
+      const fl = mk(pin.flag, flagMat); fl.frustumCulled = false;
+      featPin.add(mk(pin.pole, pinMat, 0, true), mk(pin.tip, tipMesh.material as THREE.Material), fl);
+      featGroup.add(featPin,
+        mk(finish(cup.parts.slice(0, 2)), cupWalls.material as THREE.Material, -1), mk(finish(cup.parts.slice(2)), cupMat, -1),
+        mk(cup.mask, holeMesh.material as THREE.Material, -2), mk(pin.fer, ferMesh.material as THREE.Material));
+      featGroup.visible = false;
+      scene.add(featGroup);
+    }
   }
 
   // trees
@@ -1593,6 +1657,19 @@ gl_Position = projectionMatrix * mvPosition;`);
     return m;
   })();
 
+  // featured target: ease from where it was to where it goes (slides down the range when the club changes)
+  function placeFeat(t: number) {
+    const e = t * t * (3 - 2 * t);
+    FEAT.x = feat.from.x + (feat.to.x - feat.from.x) * e;
+    FEAT.z = feat.from.y + (feat.to.y - feat.from.y) * e;
+    FEAT.r = feat.r0 + (feat.r1 - feat.r0) * e;
+    FEAT_U.value.set(FEAT.x, FEAT.z, FEAT.r, 1);
+    const y = rawHeight(FEAT.x, FEAT.z);
+    featGroup.position.set(FEAT.x, y, FEAT.z);
+    featPin.scale.setScalar(feat.s0 + (feat.s1 - feat.s0) * e);
+    featTarget.pos.set(FEAT.x, y, FEAT.z); featTarget.radius = FEAT.r;
+  }
+
   // shadows: a tight box around the golfer while swinging (sharp), a wide box that follows the ball in flight
   let tight: { c: THREE.Vector3; r: number } | null = null;
   const tmp = new THREE.Vector3(), center = new THREE.Vector3();
@@ -1608,6 +1685,35 @@ gl_Position = projectionMatrix * mvPosition;`);
     get sunDirection() { return sunDir; },
     get hazeColor() { return fogColor; },
     setTimeOfDay(t) { if (t !== tod) applyTime(t); },
+    get featured() { return FEAT.on > 0.5 ? featTarget : null; },
+    setFeaturedTarget(yards) {
+      if (yards === null || !(yards > 0)) {
+        FEAT.on = 0; FEAT_U.value.w = 0; featGroup.visible = false;
+        const i = targets.indexOf(featTarget); if (i >= 0) targets.splice(i, 1);
+        return;
+      }
+      const yd = clamp(yards, 20, 330), z = -yd * YD, r = clamp(5.5 + yd * 0.03, 6.5, 13);
+      // a spot near the line that clears the scenery greens and the bunkers, preferring a little right of centre
+      const clear = (x: number) => {
+        let c = Infinity;
+        for (const g of GREENS) c = Math.min(c, Math.hypot(x - g.x, z - g.z) - g.r * 1.1 - r - FRINGE * 2);
+        for (const b of BUNKERS) c = Math.min(c, Math.hypot(x - b.x, z - b.z) - Math.max(b.rx, b.rz) - r - 1.5);
+        return c;
+      };
+      let best = fwCenter(z) + 2, bestC = -Infinity;
+      for (const dx of [2, -2, 6, -6, 10, -10, 14, -14, 18, -18]) {
+        const x = fwCenter(z) + dx, c = clear(x);
+        if (c > 1) { best = x; bestC = c; break; }
+        if (c > bestC) { best = x; bestC = c; }
+      }
+      const s1 = clamp((1.75 + yd / 160) / 2.6875 * 1.1, 0.85, 1.25);
+      if (FEAT.on < 0.5) { feat.from.set(best, z); feat.r0 = r; feat.s0 = s1; feat.t = 1; targets.push(featTarget); }
+      else { feat.from.set(FEAT.x, FEAT.z); feat.r0 = FEAT.r; feat.s0 = featPin.scale.x; feat.t = 0; }
+      feat.to.set(best, z); feat.r1 = r; feat.s1 = s1;
+      FEAT.on = 1; featGroup.visible = true;
+      featTarget.yards = Math.round(yd);
+      placeFeat(feat.t >= 1 ? 1 : 0);
+    },
     setShadowFocus(c, r = 4) { tight = c ? { c: c.clone(), r } : null; half = 0; },
     contactShadow(pos, strength = 1, radius = 0.55) {
       if (!pos) { contact.visible = false; return; }
@@ -1622,6 +1728,7 @@ gl_Position = projectionMatrix * mvPosition;`);
     },
     update(dt, camera, focus) {
       time += dt;
+      if (FEAT.on > 0.5 && feat.t < 1) { feat.t = Math.min(1, feat.t + dt / 0.9); placeFeat(feat.t); }
       // tree detail by distance from the camera to each chunk's stretch of the range
       for (const t of treeLods) {
         const cz = camera.position.z, d = Math.max(0, cz - t.zA, t.zB - cz) + Math.max(0, camera.position.y - 60);

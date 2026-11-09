@@ -1,7 +1,7 @@
 // Turns a swing (power, timing, path) plus club, mode and lie into a ball launch.
 import { CLUB_SPECS } from '../golfer/club';
 import type { ShotMode } from '../golfer/golfer';
-import { speedForCarry, type Launch } from './ball';
+import { speedForCarry, simulateShape, type Launch } from './ball';
 
 export const YD = 0.9144;
 const D = Math.PI / 180;
@@ -48,6 +48,8 @@ export interface SwingResult {
   released: boolean;  // finger lifted before the strike line
   /** where the club meets the ball, each -1..1: y +1 = top of the ball, x -1 = inner half (toward the golfer) */
   strike?: { x: number; y: number };
+  /** the player's plan from the aim view: curve -1..1 (+ = bends right on screen), loft -1..1 (lower .. higher) */
+  aim?: { curve: number; loft: number };
 }
 
 export interface ShotPlan {
@@ -86,16 +88,31 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   // strike point: under the ball launches higher with more backspin, over it lower with less; off-centre loses a little
   const sk = r.strike ?? { x: 0, y: 0 }, sx = clamp(sk.x, -1, 1), sy = clamp(sk.y, -1, 1);
   la -= 4 * sy; spin *= 1 - 0.25 * sy;
+  // planned trajectory from the aim view: up to ±3.5° launch and ±15% spin
+  const intent = r.aim ?? { curve: 0, loft: 0 }, ic = clamp(intent.curve, -1, 1), il = clamp(intent.loft, -1, 1);
+  la += 3.5 * il; spin *= 1 + 0.15 * il;
   carry *= 1 - 0.03 * Math.min(1, Math.hypot(sx, sy));
-  const speed = speedForCarry(carry * YD, la * D, spin);
+  let speed = speedForCarry(carry * YD, la * D, spin);
   // direction: push angle sets the curve (spin-axis tilt); the start line goes a little the other way
   const ang = clamp(r.angle, -35, 35);
   // inner half of the ball → draw, outer → fade (a lefty's draw curves right)
-  const tilt = (ang / 35) * 0.42 * C.curve + gauss() * 0.06 * e + (lefty ? -1 : 1) * sx * 0.1 * C.curve;
-  const startDeg = -0.3 * (ang / 35) * 9 * C.curve + gauss() * 2.4 * e + gauss() * 1.8 * eB + lie.side * lie.slope * 0.45;
+  const execTilt = (ang / 35) * 0.42 * C.curve + (lefty ? -1 : 1) * sx * 0.1 * C.curve;   // swing push + strike point
+  // planned shape (aim view): a realistic spin-axis tilt (up to ~17° on a 7i), ball speed re-solved so the
+  // carry holds, and the start line aimed so a pure strike lands on the ring
+  let planTilt = 0, planStartDeg = 0;
+  if (Math.abs(ic) > 0.02) {
+    planTilt = ic * 0.33 * C.curve;
+    for (let i = 0; i < 3; i++) {
+      const S = simulateShape({ speed, launch: la * D, azimuth: 0, spinRpm: spin, tilt: planTilt });
+      speed *= Math.sqrt((carry * YD) / Math.max(1, S.carry));
+      planStartDeg = -Math.atan2(S.side, S.carry) * 180 / Math.PI;
+    }
+  }
+  const tilt = planTilt + execTilt + gauss() * 0.06 * e;
+  const startDeg = planStartDeg - 0.3 * (ang / 35) * 9 * C.curve + gauss() * 2.4 * e + gauss() * 1.8 * eB + lie.side * lie.slope * 0.45;
   // a lefty's draw curves right, so name shapes by handedness
-  // name the shape from the whole curve (push angle + strike point), in push-angle degrees
-  const effAng = ang + (lefty ? -1 : 1) * sx * (0.1 / 0.42) * 35;
+  // name the shape from the whole curve (plan + push angle + strike point), in push-angle degrees
+  const effAng = (execTilt / (0.42 * C.curve)) * 35 + ic * 9;   // a full planned curve reads as a Draw/Fade
   const curvesLeft = effAng < 0;
   const drawSide = lefty ? !curvesLeft : curvesLeft;
   const shape = Math.abs(effAng) < 3 ? 'Straight' : drawSide ? (Math.abs(effAng) < 12 ? 'Draw' : 'Hook') : (Math.abs(effAng) < 12 ? 'Fade' : 'Slice');
