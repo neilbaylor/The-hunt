@@ -16,7 +16,9 @@ export function tourBallMaterial() {
   mat.onBeforeCompile = sh => {
     sh.uniforms.printMap = { value: print };
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D printMap;')
-      .replace('#include <map_fragment>', '#include <map_fragment>\nvec4 pr = texture2D(printMap, vNormalMapUv);\ndiffuseColor.rgb = mix(diffuseColor.rgb, pr.rgb, pr.a);');
+      // ink sits under the clearcoat: full-strength, a touch darker, and the coat's sheen is held back over it
+      .replace('#include <map_fragment>', '#include <map_fragment>\nvec4 pr = texture2D(printMap, vNormalMapUv);\nfloat ink = min(1.0, pr.a * 1.35);\ndiffuseColor.rgb = mix(diffuseColor.rgb, pr.rgb * 0.7, ink);')
+      .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\nmaterial.roughness = mix(material.roughness, 0.75, ink);\nmaterial.specularColor *= 1.0 - 0.7 * ink;\nmaterial.specularColorBlended *= 1.0 - 0.7 * ink;\n#ifdef USE_CLEARCOAT\nmaterial.clearcoat *= 1.0 - 0.85 * ink;\n#endif');
   };
   mat.customProgramCacheKey = () => 'tour-ball';
   return mat;

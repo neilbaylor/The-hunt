@@ -6,6 +6,8 @@
 // dir(u, v) = (-cos(phi) sin(theta), cos(theta), sin(phi) sin(theta)). Image row 0 = top (v = 1).
 // The sidestamp is centred at u = 0.25, which faces +Z (toward the viewer) with no rotation.
 
+import scriptSvg from '../assets/brand/titleist-script.svg?raw';
+
 export const BT_W = 1024, BT_H = 512;
 
 export interface BallTex {
@@ -104,26 +106,29 @@ function sideMark(g: CanvasRenderingContext2D, x: number, y: number, degX: numbe
   g.restore();
 }
 
+/** the traced sidestamp script (src/assets/brand/titleist-script.svg): its group transform and paths */
+const SCRIPT = (() => {
+  const m = (/matrix\(([^)]+)\)/.exec(scriptSvg)?.[1] ?? '1,0,0,1,0,0').split(',').map(Number);
+  const paths = [...scriptSvg.matchAll(/<path d="([^"]+)"/g)].map(x => new Path2D(x[1]));
+  return { m, paths };
+})();
+
 function drawPrint(g: CanvasRenderingContext2D, align: boolean) {
   g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, PR_W, PR_H);
   g.setTransform(PR_W / BT_W, 0, 0, PR_H / BT_H, 0, 0);   // lay out in the 1024 × 512 space
   const cx = 0.25 * BT_W, cy = BT_H / 2, degX = BT_W / 360, degY = BT_H / 180;
-  // front: the big black script, ~45% of the diameter wide, just above the centre (as on the real ball)
+  // front: the "Titleist" script, traced from a photo of the real ball and stored in lon/lat degrees (see the SVG)
   g.save();
-  const lat = 15.5;                                     // degrees above the equator
-  g.translate(cx, cy - lat * degY);
-  g.font = '60px "Yellowtail", "Brush Script MT", "Segoe Script", cursive';
-  const w = g.measureText('Titleist').width, want = 2 * 26.5 * degX / Math.cos(lat * Math.PI / 180);
-  g.scale(want / w, (want / w) * 1.08);
-  g.fillStyle = '#121214'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('Titleist', 0, 0);
-  g.globalCompositeOperation = 'destination-out'; g.lineWidth = 0.9; g.lineJoin = 'round'; g.strokeText('Titleist', 0, 0); g.globalCompositeOperation = 'source-over';
+  g.translate(cx, cy); g.scale(degX, degY);
+  const m = SCRIPT.m; g.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  g.fillStyle = '#121214';
+  for (const p of SCRIPT.paths) g.fill(p);
   g.restore();
   // the red play number, hand-lettered: a flag at the top, a straight stem and a small foot
   g.save();
   g.translate(cx, cy + 3.5 * degY);
   const h = 11.5 * degY;                                // ~10% of the diameter tall
-  g.strokeStyle = '#c4122f'; g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = 2.6;
+  g.strokeStyle = '#c4122f'; g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = 3;
   g.beginPath(); g.moveTo(-h * 0.2, -h * 0.34); g.quadraticCurveTo(-h * 0.02, -h * 0.4, h * 0.06, -h * 0.5); g.lineTo(h * 0.02, h * 0.42); g.stroke();
   g.beginPath(); g.moveTo(-h * 0.24, h * 0.47); g.quadraticCurveTo(0, h * 0.4, h * 0.26, h * 0.46); g.stroke();
   g.restore();
@@ -168,7 +173,7 @@ export function ballTex(align = false): BallTex {
   shared = { normal, ao, print: pg.getImageData(0, 0, PR_W, PR_H).data, printCanvas, normalCanvas, aoCanvas, version: 1 };
   const refresh = () => { drawPrint(pg, align); shared!.print = pg.getImageData(0, 0, PR_W, PR_H).data; shared!.version++; listeners.forEach(f => f()); };
   try {
-    Promise.all(['64px "Yellowtail"', 'italic 700 46px "Barlow Condensed"', '700 58px "Barlow"'].map(f => document.fonts.load(f))).then(refresh, () => {});
+    Promise.all(['italic 700 46px "Barlow Condensed"', '700 58px "Barlow"'].map(f => document.fonts.load(f))).then(refresh, () => {});
     document.fonts.ready.then(refresh, () => {});
     document.fonts.addEventListener('loadingdone', refresh);
   } catch { /* no font loading API */ }
@@ -228,7 +233,9 @@ export function shadeBall(size: number, m: Mat3): HTMLCanvasElement {
       const col = Math.min(BT_W - 1, (ph / (Math.PI * 2) * BT_W) | 0), row = Math.min(BT_H - 1, (th / Math.PI * BT_H) | 0), i = row * BT_W + col;
       // perturbed normal back to view space
       const lx = N[i * 3], ly = N[i * 3 + 1], lz = N[i * 3 + 2];
-      const nx = m[0] * lx + m[1] * ly + m[2] * lz, ny = m[3] * lx + m[4] * ly + m[5] * lz, nz = m[6] * lx + m[7] * ly + m[8] * lz;
+      let nx = m[0] * lx + m[1] * ly + m[2] * lz, ny = m[3] * lx + m[4] * ly + m[5] * lz, nz = m[6] * lx + m[7] * ly + m[8] * lz;
+      // the shaded lower half reads softer on the real ball: ease the dimples back toward the smooth sphere there
+      { const f = 0.4 * Math.max(0, -vy); if (f > 0) { nx += (vx - nx) * f; ny += (vy - ny) * f; nz += (vz - nz) * f; const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l; } }
       const ndl = nx * L[0] + ny * L[1] + nz * L[2];
       const diff = Math.max(0, (ndl + 0.6) / 1.6);                 // wrapped: a soft studio falloff
       const amb = 0.5 + 0.06 * ny;
