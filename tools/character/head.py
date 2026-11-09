@@ -791,7 +791,42 @@ out = out * (1 - H_[:, None]) + rec * H_[:, None]
 print('hair recoloured to', hair_hex, 'over', int((H_ > 0.5).sum()), 'texels; source hair lum', round(float(hm_mean), 1))
 # the neck band fades to the body's skin tone (the body is tinted to the face below)
 nk = np.clip(((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn / (BAND + 0.012), 0, 1) ** 0.7 if A.neck == 'loft' else np.clip((((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn + 0.004) / 0.004, 0, 1)
-out = out * nk[:, None] + neck_c * (1 - nk[:, None])
+if A.neck == 'loft': out = out * nk[:, None] + neck_c * (1 - nk[:, None])
+# ── skin colour across the seam: the body's skin is transferred onto the head's tone (Lab mean and spread), and
+#    the head's last few cm above its cap ease toward that body tone so the jaw meets the neck without a step ──
+def srgb2lin(c): c = np.clip(c, 0, 1); return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+def lin2srgb(c): c = np.clip(c, 0, 1); return np.where(c <= 0.0031308, c * 12.92, 1.055 * c ** (1 / 2.4) - 0.055)
+_M = np.array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]]); _W = np.array([0.95047, 1.0, 1.08883])
+def lin2lab(c):
+    X = (c @ _M.T) / _W; f = np.where(X > 0.008856, np.cbrt(X), 7.787 * X + 16 / 116)
+    return np.c_[116 * f[:, 1] - 16, 500 * (f[:, 0] - f[:, 1]), 200 * (f[:, 1] - f[:, 2])]
+def lab2lin(L):
+    fy = (L[:, 0] + 16) / 116; fx = fy + L[:, 1] / 500; fz = fy - L[:, 2] / 200
+    f = np.c_[fx, fy, fz]; X = np.where(f ** 3 > 0.008856, f ** 3, (f - 16 / 116) / 7.787) * _W
+    return np.clip(X @ np.linalg.inv(_M).T, 0, 1)
+# the head's skin under the jaw and on the lower cheeks
+skin_zone = (~hairy) & (hair_amt < 0.2) & (cp[:, 1] < yN - 0.015) & (cp[:, 1] > cen[1] - 0.005) & (np.abs(cp[:, 0]) > 0.02) & ~near_eye
+tgt = lin2lab(srgb2lin(out[skin_zone] / 255))
+mu_t, sd_t = tgt.mean(0), tgt.std(0)
+# the body's skin texture over the visible body skin (below the seam)
+sk_img = np.asarray(Image.open(os.path.join(os.path.dirname(binp), 'skin.jpg')).convert('RGB')).astype(float)
+body_v = np.nonzero(((SP - cen) @ pn) < -0.01)[0]
+pxs = np.clip((SUV[body_v, 0] * sk_img.shape[1]).astype(int), 0, sk_img.shape[1] - 1); pys = np.clip(((1 - SUV[body_v, 1]) * sk_img.shape[0]).astype(int), 0, sk_img.shape[0] - 1)
+src_lin = srgb2lin(sk_img[pys, pxs] / 255); src = lin2lab(src_lin)
+mu_s, sd_s = src.mean(0), src.std(0)
+moved = lab2lin((src - mu_s) * np.clip(sd_t / np.maximum(sd_s, 1e-3), 0.6, 1.4) + mu_t)
+Aff, *_ = np.linalg.lstsq(np.c_[src_lin, np.ones(len(src_lin))], moved, rcond=None)     # 4x3: linear RGB affine
+skin_xform = Aff.T                                                                       # 3x4
+print('skin Lab: head', mu_t.round(1), '±', sd_t.round(1), '| body', mu_s.round(1), '±', sd_s.round(1))
+# the head's own last 2.5 cm above its cap: ease toward the (transferred) body tone; a soft shadow under the jaw
+tone_lin = lab2lin(mu_t[None])[0]
+h_tex = ((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn
+chinfront = sstep(lm_f[152, 2] - 0.035, lm_f[152, 2] - 0.01, cp[:, 2])
+fe = np.clip(1 - (h_tex + 0.006) / 0.025, 0, 1) ** 1.5 * (1 - chinfront) * (~hairy)
+out_lin = srgb2lin(out / 255)
+out_lin = out_lin * (1 - 0.55 * fe[:, None]) + tone_lin * 0.82 * 0.55 * fe[:, None]
+out = lin2srgb(out_lin) * 255
+seam_tone = list(map(float, tone_lin * 0.82))
 # per (uv) vertex hair weight, for the hair cards the game roots on the scalp
 hv_sum = np.zeros(len(UV)); hv_n = np.zeros(len(UV))
 for k_ in range(3): np.add.at(hv_sum, UF[tt, k_], H_ * tw[:, k_]); np.add.at(hv_n, UF[tt, k_], tw[:, k_])
@@ -843,15 +878,8 @@ if A.unwrap not in (None, 'none') and os.path.exists(A.unwrap):
     buf_ = io.BytesIO(); sheet_.save(buf_, 'PNG'); iris_png = np.frombuffer(buf_.getvalue(), np.uint8)
     if DBG: sheet_.save(os.path.join(DBG, 'irises.png'))
     print('  irises from the unwrap; sclera', [np.round(np.array(e_['sclera']) * 255) for e_ in eyes_uv])
-# ───────────────────────── skin tone for the body ─────────────────────────
-# the body's skin texture at the forearms/neck vs the face's skin: a multiplier for the body skin material
-sk_img = np.asarray(Image.open(os.path.join(os.path.dirname(binp), 'skin.jpg')).convert('RGB')).astype(float)
-la = B.index('lowerarm_l')
-arm = np.nonzero((SI[:, 0] == la) & (SW[:, 0] > 0.8))[0]
-uvs = SUV[arm]; px_ = np.clip((uvs[:, 0] * sk_img.shape[1]).astype(int), 0, sk_img.shape[1] - 1); py_ = np.clip(((1 - uvs[:, 1]) * sk_img.shape[0]).astype(int), 0, sk_img.shape[0] - 1)
-arm_c = np.median(sk_img[py_, px_], 0)
-tint = np.clip((neck_c / 255) ** 2.2 / np.maximum((arm_c / 255) ** 2.2, 1e-3), 0.5, 1.6)
-print('body arm colour', arm_c.round(), '→ tint (linear)', tint.round(3))
+# (the body's skin colour: skin_xform above; a flat tint is kept for older loaders)
+tint = np.clip(Aff[:3].sum(1) * 0 + (Aff[:3] @ np.ones(3) / 3 + Aff[3]), 0.5, 1.6) if False else np.ones(3)
 
 # ───────────────────────── write head.bin ─────────────────────────
 PV = mir(VV).astype(np.float32)
@@ -886,7 +914,7 @@ meta = {
     'arrays': desc, 'bones': [B[i] for i in bones_used],
     'eye': list(map(float, eye_mh)), 'ipd': float(ipd_mh),
     'seam': {'point': list(map(float, mir(cen))), 'normal': list(map(float, mir(pn))), 'band': BAND},
-    'skinTint': list(map(float, tint)), 'skinColor': list(map(float, skin_c / 255)), 'hairColor': list(map(float, hair_c / 255)),
+    'skinTint': list(map(float, tint)), 'skinXform': [list(map(float, r_)) for r_ in skin_xform], 'seamTone': seam_tone, 'skinColor': list(map(float, skin_c / 255)), 'hairColor': list(map(float, hair_c / 255)),
     'mirrored': mirror, 'source': os.path.basename(A.raw), 'photos': [os.path.basename(p) for p in photos],
     'tris': int(len(UF)), 'tex': T, 'morphs': mnames, 'morphUnit': 1e-5, 'eyes': eyes_uv,
 }
