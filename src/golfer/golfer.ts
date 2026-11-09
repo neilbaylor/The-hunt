@@ -360,7 +360,12 @@ export class Golfer {
     if (s.phase === 'back') roll = ROLL_TOP * smooth(0, 0.55, phi / PHI_TOP);
     else if (s.phase === 'down') roll = ROLL_TOP * smooth(0, 0.55, s.topPhi / PHI_TOP) * smooth(0, 0.85, Math.max(0, phi) / Math.max(0.01, s.topPhi));
     else if (s.phase === 'follow') roll = -ROLL_TOP * 0.9 * smooth(0, 0.3, -phi / Math.abs(PHI_FINISH));
-    if (roll) qc.multiply(new THREE.Quaternion().setFromAxisAngle(this.club.shaftDir.clone().normalize(), roll * ROLL_SIGN));
+    if (roll) {
+      // the forearms turn the hands in place: pivot the roll at the lead wrist so the arms keep their length
+      const wPivot = this.hands.wristLead.clone().applyQuaternion(qc).add(g.position);
+      qc.multiply(new THREE.Quaternion().setFromAxisAngle(this.club.shaftDir.clone().normalize(), roll * ROLL_SIGN));
+      g.position.copy(wPivot).sub(this.hands.wristLead.clone().applyQuaternion(qc));
+    }
     if (leanW > 0) qc.premultiply(new THREE.Quaternion().setFromAxisAngle(this.axis, LEAN * leanW * this.leanSign));
     g.quaternion.copy(qc);
     // arms: lead wrist first; if it can't reach, move the club with the hand
