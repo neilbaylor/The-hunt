@@ -211,7 +211,7 @@ export class Golfer {
       const gl = this.club.gripLead, gr = this.club.gripTrail, sd = this.club.shaftDir.clone().normalize();
       void towardL; void towardR;
       const frame = (side: 'L' | 'R', grip: THREE.Vector3) => {
-        const beta = side === 'L' ? 0.5 : 0.25, alpha = side === 'L' ? 1.25 : 1.45;
+        const beta = side === 'L' ? 0.5 : 0.25, alpha = side === 'L' ? 1.0 : 1.1;
         const palm = (side === 'L' ? new THREE.Vector3(-Math.cos(beta), 0, Math.sin(beta)) : new THREE.Vector3(Math.cos(beta), 0, -Math.sin(beta)));
         palm.addScaledVector(sd, -palm.dot(sd)).normalize();
         const under = new THREE.Vector3().crossVectors(palm, sd).normalize();
