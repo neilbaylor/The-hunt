@@ -415,9 +415,13 @@ const intro = document.createElement('div');
 intro.className = 'intro';
 intro.innerHTML = `<div class="intro-card"><span class="brand"><i class="crest" aria-hidden="true"></i><b>The Hunt</b></span>
   <span class="kick">Player 1</span><h1>${profile.name}</h1>
-  <button type="button" id="play"><span class="ball" aria-hidden="true"></span>Hit balls</button></div>`;
+  <span class="tap">Tap anywhere to start</span></div>`;
+intro.dataset.nameStyle = new URLSearchParams(location.search).get('name') ?? 'a';
+intro.setAttribute('role', 'button'); intro.tabIndex = 0; intro.setAttribute('aria-label', `Start playing as ${profile.name}`);
 document.body.appendChild(intro);
-intro.querySelector('#play')!.addEventListener('click', () => { sound.unlock(); startPlay(); });
+// a tap anywhere starts (no button)
+intro.addEventListener('click', () => { sound.unlock(); startPlay(); });
+intro.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sound.unlock(); startPlay(); } });
 function startPlay() {
   if (state !== 'intro') return;
   intro.classList.add('gone');

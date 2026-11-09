@@ -7,7 +7,7 @@
 <title>The Hunt</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@0,600;0,700;1,700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Russo+One&family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@0,600;0,700;1,700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Russo+One&family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&family=Shrikhand&family=Lilita+One&family=Lobster&display=swap">
 <style>
   /* phone browsers: size everything to the VISIBLE viewport (address bar and toolbar showing). --app-h / --app-top come from visualViewport (src/ui/hud.ts) */
   html, body { margin: 0; height: 100%; height: 100dvh; overflow: hidden; background: #0e1613; touch-action: none; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
@@ -21,7 +21,14 @@
   .intro .brand { display: inline-flex; align-items: center; gap: 10px; padding: 5px 16px 5px 5px; border-radius: 999px; background: rgba(255,250,240,.94); color: #13294b; box-shadow: 0 3px 0 #e6cd94, 0 10px 24px rgba(0,0,0,.3); }
   .intro .brand .crest { width: 38px; height: 38px; border-radius: 50%; background: var(--crest) center/122% no-repeat, #13294b; box-shadow: 0 0 0 2px #ffd23f; }
   .intro .brand b { font: 700 15px/1.05 'Fredoka', sans-serif; letter-spacing: .08em; text-transform: uppercase; text-align: left; }
-  .intro h1 { margin: 4px 0 0; font: 700 clamp(72px, 22vw, 150px)/.86 'Fredoka', sans-serif; letter-spacing: .02em; text-transform: uppercase; color: #fffaf0; -webkit-text-stroke: 5px #0b1a33; paint-order: stroke fill; text-shadow: 0 4px 0 #0b1a33, 0 7px 0 #f2a900, 0 10px 0 #0b1a33, 0 18px 30px rgba(0,0,0,.5); }
+  /* the player's name: three looks tried (data-name-style on .intro); 'a' is the pick */
+  .intro h1 { margin: 2px 0 0; line-height: .9; color: #fbf3df; text-transform: none; letter-spacing: .01em; paint-order: stroke fill; }
+  .intro[data-name-style="a"] h1 { font: 400 clamp(70px, 21vw, 140px)/.95 'Shrikhand', 'Fredoka', sans-serif; -webkit-text-stroke: 7px #1d4a2c; text-shadow: 0 5px 0 #1d4a2c, 0 8px 0 #c9a227, 0 18px 26px rgba(0,0,0,.45); transform: rotate(-4deg); }
+  .intro[data-name-style="b"] h1 { font: 400 clamp(78px, 24vw, 150px)/.9 'Lilita One', 'Fredoka', sans-serif; letter-spacing: .03em; -webkit-text-stroke: 6px #1d4a2c; text-shadow: 0 6px 0 #c9a227, 0 9px 0 #1d4a2c, 0 18px 26px rgba(0,0,0,.45); }
+  .intro[data-name-style="c"] h1 { font: 400 clamp(76px, 23vw, 150px)/.95 'Lobster', 'Fredoka', cursive; -webkit-text-stroke: 6px #1d4a2c; text-shadow: 0 5px 0 #1d4a2c, 0 9px 0 #c9a227, 0 18px 26px rgba(0,0,0,.45); transform: rotate(-5deg); }
+  .intro .tap { margin-top: 14px; font: 700 15px/1 'Fredoka', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: #fbf3df; background: rgba(29,74,44,.82); padding: 10px 18px 11px; border-radius: 999px; box-shadow: 0 0 0 2px rgba(201,162,39,.8); animation: tapPulse 1.6s ease-in-out infinite; }
+  @keyframes tapPulse { 0%, 100% { transform: scale(1); opacity: .95; } 50% { transform: scale(1.06); opacity: 1; } }
+  .intro { cursor: pointer; }
   .intro .kick { display: inline-flex; align-items: center; gap: 9px; font: 800 13px/1 'Nunito', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: #ffd23f; padding: 4px 14px 4px 4px; border-radius: 999px; background: rgba(11,26,51,.78); }
   /* Neil's portrait beside 'Player 1' (the image URL comes from the HUD, imported through Vite) */
   .intro .kick::before { content: ""; width: 38px; height: 38px; border-radius: 50%; background: var(--portrait) center/cover no-repeat, #fffaf0; box-shadow: 0 0 0 2px #0b1a33, 0 0 0 4px #ffd23f; }
@@ -32,7 +39,7 @@
   .intro button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
   @keyframes nudge { 0%, 85%, 100% { transform: none; } 90% { transform: translateY(-4px) rotate(-1.5deg); } 95% { transform: translateY(0) rotate(1deg); } }
   @media (orientation: landscape) { .intro { justify-items: start; background: linear-gradient(90deg, rgba(11,26,51,.78) 0%, rgba(11,26,51,.3) 42%, rgba(11,26,51,0) 65%); align-items: end; } .intro-card { justify-items: start; text-align: left; } }
-  @media (prefers-reduced-motion: reduce) { .intro-card, .intro button { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .intro-card, .intro button, .intro .tap { animation: none; } }
   .rotate { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; text-align: center; background: #0e1613; color: #fff; font-family: 'Barlow', system-ui, sans-serif; padding: 24px; }
   .rotate b { display: block; font: 700 30px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; color: #ffc72c; }
   .rotate svg { width: 72px; height: 72px; margin: 0 auto 16px; display: block; animation: tilt 2.4s ease-in-out infinite; }

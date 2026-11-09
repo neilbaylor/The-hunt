@@ -46,6 +46,7 @@ if (q.has('intro')) {
   const intro = document.createElement('div'); intro.className = 'intro';
   intro.innerHTML = `<div class="intro-card"><span class="brand"><i class="crest" aria-hidden="true"></i><b>The Hunt</b></span>
   <span class="kick">Player 1</span><h1>${NEIL.name}</h1>
-  <button type="button" id="play"><span class="ball" aria-hidden="true"></span>Hit balls</button></div>`;
+  <span class="tap">Tap anywhere to start</span></div>`;
+  intro.dataset.nameStyle = q.get('name') ?? 'a';
   document.body.appendChild(intro); hud.el.classList.add('hidden');
 }
