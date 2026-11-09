@@ -107,8 +107,9 @@ export class ShotCam {
     const fromPos = f ? f.pos : this.from.pos, fromLook = f ? f.look : this.from.look;
     o.pos.copy(fromPos).lerp(this.landPos!, s);
     // keep the ball AND where it's coming down in shot during the hand-off; once it's down, just the ball
-    const lookNow = (b.phase === 'flight' ? b.pos.clone().lerp(this.landLook, 0.5) : b.pos.clone()).addScaledVector(Y, 0.3);
-    o.look.copy(fromLook).lerp(lookNow, s);
+    // the ball stays the subject (eye just ahead of it, towards where it comes down); the camera's move brings the landing area in
+    const lookNow = (b.phase === 'flight' ? b.pos.clone().lerp(this.landLook, 0.2) : b.pos.clone()).addScaledVector(Y, 0.3);
+    o.look.copy(fromLook).lerp(lookNow, smoother(Math.min(1, s * 2)));
     o.dFov = (f ? f.dFov : this.from.dFov) * (1 - s); o.roll = (f ? f.roll : this.from.roll) * (1 - s);
     if (f) { this.from.pos.copy(f.pos); this.from.look.copy(f.look); this.from.dFov = f.dFov; this.from.roll = f.roll; }
     return o;
