@@ -57,11 +57,11 @@ const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36,
 const THRU = K({ hipTurn: 1.25, hipTilt: 0.1, hipSide: 0.05, chestTurn: 1.35, chestTilt: 0.14, chestSide: 0.28, shift: 0.13, drop: -0.035, heel: 0.66, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
 const T3Q = K({ hipTurn: 1.5, hipTilt: 0.06, hipSide: 0.02, chestTurn: 1.75, chestTilt: 0.03, chestSide: 0.2, shift: 0.16, drop: -0.04, heel: 0.82, shrug: -0.12, pro: -0.02, hinge: -0.85, beta: 0.42 }, I);
 // full finish: belt buckle and chest past the target, weight on the lead leg, upright with a slight reverse-C
-const F: Keys = { lift: 0, reach: 1, hipTurn: 1.58, hipTilt: 0.08, hipSide: 0.0, chestTurn: 1.9, chestTilt: 0.18, chestSide: 0.1, shift: 0.17, drop: -0.04, heel: 0.97, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.52 };
+const F: Keys = { lift: 0, reach: 1, hipTurn: 1.58, hipTilt: 0.08, hipSide: 0.0, chestTurn: 1.9, chestTilt: 0.18, chestSide: 0.1, shift: 0.17, drop: -0.02, heel: 0.97, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.52 };
 // held finish: fully rotated (buckle and chest a little past the target), all the weight on a straight lead leg,
 // trail foot up on its toe with the knee against the lead knee, tall and stacked (spine only ~7° away from the
 // target, no backward bow), hands by the head
-const HOLD: Keys = { lift: 0, reach: 1, hipTurn: 1.72, hipTilt: 0.07, hipSide: -0.02, chestTurn: 2.05, chestTilt: 0.16, chestSide: 0.12, shift: 0.19, drop: -0.045, heel: 1, shrug: -0.12, pro: 0, hinge: -1.0, beta: 0.6 };
+const HOLD: Keys = { lift: 0, reach: 1, hipTurn: 1.72, hipTilt: 0.07, hipSide: -0.02, chestTurn: 2.05, chestTilt: 0.16, chestSide: 0.12, shift: 0.19, drop: -0.02, heel: 1, shrug: -0.12, pro: 0, hinge: -1.0, beta: 0.6 };
 // where each key sits: back/follow by the hands' angle as a fraction of a full top/finish, down by fraction of this top
 const KF_BACK: [number, Keys][] = [[0, A], [0.3, TAKE], [0.55, HALF], [0.8, B3Q], [1, T]];
 const KF_DOWN: [number, Keys][] = [[0, T], [0.15, TRANS], [0.45, DOWN], [0.62, DELIV], [0.8, LATE], [1, I]];
