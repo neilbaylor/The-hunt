@@ -619,10 +619,10 @@ function frame(now: number) {
       const expect = plan?.targetCarryYds ?? tot;
       const outcome: Outcome = onGreen && near!.d / YD < 1 ? 'holed' : onGreen && near!.d / YD < 5 ? 'near' : Math.abs(off) > 28 || tot < expect * 0.45 ? 'shank'
         : pured ? 'pure' : plan?.tempoCls === 'bad' ? 'bad' : onGreen || plan?.tempoCls === 'good' ? 'good' : 'ok';
-      if (outcome === 'pure') faceBadge.setWord('Pured it', 'good'); else if (outcome === 'shank') faceBadge.setWord('Ouch', 'bad');
+      if (outcome === 'shank') faceBadge.setWord('Ouch', 'bad');   // otherwise the timing word (+ shape) from the strike stays
       faceBadge.react(outcome, `${tot.toFixed(0)} yds${onGreen ? ', on the green' : ''}.`);
       const pinFt = near && near.t ? near.d / YD * 3 : 999;
-      const how = { pure: 'PURED', good: 'SOLID', ok: 'OKAY', bad: 'ROUGH ONE', shank: 'OUCH', near: 'STIFF', holed: 'HOLED' }[outcome];
+      const how = { pure: 'PERFECT', good: 'SOLID', ok: 'OKAY', bad: 'ROUGH ONE', shank: 'OUCH', near: 'STIFF', holed: 'HOLED' }[outcome];
       hud.edResult(tot, `YARDS · ${how}${onGreen ? ` · ${pinFt < 60 ? Math.round(pinFt) + ' FT FROM THE PIN' : 'ON THE GREEN'}` : Math.abs(off) >= 1 ? ` · ${Math.abs(off).toFixed(0)} ${off < 0 ? 'LEFT' : 'RIGHT'}` : ' · ONLINE'}`);
       if (outcome === 'pure' || outcome === 'near' || outcome === 'holed') hud.celebrate(outcome === 'pure' ? 18 : 34);
       void msg;

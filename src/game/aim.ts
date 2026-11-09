@@ -299,7 +299,7 @@ export class AimController {
     const c = aim.curve; if (Math.abs(c) < 0.08) return 'Straight';
     const right = c > 0; // ball bends right
     const draw = this.o.lefty ? right : !right;
-    return (Math.abs(c) > 0.65 ? (draw ? 'Hook' : 'Slice') : (draw ? 'Draw' : 'Fade'));
+    return (Math.abs(c) > 0.65 ? (draw ? 'Hook' : 'Slice') : (draw ? 'Draw' : 'Cut'));
   }
 
   /** per frame. showGuide: the swing-camera arrow (ready state, not flying) */

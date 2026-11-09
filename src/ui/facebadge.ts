@@ -14,7 +14,7 @@ export interface FaceLike {
 export type Outcome = 'pure' | 'good' | 'ok' | 'bad' | 'shank' | 'near' | 'holed';
 
 const LINES: Record<Outcome, string[]> = {
-  pure: ['Right out of the screws!', 'Pured it. Did you hear that?', 'That one felt like butter.'],
+  pure: ['Right out of the screws!', 'Perfect. Did you hear that?', 'That one felt like butter.'],
   good: ['I\'ll take that all day.', 'Nice and solid.', 'Good swing, that.'],
   ok: ['Not bad. Not great.', 'We go again.', 'Playable.'],
   bad: ['Ugh. Rushed it.', 'That\'s not the one.', 'Hands got quick there.'],

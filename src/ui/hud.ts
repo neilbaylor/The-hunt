@@ -273,7 +273,8 @@ const curveTxt = (c: CardData) => {
   const v = c.curveYds; if (v === undefined) return c.plan.shape;
   if (Math.abs(v) < 1.5) return 'Straight';
   const right = v > 0, draw = c.lefty ? right : !right;
-  return `${Math.abs(v) > 18 ? (draw ? 'Hook' : 'Slice') : (draw ? 'Draw' : 'Fade')} · ${Math.abs(v).toFixed(0)} yds`;
+  const a = Math.abs(v), name = a > 24 ? (draw ? 'Duck hook' : 'Banana slice') : a > 11 ? (draw ? 'Hook' : 'Slice') : (draw ? 'Draw' : 'Cut');
+  return `${name} · ${a.toFixed(0)} yds`;
 };
 const spinTxt = (c: CardData) => {
   const s = c.addSpin; if (!s) return '';
@@ -349,7 +350,7 @@ export class Hud {
       <div class="strike-pop" id="strikePop" hidden><div class="sp-card" role="dialog" aria-modal="true" aria-labelledby="spTitle">
         <div class="sp-head"><b id="spTitle">Strike point</b><small id="spRead">Dead centre</small></div>
         <div class="sp-ball" id="spBall"><canvas width="440" height="440" aria-hidden="true"></canvas>
-          <span class="sp-lab t">Lower</span><span class="sp-lab b">Higher</span><span class="sp-lab l">Fade</span><span class="sp-lab r">Draw</span>
+          <span class="sp-lab t">Lower</span><span class="sp-lab b">Higher</span><span class="sp-lab l">Cut</span><span class="sp-lab r">Draw</span>
           <i class="sp-cross" aria-hidden="true"></i><button type="button" class="sp-ret" id="spRet" aria-label="Strike target. Drag, or use the arrow keys"></button></div>
         <div class="sp-btns"><button type="button" class="sp-btn ghost" data-act="strike-centre">Centre</button><button type="button" class="sp-btn" data-act="strike-done">Done</button></div>
       </div></div>`;
@@ -668,8 +669,8 @@ export class Hud {
     this.strike = { x, y };
     // screen position: outer (+x) is screen left, top (+y) is screen up
     for (const el of [this.q('.strike-btn'), this.q('#spBall')]) { el.style.setProperty('--sx', String(-x)); el.style.setProperty('--sy', String(-y)); }
-    const v = y > 0.15 ? 'High' : y < -0.15 ? 'Low' : '', h = x > 0.15 ? 'Fade' : x < -0.15 ? 'Draw' : '';
-    const fly = [y > 0.15 ? 'flies lower' : y < -0.15 ? 'flies higher' : '', x > 0.15 ? 'fades' : x < -0.15 ? 'draws' : ''].filter(Boolean).join(', ');
+    const v = y > 0.15 ? 'High' : y < -0.15 ? 'Low' : '', h = x > 0.15 ? 'Cut' : x < -0.15 ? 'Draw' : '';
+    const fly = [y > 0.15 ? 'flies lower' : y < -0.15 ? 'flies higher' : '', x > 0.15 ? 'cuts' : x < -0.15 ? 'draws' : ''].filter(Boolean).join(', ');
     const label = v || h ? `${[v, h].filter(Boolean).join(' · ')}${fly ? ' — ' + fly : ''}` : 'Dead centre';
     this.q('#spRead').textContent = label;
     this.q('.strike-btn').setAttribute('aria-label', `Strike point: ${label}. Choose where to hit the ball`);
