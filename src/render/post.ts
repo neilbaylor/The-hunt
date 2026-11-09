@@ -5,8 +5,9 @@
 //   med  : render → depth of field → bloom (half res) → output (tone map + sRGB) → grade + vignette → FXAA → sharpen
 //   high : MSAA render → depth of field → GTAO → bloom → output → grade + vignette → sharpen
 //
-// med/high also run the hand-drawn realism finish (styles.ts HandDrawnPass) right after the scene render: ink contours,
-// shadow hatching, paper grain, the face kept clean (setFace). ?style=real turns it off (setFinish('real')); low skips it.
+// med/high also run the finish (styles.ts HandDrawnPass) right after the scene render. The default ('soft') is a gentle
+// edge-preserving paint smoothing that hides CG flaws, the face kept clean (setFace); ?style= picks the stronger
+// hand-drawn options. ?style=real turns it off (setFinish('real')); low skips it.
 //
 // Depth of field is the broadcast "long lens" look, kept subtle: the golfer, the turf, the flags and the side
 // trees stay sharp; only the far treeline and the hills soften a touch. Only background pixels are blurred and only background pixels feed the blur,
@@ -254,7 +255,7 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
     if (quality === 'med') composer.addPass(new FXAAPass());
     sharpPass = new ShaderPass(SharpenShader);
     sharpPass.uniforms.resolution.value.set(size.x * pr, size.y * pr);
-    sharpPass.uniforms.amount.value = (quality === 'high' ? 0.5 : 0.7) * (finish === 'hand' ? 0.5 : 1);
+    sharpPass.uniforms.amount.value = quality === 'high' ? 0.5 : 0.7;
     composer.addPass(sharpPass);
     applyGrade();
   }

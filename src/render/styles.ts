@@ -391,7 +391,8 @@ export function createStyler(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
 // forgivable (plastic skin, likeness, stiff hands, CG cloth folds, low-poly trees) without looking cartoony.
 // One EffectComposer pass on the linear HDR scene right after the RenderPass (the scene depth is still intact there),
 // driven by a preset of parameters:
-//   painterly (default) · gouache · inkwash · pencil · graphic · dream · none     (?style=..., ?style=real = no pass)
+//   soft (default: polished realistic, painted only on a second look) · painterly · gouache · inkwash · pencil · graphic
+//   · dream · none     (?style=..., ?style=real = no pass)
 // Building blocks: an edge-preserving Kuwahara (3x3 med, 5x5 high; smaller and lighter on the face so eyes, brows and
 // mouth stay readable), specular roll-off, soft value bands, matte/chalky lift, warm shadows, a brush texture only in
 // large flat areas, watercolour wash, pencil grain in the shadows, a faint warm silhouette line (depth jumps, near
@@ -400,16 +401,19 @@ export function createStyler(renderer: THREE.WebGLRenderer, scene: THREE.Scene, 
 // Analysis (luma, bands) uses a cheap tone-mapped proxy of the HDR colour; the changes apply to the HDR colour.
 
 export type HandTier = 'med' | 'high';
-export type HandStyle = 'painterly' | 'gouache' | 'inkwash' | 'pencil' | 'graphic' | 'dream' | 'none';
+export type HandStyle = 'soft' | 'painterly' | 'gouache' | 'inkwash' | 'pencil' | 'graphic' | 'dream' | 'none';
 
 interface HandParams {
-  paint: number; sp: number; brush: number; bands: number; steps: number; shadowBands: number; sheen: number; matte: number;
+  paint: number; paintFar: number; sp: number; brush: number; bands: number; steps: number; shadowBands: number; sheen: number; matte: number;
   warmShadow: number; warmHi: number; sat: number; wash: number; edge: number; pencil: number; hatch: number;
   ink: number; inkW: number; inkFar: number; rim: number; glow: number; grain: number;
 }
-const ZERO: HandParams = { paint: 0, sp: 1, brush: 0, bands: 0, steps: 6, shadowBands: 0, sheen: 0, matte: 0, warmShadow: 0, warmHi: 0, sat: 1,
+const ZERO: HandParams = { paint: 0, paintFar: 1, sp: 1, brush: 0, bands: 0, steps: 6, shadowBands: 0, sheen: 0, matte: 0, warmShadow: 0, warmHi: 0, sat: 1,
   wash: 0, edge: 0, pencil: 0, hatch: 0, ink: 0, inkW: 1, inkFar: 30, rim: 0, glow: 0, grain: 0 };
 export const HAND_STYLES: Record<HandStyle, { label: string; desc: string; p: HandParams }> = {
+  // the default: reads as polished realistic; the painted quality only shows on a second look
+  soft: { label: 'Polished (default)', desc: 'Gentle edge-preserving paint smoothing that hides CG flaws, a soft specular roll-off and a touch of warmth. No lines, no hatching.',
+    p: { ...ZERO, paint: 0.7, paintFar: 0.45, sheen: 0.7, warmHi: 0.25, grain: 0.1 } },
   painterly: { label: 'Painterly light', desc: 'Edge-preserving paint smoothing, soft brush texture in flat areas, a faint silhouette line.',
     p: { ...ZERO, paint: 1, brush: 1, bands: 0.22, sheen: 1, warmHi: 0.3, ink: 0.3, hatch: 0.09, grain: 0.3 } },
   gouache: { label: 'Gouache', desc: 'Flatter value bands, a matte chalky finish, warm shadows, no lines; illustrated golf poster.',
@@ -427,15 +431,15 @@ export const HAND_STYLES: Record<HandStyle, { label: string; desc: string; p: Ha
 
 const QS_ = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 const num01 = (k: string) => { const v = QS_.get(k); return v !== null && isFinite(+v) ? THREE.MathUtils.clamp(+v, 0, 1) : null; };
-/** the preset named by ?style= (painterly when absent or unknown) */
-export const HAND_STYLE: HandStyle = ((s) => (s && s in HAND_STYLES ? s as HandStyle : 'painterly'))(QS_.get('style'));
+/** the preset named by ?style= (soft when absent or unknown) */
+export const HAND_STYLE: HandStyle = ((s) => (s && s in HAND_STYLES ? s as HandStyle : 'soft'))(QS_.get('style'));
 const INK_Q = num01('ink'), PAINT_Q = num01('paint');
 
 const HAND_FRAG = /* glsl */`
 #include <packing>
 uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform vec2 res; uniform float px, cNear, cFar, exposure, aspect;
 uniform vec4 face; // uv.xy, radius (in screen heights), view depth (0 = none)
-uniform float uPaint, uSp, uBrush, uBands, uSteps, uShadowBands, uSheen, uMatte, uWarmShadow, uWarmHi, uSat, uWash, uEdge;
+uniform float uPaint, uPaintFar, uSp, uBrush, uBands, uSteps, uShadowBands, uSheen, uMatte, uWarmShadow, uWarmHi, uSat, uWash, uEdge;
 uniform float uPencil, uHatch, uInk, uInkW, uInkFar, uRim, uGlow, uGrain;
 varying vec2 vUv;
 #ifndef KR
@@ -472,7 +476,7 @@ void main() {
     float a0 = luma(disp(m0)), a1 = luma(disp(m1)), a2 = luma(disp(m2)), a3 = luma(disp(m3));
     float s0 = q0 / n - a0 * a0, s1 = q1 / n - a1 * a1, s2 = q2 / n - a2 * a2, s3 = q3 / n - a3 * a3;
     vec3 kc = m0; float b = s0; if (s1 < b) { b = s1; kc = m1; } if (s2 < b) { b = s2; kc = m2; } if (s3 < b) { b = s3; kc = m3; }
-    c = mix(c, kc, uPaint * mix(0.55, 0.85, near0) * mix(1.0, 0.45, fm));
+    c = mix(c, kc, uPaint * mix(0.55 * uPaintFar, 0.85, near0) * mix(1.0, 0.45, fm));
     blurC = (m0 + m1 + m2 + m3) * 0.25;
     flat0 = 1.0 - smoothstep(0.0004, 0.004, b);
     vari = max(max(s0, s1), max(s2, s3));
