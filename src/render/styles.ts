@@ -540,7 +540,9 @@ export class HandDrawnPass extends Pass {
     this.quad.render(renderer);
     (this.copy.material as THREE.ShaderMaterial).uniforms.t.value = this.rt.texture;
     renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
+    const ac = renderer.autoClear; renderer.autoClear = false;   // keep the scene depth for depth of field
     this.copy.render(renderer);
+    renderer.autoClear = ac;
   }
   dispose() { this.mat.dispose(); this.quad.dispose(); this.rt.dispose(); this.copy.material.dispose(); this.copy.dispose(); }
 }

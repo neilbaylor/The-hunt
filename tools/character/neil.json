@@ -379,6 +379,7 @@
   "untucked": false,
   "tuckDepth": 0.015,
   "blouse": 0.012,
+  "blouseAt": 0.045,
   "untuckedDrop": 0.07
  },
  "faceShape": {

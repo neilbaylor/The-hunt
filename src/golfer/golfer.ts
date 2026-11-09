@@ -40,10 +40,10 @@ interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: n
 const K = (o: Partial<Keys>, base: Keys): Keys => ({ ...base, ...o });
 // address: spine bent toward the ball and tilted away from the target (trail shoulder low, lead hip high)
 const A: Keys = { lift: 0, reach: 1, hipTurn: 0.04, hipTilt: 0.28, hipSide: 0.07, chestTurn: 0.04, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15, hinge: 0, beta: 0 };
-const TAKE = K({ hipTurn: -0.16, hipSide: 0.05, chestTurn: -0.7, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.41, beta: -0.06 }, A);
+const TAKE = K({ hipTurn: -0.16, hipSide: 0.05, chestTurn: -0.7, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.32, beta: -0.12 }, A);
 const HALF = K({ lift: 0.06, reach: 1.06, hipTurn: -0.4, hipSide: 0.02, chestTurn: -1.15, chestTilt: 0.67, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.1 }, A);
 const B3Q = K({ lift: 0.18, reach: 1.3, hipTurn: -0.6, hipTilt: 0.26, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.69, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.28 }, A);
-const T: Keys = { lift: 0.3, reach: 1.42, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.25, pro: 0.1, hinge: 0.88, beta: -0.32 };
+const T: Keys = { lift: 0.3, reach: 1.42, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.25, pro: 0.1, hinge: 0.98, beta: -0.32 };
 // downswing: the hips lead (they're already unwinding while the chest is still turned), the trail side drops
 const TRANS = K({ lift: 0.28, reach: 1.38, hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
 const DOWN = K({ lift: 0.12, reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.56, beta: -0.16 }, T);
@@ -375,7 +375,7 @@ export class Golfer {
     const psi = phi + hinge;
     // the hands are carried round the body by beta; the club turns with them only half as much going back (keeps it on
     // line, pointing down the target line at the top, rather than across it)
-    const betaClub = s.phase === 'back' || s.phase === 'down' ? beta * 0.53 : beta;
+    const betaClub = beta * (s.phase === 'back' ? 1 - 0.47 * smooth(0.35, 0.85, Math.max(0, phi) / PHI_TOP) : s.phase === 'down' ? 1 - 0.47 * smooth(0.3, 0.9, Math.max(0, phi) / Math.max(0.01, s.topPhi)) : 1);
     const qc = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), betaClub).multiply(new THREE.Quaternion().setFromAxisAngle(this.axis, psi));
     const g = this.club.group;
     g.position.copy(hands).sub(this.club.gripLead.clone().applyQuaternion(qc));

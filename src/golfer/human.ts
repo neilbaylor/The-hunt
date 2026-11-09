@@ -527,7 +527,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     for (let i = 0; i < SEG; i++) {
       const a = (i / SEG) * Math.PI * 2, guess = new THREE.Vector3(B.cx + Math.sin(a) * (B.rx + 0.03), B.y, B.cz + Math.cos(a) * (B.rz + 0.03));
       const { q, n } = near(guess); n.y = 0; n.normalize();
-      ring.push({ p: new THREE.Vector3(q.x, B.y, q.z).addScaledVector(n, 0.0025), n });
+      ring.push({ p: new THREE.Vector3(q.x, B.y, q.z).addScaledVector(n, 0.0035), n });
     }
     for (let pass = 0; pass < 3; pass++) { const r0 = ring.map(r => r.p.clone()); ring.forEach((r, i) => r.p.copy(r0[(i + SEG - 1) % SEG]).add(r0[(i + 1) % SEG]).multiplyScalar(0.25).addScaledVector(r0[i], 0.5)); }
     const at = (a: number) => {   // interpolated point + outward normal round the belt at angle a (0 = front)
