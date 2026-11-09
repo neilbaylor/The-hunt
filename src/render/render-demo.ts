@@ -83,6 +83,7 @@ else if (view === 'flight') {
 } else { camera.position.set(-0.6, 1.62, 5.2); camera.lookAt(0.45, 0.92, -22); }
 if (view === 'portrait' || view === 'landscape' || view === 'turf') { range.setShadowFocus(new THREE.Vector3(0.95, 0, 0), 3.5); range.contactShadow(new THREE.Vector3(0.95, 0, 0), 1, 0.5); }
 
+(window as unknown as { __scene: THREE.Scene }).__scene = scene;
 const stats = document.getElementById('stats')!;
 if (qs.get('stats') === '0') stats.style.display = 'none';
 let last = performance.now(), frames = 0;

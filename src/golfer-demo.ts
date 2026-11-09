@@ -22,7 +22,7 @@ const envScene = new THREE.Scene(); envScene.background = new THREE.Color('#bcd6
 envScene.add(new THREE.HemisphereLight('#ffffff', '#55703a', 3));
 scene.environment = pmrem.fromScene(envScene as any, 0.04).texture;
 
-const golfer = new Golfer(NEIL, q.has('old') ? undefined : await loadNeil());
+const golfer = new Golfer(q.get('head') === 'makehuman' ? { ...NEIL, head: 'makehuman' } : NEIL, q.has('old') ? undefined : await loadNeil());   // head=makehuman: the old face
 golfer.setClub(+(q.get('club') ?? 6), (q.get('mode') ?? 'full') as ShotMode);
 scene.add(golfer.root);
 for (const h of (q.get('hide') ?? '').split(',')) golfer.body.root.traverse(o => { if (h && o.name === h) o.visible = false; });

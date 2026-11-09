@@ -53,6 +53,8 @@ export interface GolferProfile {
   look: Look;
   outfit: Outfit;
   swing: SwingStyle;
+  /** face: 'generated' = the textured head made from the portrait (tools/character/head.py), 'makehuman' = the fitted base mesh */
+  head?: 'generated' | 'makehuman';
 }
 
 // Player 1. Left-handed, 6'3", 180 lb: tall and lean.
@@ -91,6 +93,7 @@ export const NEIL: GolferProfile = {
     untucked: true,
     headwear: { kind: 'visor', color: '#f3efe4', under: '#24382b', logo: 'pizza-hut' },
   },
+  head: 'generated',
   swing: { tempo: 1.1, length: 1.0, finishHigh: 1.0, waggle: true }, // ≈1.3 s to a full top with the eased approach
 };
 

@@ -6,19 +6,21 @@ import type { Body, Skeleton as SkelInfo } from './body';
 import type { GolferProfile } from './profile';
 import { buildVisor } from './headwear';
 import { applyFabric } from './fabric';
+import { buildGenHead, hideAboveSeam, loadGenHead, type GenHeadData } from './genhead';
 import crestUrl from '../assets/brand/toronto-hunt-crest.png?url';
 
 export interface HumanData {
   meta: {
     bones: string[]; parents: number[]; joint: number[][]; tail: number[][];
     eye: number[]; headCenter: number[]; visor: { center: number[]; rx: number; rz: number; profile?: number[] };
-    eyeballs: Record<'l' | 'r', { c: number[]; r: number }>; iris: number[];
+    eyeballs: Record<'l' | 'r', { c: number[]; r: number }>; iris: number[]; paintedMouth?: boolean; paintedSmile?: number | null;
     collar: number[][]; belt: { y: number; cx: number; cz: number; rx: number; rz: number };
     feet: Record<'l' | 'r', { heelZ: number; toeZ: number; x: number; halfW: number; ankleY: number }>;
     meshes: Record<string, Record<string, { offset: number; count: number; type: string }>>;
   };
   buf: ArrayBuffer; blobStart: number;
   skin: HTMLImageElement; eyes: HTMLImageElement; skinSmile?: HTMLImageElement;
+  head?: GenHeadData;   // the generated head (tools/character/head.py), if loaded
 }
 
 const loadImage = (url: string) => new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
@@ -37,6 +39,12 @@ export async function loadHuman(binUrl: string, skinUrl: string, eyesUrl: string
   const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, len)));
   const blobStart = (8 + len + 3) & ~3;
   return { meta, buf, blobStart, skin, eyes, skinSmile };
+}
+
+/** loadHuman plus the generated head */
+export async function loadHumanWithHead(binUrl: string, skinUrl: string, eyesUrl: string, smileUrl: string | undefined, headBin: string, headTex: string): Promise<HumanData> {
+  const [h, head] = await Promise.all([loadHuman(binUrl, skinUrl, eyesUrl, smileUrl), loadGenHead(headBin, headTex).catch(e => { console.warn('generated head failed to load', e); return undefined; })]);
+  return { ...h, head };
 }
 
 export interface HumanExtras {
@@ -122,9 +130,14 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const fu = { kneeY: J[M.bones.indexOf('calf_l')].y, ankleY: J[M.bones.indexOf('foot_l')].y, beltY: M.belt.y, backZ: M.belt.cz };
   const skinMat = new THREE.MeshPhysicalMaterial({ map: tex(data.skin), roughness: 0.5, sheen: 0.4, sheenColor: new THREE.Color('#ff8e6e'), sheenRoughness: 0.5, clearcoat: 0.06, clearcoatRoughness: 0.45 });
   const smileAmt = { value: 0 };
-  applyFabric(skinMat, 'skin', data.skinSmile ? { ...fu, smile: { map: tex(data.skinSmile), amount: smileAmt } } : fu);
+  // the generated head (from the portrait, which already smiles) replaces the MakeHuman face; profile.head = 'makehuman' switches back
+  const genOn = !!data.head && p.head !== 'makehuman';
+  applyFabric(skinMat, 'skin', data.skinSmile && !genOn ? { ...fu, smile: { map: tex(data.skinSmile), amount: smileAmt } } : fu);
   const skin = add('skin', skinMat)!;
-  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.84, sheen: 0.35, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const eyeL = M.eyeballs.l.c, eyeR = M.eyeballs.r.c;
+  const gen = genOn ? buildGenHead(data.head!, M.bones, skeleton, root, new THREE.Vector3(...(M.eye as [number, number, number])), Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1], eyeL[2] - eyeR[2]), M.visor.center[1] - 0.012) : null;
+  if (gen) { hideAboveSeam(skinMat, gen.seam); skinMat.color.copy(gen.tint); meshes.push(gen.mesh); }
+  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
     // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
     const crest = O.chestLogo === 'malbon-m' ? canvasTex(512, 512, g => {
@@ -144,13 +157,28 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.07, M.collar.reduce((a, c) => Math.max(a, c[1]), -9) - 0.115, cz) : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.06 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
   }
   const shirtMesh = add('shirt', shirtMat);
+  // the shells are split along their UV seams; average the normals across those splits so the fabric shades
+  // smoothly (otherwise every seam shows as a hard line)
+  const weldNormals = (m: THREE.Mesh | null) => {
+    if (!m) return;
+    const pa = m.geometry.getAttribute('position') as THREE.BufferAttribute, na = m.geometry.getAttribute('normal') as THREE.BufferAttribute;
+    const groups = new Map<string, number[]>();
+    for (let i = 0; i < pa.count; i++) { const k = `${Math.round(pa.getX(i) * 1e4)},${Math.round(pa.getY(i) * 1e4)},${Math.round(pa.getZ(i) * 1e4)}`; const g = groups.get(k); if (g) g.push(i); else groups.set(k, [i]); }
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      const n = new THREE.Vector3(); for (const i of g) n.x += na.getX(i), n.y += na.getY(i), n.z += na.getZ(i);
+      n.normalize(); for (const i of g) na.setXYZ(i, n.x, n.y, n.z);
+    }
+    na.needsUpdate = true;
+  };
+  weldNormals(shirtMesh);
   const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.82, sheen: 0.3, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.6), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   applyFabric(pantsMat, 'chino', fu);
-  add('pants', pantsMat);
+  weldNormals(add('pants', pantsMat));
   const glove = new THREE.MeshPhysicalMaterial({ color: O.glove, roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color('#ffffff'), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   applyFabric(glove, 'glove', fu);
   add('glove', glove);
-  const sockMat = new THREE.MeshPhysicalMaterial({ color: '#f2f1ec', roughness: 0.95, sheen: 0.6, sheenColor: new THREE.Color('#ffffff'), polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const sockMat = new THREE.MeshPhysicalMaterial({ color: '#f2f1ec', roughness: 0.95, sheen: 0.6, sheenColor: new THREE.Color('#ffffff'), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   applyFabric(sockMat, 'glove', fu);
   add('socks', sockMat);
   void fabricNormal;
@@ -269,6 +297,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const ring0 = M.collar.map(a => new THREE.Vector3(a[0], a[1], a[2]));
     const c = ring0.reduce((a, b) => a.add(b), new THREE.Vector3()).multiplyScalar(1 / ring0.length);
     const loY = Math.min(...ring0.map(q => q.y)) - 0.16;
+    const inside = new THREE.Vector3(c.x, c.y - 0.16, c.z - 0.02);
     const cand: number[] = [];
     for (let i = 0; i < sp.count; i++) if (sp.getY(i) > loY && Math.hypot(sp.getX(i) - c.x, sp.getZ(i) - c.z) < 0.24) cand.push(i);
     const near = (p: THREE.Vector3) => {   // smoothed nearest surface point + normal (6 nearest, inverse-distance weighted)
@@ -279,7 +308,10 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       }
       const q = new THREE.Vector3(), n = new THREE.Vector3(); let ws = 0;
       for (const [d, i] of best) { const w = 1 / (Math.sqrt(d) + 0.002); ws += w; q.x += sp.getX(i) * w; q.y += sp.getY(i) * w; q.z += sp.getZ(i) * w; n.x += sn.getX(i) * w; n.y += sn.getY(i) * w; n.z += sn.getZ(i) * w; }
-      return { q: q.multiplyScalar(1 / ws), n: n.normalize() };
+      q.multiplyScalar(1 / ws); n.normalize();
+      // make sure the normal points out of the body (away from a point inside the chest below the neck)
+      if (n.dot(q.clone().sub(inside)) < 0) n.negate();
+      return { q, n };
     };
     // the neckline as a smooth closed curve: a low-order Fourier fit of radius and height against angle round the neck
     const sam = ring0.map(q => ({ a: Math.atan2(q.x - c.x, q.z - c.z), r: Math.hypot(q.x - c.x, q.z - c.z), y: q.y })).sort((x, y) => x.a - y.a);
@@ -302,21 +334,20 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const sg = Math.sin(a) >= 0 ? 1 : -1;
       const end = Math.max(0, 1 - Math.min(s, 1 - s) / 0.16);             // 1 at the collar points, 0 away from them
       const fr = Math.max(0, Math.cos(a));
-      const standH = 0.025 - 0.007 * fr, rr = 0.0032;
-      const leafH = 0.04 + 0.024 * end * end + 0.006 * fr, leafOut = 0.012 + 0.008 * fr;
-      // cross-section (out, up) from the neck seam: stand, the soft roll over the top, the leaf, a turned edge
+      const standH = 0.026 - 0.008 * fr, rr = 0.0034;
+      // the leaf falls over the stand and spreads out onto the shoulders; longer towards the points
+      const leafH = 0.045 + 0.008 * Math.abs(Math.sin(a)) + 0.022 * end * end, leafOut = 0.024 + 0.012 * Math.abs(Math.sin(a)) + 0.012 * fr;
+      // cross-section (out, up) from the neck seam: stand, the soft roll over the top, then the leaf
       const prof: [number, number, number][] = [];   // [out, up, u along the leaf for the point's sweep]
       prof.push([-0.0025, -0.004, 0], [-0.0028, standH * 0.5, 0], [-0.0025, standH - 0.002, 0]);
       const cx = -0.0025 + rr;
       for (let k = 1; k <= 5; k++) { const ph = Math.PI - (k / 6) * Math.PI; prof.push([cx + rr * Math.cos(ph), standH - 0.002 + rr * Math.sin(ph), 0]); }
       const L0 = cx + rr;
       for (let k = 0; k <= 8; k++) { const u = k / 8; prof.push([L0 + leafOut * Math.sin(u * Math.PI / 2), standH - 0.002 - leafH * Math.pow(u, 1.15), u]); }
-      const last = prof[prof.length - 1];
-      prof.push([last[0] - 0.0012, last[1] - 0.0016, 1], [last[0] - 0.0032, last[1] - 0.0011, 1]);
       rows = prof.length;
       for (const [o, up, u] of prof) {
-        // towards the points the leaf sweeps forward past the neckline end, so the front edge slants down to a point
-        const aa = a - sg * 0.2 * end * u * u;
+        // towards the points the leaf turns out to the side, so the points lie on the collarbones
+        const aa = a + sg * 0.55 * end * end * u;
         const q = neck(aa, o, up);
         pos.push(q.x, q.y, q.z);
       }
@@ -326,7 +357,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const setP = (i: number, r: number, v: THREE.Vector3) => { pos[(i * rows + r) * 3] = v.x; pos[(i * rows + r) * 3 + 1] = v.y; pos[(i * rows + r) * 3 + 2] = v.z; };
     const lift = (v: THREE.Vector3, gap: number) => { const { q, n } = near(v); const d = v.clone().sub(q).dot(n); if (d < gap) v.addScaledVector(n, gap - d); return v; };
     for (let pass = 0; pass < 2; pass++) {
-      for (let i = 0; i <= COLS; i++) for (let r = 9; r < rows; r++) setP(i, r, lift(P(i, r), r >= rows - 2 ? 0.0022 : 0.0035));
+      for (let i = 0; i <= COLS; i++) for (let r = 9; r < rows; r++) setP(i, r, lift(P(i, r), 0.0035));
       // relax along the collar so the laid leaf stays smooth
       const cp = pos.slice();
       for (let i = 1; i < COLS; i++) for (let r = 9; r < rows; r++) for (let k = 0; k < 3; k++) {
@@ -336,9 +367,14 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     for (let i = 0; i < COLS; i++) for (let r = 0; r < rows - 1; r++) { const a = i * rows + r, b = a + rows; idx.push(a, b, a + 1, a + 1, b, b + 1); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
     g.translate(-J[chestBi].x, -J[chestBi].y, -J[chestBi].z);
-    const collarMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.84, sheen: 0.35, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide });
+    const collarMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const col = new THREE.Mesh(g, collarMat);
     col.castShadow = col.receiveShadow = true; bones[chestBi].add(col); meshes.push(col);
+    // a little thickness: a soft rolled edge along the leaf's outer edge
+    const rim: THREE.Vector3[] = [];
+    for (let i = 0; i <= COLS; i++) rim.push(P(i, rows - 1).sub(J[chestBi]));
+    const rimM = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim), COLS, 0.0016, 6), collarMat);
+    rimM.castShadow = true; bones[chestBi].add(rimM);
     // placket: a stitched strip laid on the shirt from the neckline down, with two white four-hole buttons
     const top = neck(0);
     const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.28)'; g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(5, -10, 54, 258); g.beginPath(); g.moveTo(32, -10); g.lineTo(32, 250); g.stroke(); }, true, 1);
@@ -395,12 +431,12 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     if (t > 0.74) { const k = (t - 0.74) / 0.26; return Math.pow(Math.max(0, 1 - Math.pow(k, 2.3)), 1 / 2.3) * (1 - 0.18 * k); }  // long rounded toe
     return widthK(t);
   };
-  const hRel = smooth([[0, 0.063], [0.1, 0.062], [0.27, 0.052], [0.42, 0.06], [0.5, 0.072], [0.6, 0.064], [0.7, 0.051], [0.8, 0.04], [0.88, 0.032], [0.94, 0.023], [0.98, 0.013], [1, 0.005]]);
+  const hRel = smooth([[0, 0.063], [0.1, 0.062], [0.27, 0.052], [0.42, 0.06], [0.5, 0.072], [0.6, 0.064], [0.7, 0.052], [0.8, 0.043], [0.88, 0.036], [0.94, 0.028], [0.98, 0.017], [1, 0.006]]);
   const spring = (t: number) => (t > 0.68 ? ((t - 0.68) / 0.32) ** 2 * 0.022 : 0);
   const SOLE_TOP = 0.021;
   const T0 = 0.045, T1 = 0.5;                                            // the ankle opening runs from T0 back... to T1 (the throat)
   const xOpen = (t: number, W: number) => { const k = (t - (T0 + T1) / 2) / ((T1 - T0) / 2); return Math.abs(k) >= 1 ? 0 : Math.min(0.9 * W, 0.036 * Math.sqrt(1 - k * k)); };
-  const shoeDims = (f: { heelZ: number; toeZ: number; halfW: number }) => ({ len: f.toeZ - f.heelZ + 0.028, z0: f.heelZ - 0.012, hw: f.halfW + 0.012 });
+  const shoeDims = (f: { heelZ: number; toeZ: number; halfW: number }) => ({ len: f.toeZ - f.heelZ + 0.02, z0: f.heelZ - 0.012, hw: f.halfW + 0.012 });
   // one half of a cross-section: angle range and the arch height for that half
   const half = (t: number, W: number, outer: boolean) => {
     const xo = xOpen(t, W);
@@ -441,11 +477,11 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     // finer row beside the big one where `fancy`). side = which side of the edge the overlapping piece lies
     const seam = (pts: [number, number][], side = 1, punch = true, fancy = false) => {
       const c = curve(pts);
-      line(offset(c, -side * 3), 'rgba(0,0,0,.16)', 7);
-      line(c, 'rgba(60,54,48,.75)', 2.5);
-      line(offset(c, side * 8), 'rgba(90,84,76,.7)', 2, [7, 5]);
-      line(offset(c, side * 37), 'rgba(90,84,76,.55)', 2, [7, 5]);
-      if (punch) { holes(offset(c, side * 17), 15, 4.6); if (fancy) holes(offset(c, side * 27), 10, 2.4); }
+      line(offset(c, -side * 5), 'rgba(0,0,0,.2)', 11);
+      line(c, 'rgba(55,50,44,.85)', 4);
+      line(offset(c, side * 10), 'rgba(85,78,70,.75)', 3, [9, 6]);
+      line(offset(c, side * 44), 'rgba(85,78,70,.6)', 3, [9, 6]);
+      if (punch) { holes(offset(c, side * 21), 19, 6); if (fancy) holes(offset(c, side * 33), 13, 3.4); }
     };
     for (const m of [1, -1]) {
       const U = (u: number) => (m > 0 ? u : 1 - u);
@@ -482,7 +518,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   soleTex.wrapS = THREE.RepeatWrapping; soleTex.wrapT = THREE.ClampToEdgeWrapping; soleTex.repeat.set(1, 1);
   const soleMat = new THREE.MeshStandardMaterial({ map: soleTex, roughness: 0.55 });
   const weltMat = new THREE.MeshStandardMaterial({ color: '#2e2018', roughness: 0.6 });
-  const outsoleMat = new THREE.MeshStandardMaterial({ color: '#2a2420', roughness: 0.9 });
+  const outsoleMat = new THREE.MeshStandardMaterial({ color: '#7f5434', roughness: 0.7 });
   const laceMat = new THREE.MeshStandardMaterial({ color: '#f4f3ef', roughness: 0.75 });
   const liningMat = new THREE.MeshStandardMaterial({ color: '#f2f1ec', roughness: 0.95, side: THREE.DoubleSide });
   const spikeMat = new THREE.MeshStandardMaterial({ color: '#2b2622', roughness: 0.6, metalness: 0.2 });
@@ -637,7 +673,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
   }
   if (O.headwear?.kind === 'visor') {
-    const v = M.visor;
+    const v = gen ? gen.visor : M.visor;
     const g = buildVisor(O.headwear, v.rx, v.rz, 0, 0, p.handed === 'left', v.profile);
     g.position.set(v.center[0], v.center[1], v.center[2]).sub(J[headBi]);
     bones[headBi].add(g); meshes.push(g);
@@ -665,11 +701,15 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   }
 
   const setSmile = (v0: number) => {
-    const v = 0.22 + 0.78 * v0; // a hint of a smile at rest
+    // a painted face (unwrapped texture) is warped onto one fixed smile, so the mouth shape stays put
+    // the generated head's smile is the portrait's own: the hidden MakeHuman face stays neutral
+    const v = gen ? 0 : M.paintedMouth ? (M.paintedSmile ?? 0.9) : 0.22 + 0.78 * v0; // a hint of a smile at rest
     if (skin.morphTargetInfluences) skin.morphTargetInfluences[0] = v;
     if (teeth?.morphTargetInfluences) teeth.morphTargetInfluences[0] = v;
     smileAmt.value = Math.min(1, Math.max(0, (v - 0.15) * 1.3));
-    if (teeth) teeth.visible = v > 0.08; // closed mouth: keep teeth from showing through the lips
+    if (teeth) teeth.visible = v > 0.08 && !M.paintedMouth && !gen; // closed mouth: keep teeth from showing through the lips
   };
+  // with the generated head: its own hair, eyes and teeth replace the MakeHuman scalp shell, hair cards, eyeballs and teeth
+  if (gen) root.traverse(o => { if (['hair', 'hair-shell', 'eye', 'teeth'].includes(o.name)) o.visible = false; });
   return { root, bones, skel, meshes, materials: { skin: skinMat, glove }, setSmile, extras };
 }

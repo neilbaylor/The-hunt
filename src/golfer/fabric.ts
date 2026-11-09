@@ -24,18 +24,13 @@ vec3 bumpN(vec3 pos, vec3 n, float h){
 const BODY: Record<FabricKind, string> = {
   polo: /* glsl */ `
     float hem = vC.x, seam = vC.y;
-    // smooth matte poly/cotton jersey: no knit texture, just a few large soft drape undulations
-    float drape = fbm3(vB * vec3(3.0, 5.0, 3.0));
-    float hang = smoothstep(uBeltY + 0.25, uBeltY - 0.05, vB.y);   // more give where the body hangs free
-    h += 0.0016 * drape * (0.5 + 0.5 * hang);
-    // seams: a very shallow groove
+    // plain matte poly/cotton jersey: no knit texture and no painted folds (the drape is in the geometry);
+    // only a faint turned-back band at the hems and a barely-there shade along the seams
     float sg = 1.0 - smoothstep(0.0, 0.0025, seam);
-    h -= 0.00008 * sg;
-    // hems: a turned-back band (slightly raised, a touch darker at the fold line)
     float band = 1.0 - smoothstep(0.014, 0.018, hem);
-    h += 0.0004 * band;
-    col *= 1.0 - 0.03 * band;
+    col *= 1.0 - 0.035 * band;
     col *= 1.0 - 0.02 * sg;
+    h += 0.00015 * smoothstep(0.012, 0.016, hem) * band;   // the fold line of the hem, very soft
     // embroidered crest on the chest (planar projection from the front)
     vec2 cuv = vec2((vB.x - uCrestC.x) / uCrestS + 0.5, (vB.y - uCrestC.y) / abs(uCrestS) * 1.2 + 0.5);
     float inC = step(uCrestC.z - 0.03, vB.z) * step(0.0, cuv.x) * step(cuv.x, 1.0) * step(0.0, cuv.y) * step(cuv.y, 1.0);

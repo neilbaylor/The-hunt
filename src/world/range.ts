@@ -577,10 +577,13 @@ vec3 groundColor(vec2 p) {
     vec2 d = p - uFeat.xy;
     float a = atan(d.y, d.x);
     float gd = length(d) / (uFeat.z * (1.0 + 0.06 * sin(2.0 * a + 1.1) + 0.04 * sin(3.0 * a + 2.3)));
-    if (gd < 1.6) {
+    if (gd < 1.8) {
       col = mix(col, ${v3(COL.fringe)} * (0.92 + 0.14 * n1), inside(gd, 1.0 + ${FRINGE.toFixed(2)} / uFeat.z) * uFeat.w);
+      // painted target ring on the fairway round it (reads from the tee and from the overhead aim view)
+      float rm = abs(gd * uFeat.z - (uFeat.z + ${FRINGE.toFixed(2)} + 1.4));
+      col = mix(col, vec3(0.78, 0.8, 0.74) * (0.92 + 0.1 * n1), inside(rm, 0.16) * uFeat.w * 0.9);
       float gm = inside(gd, 1.0) * uFeat.w;
-      vec3 gc = mix(${v3(COL.green)}, ${v3(COL.greenLight)}, 0.35);
+      vec3 gc = mix(${v3(COL.green)}, ${v3(COL.greenLight)}, 0.7) * 1.06;
       gc *= 1.0 + 0.11 * mowSheen(stripes(p.y / 2.8), vec2(0.0, 1.0)) + 0.05 * mowSheen(stripes(p.x / 2.8), vec2(1.0, 0.0));
       gc *= 0.95 + 0.08 * n1;
       gc *= 1.0 - 0.35 * (1.0 - smoothstep(0.054, 0.066, length(d)));
@@ -1539,7 +1542,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
     // wooded hills: many more trees spread over the big hills on the horizon, so they read as forest, not bare ground
     tries = 0;
     let hillN = 0;
-    while (hillN < 1500 && tries++ < 200000) {
+    while (hillN < 1100 && tries++ < 200000) {
       const x = (rand() - 0.5) * 4400, z = 600 - rand() * 4600;
       const r = Math.hypot(x * 0.85, (z + 160) * 0.62);
       if (r < 620 || outside(x, z) < 300) continue;
@@ -1547,7 +1550,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       if (fbm(x / 260 + 7.7, z / 260 - 1.3, 3) < 0.42) continue;
       p.set(x, rawHeight(x, z, false) - 0.8, z);
       q.setFromAxisAngle(up, rand() * 6.28);
-      const sc2 = 1.6 + rand() * 1.2;
+      const sc2 = 1.8 + rand() * 1.3;
       s.set(sc2, sc2 * (0.85 + rand() * 0.45), sc2);
       far.push(m4.compose(p, q, s).clone());
       farTint.push(tintOf(new THREE.Color(), 1.3).multiplyScalar(0.92));
@@ -1586,7 +1589,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       bladeGeo.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3));
       bladeGeo.setIndex(I);
     }
-    const COUNT = 62000;
+    const COUNT = 54000;
     const im = new THREE.InstancedMesh(bladeGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }), COUNT);
     const mat = im.material as THREE.MeshStandardMaterial;
     mat.onBeforeCompile = (sh) => {
@@ -1706,7 +1709,9 @@ gl_Position = projectionMatrix * mvPosition;`);
         if (c > 1) { best = x; bestC = c; break; }
         if (c > bestC) { best = x; bestC = c; }
       }
-      const s1 = clamp((1.75 + yd / 160) / 2.6875 * 1.1, 0.85, 1.25);
+      // a bigger flag than the scenery greens' so it is the one the eye goes to (scaled up, the pole runs on
+      // down through the cup bottom, out of sight)
+      const s1 = clamp((1.75 + yd / 160) / 2.6875 * 1.45, 1.1, 1.8);
       if (FEAT.on < 0.5) { feat.from.set(best, z); feat.r0 = r; feat.s0 = s1; feat.t = 1; targets.push(featTarget); }
       else { feat.from.set(FEAT.x, FEAT.z); feat.r0 = FEAT.r; feat.s0 = featPin.scale.x; feat.t = 0; }
       feat.to.set(best, z); feat.r1 = r; feat.s1 = s1;

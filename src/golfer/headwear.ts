@@ -95,7 +95,7 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   }
   // brim: one smooth, rounded front edge (an ellipse in plan, no point), joined to the band's bottom edge,
   // curving down a little towards the sides; white on top, darker underneath
-  const bs = 64, rows = 10, bp: number[] = [], bidx: number[] = [];
+  const bs = 64, rows = 10, bp: number[] = [];
   const AE = 1.38;                                     // the brim runs round to just behind the temples
   const bandAt = (a: number) => {                      // the band's bottom edge at angle a (same formulas as above)
     const pr = rAt(a), sideB = Math.abs(Math.sin(a)), back = Math.max(0, -Math.cos(a)), fr = Math.max(0, Math.cos(a));
@@ -116,14 +116,20 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
     const L = Math.hypot(ex - inner.x, ez - inner.z) * t;
     const side = Math.abs(Math.sin(a));
     const tt = t * t * (3 - 2 * t) * 0.35 + t * 0.65;
-    bp.push(inner.x + (ex - inner.x) * tt, inner.y + 0.0006 + L * (0.12 - 0.42 * side) - 0.006 * t * t, inner.z + (ez - inner.z) * tt);
+    bp.push(inner.x + (ex - inner.x) * tt, inner.y + 0.0006 - L * (0.06 + 0.3 * side) - 0.004 * t * t, inner.z + (ez - inner.z) * tt);   // slopes gently down and away, so it never hides the band
   }
-  for (let r = 0; r < rows; r++) for (let i = 0; i < bs; i++) { const a = r * (bs + 1) + i, b = a + 1, c = a + bs + 1, d = c + 1; bidx.push(a, c, b, b, c, d); }
+  const tri = (flip: boolean) => { const o: number[] = []; for (let r = 0; r < rows; r++) for (let i = 0; i < bs; i++) { const a = r * (bs + 1) + i, b = a + 1, c = a + bs + 1, d = c + 1; if (flip) o.push(a, b, c, b, d, c); else o.push(a, c, b, b, c, d); } return o; };
+  // the top surface faces up (checked, not assumed), the underside is a copy 2.5 mm below facing down
   const brim = new THREE.BufferGeometry();
   brim.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3));
-  brim.setIndex(bidx); brim.computeVertexNormals();
-  const top = new THREE.Mesh(brim, new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.75, side: THREE.FrontSide }));
-  const bottom = new THREE.Mesh(brim.clone().translate(0, -0.0025, 0), new THREE.MeshStandardMaterial({ color: h.under, roughness: 0.9, side: THREE.BackSide }));
+  brim.setIndex(tri(false)); brim.computeVertexNormals();
+  const ny = (brim.getAttribute('normal') as THREE.BufferAttribute).getY(Math.floor(rows / 2) * (bs + 1) + bs / 2);
+  if (ny < 0) { brim.setIndex(tri(true)); brim.computeVertexNormals(); }
+  const under = brim.clone().translate(0, -0.0025, 0); under.setIndex(tri(ny >= 0)); under.computeVertexNormals();
+  // one white cotton piece: the underside is the same fabric, just a touch greyer, never black
+  const underCol = new THREE.Color(h.color).multiplyScalar(0.86);
+  const top = new THREE.Mesh(brim, new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.75 }));
+  const bottom = new THREE.Mesh(under, new THREE.MeshStandardMaterial({ color: underCol, roughness: 0.9 }));
   group.add(top, bottom);
   // a soft rolled edge round the brim
   const edge: THREE.Vector3[] = [];

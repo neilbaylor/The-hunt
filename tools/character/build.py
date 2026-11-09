@@ -301,10 +301,10 @@ for vi in body_idx:
     neckw = vw[vi].get(BONES.index('neck_01'), 0) + vw[vi].get(BONES.index('head'), 0)
     # shirt: torso and upper arms (short sleeves), from the belt up to the collar
     shirt_lo = belt_y - (C.get('untuckedDrop', 0.0) if C.get('untucked') else 0.035)
-    if y > shirt_lo and neckw < 0.5 and y < neck_y + 0.01:
+    if y > shirt_lo - 0.035 and neckw < 0.5 and y < neck_y + 0.01:   # a little past the hem: folded back onto it below
         sleeve_ok = True
-        if arm_l > 0.5: sleeve_ok = along(vi, 'upperarm_l', 'lowerarm_l') < C['sleeve']
-        if arm_r > 0.5: sleeve_ok = along(vi, 'upperarm_r', 'lowerarm_r') < C['sleeve']
+        if arm_l > 0.5: sleeve_ok = along(vi, 'upperarm_l', 'lowerarm_l') < C['sleeve'] + 0.08
+        if arm_r > 0.5: sleeve_ok = along(vi, 'upperarm_r', 'lowerarm_r') < C['sleeve'] + 0.08
         if sleeve_ok and (torso > 0.3 or arm_l > 0.3 or arm_r > 0.3):
             shirt[vi] = True
             loose = 1 - min(1, abs(y - (pelvis_y + 0.2)) / 0.3)
@@ -408,6 +408,17 @@ if C.get('hang', 0) > 0:
         Vs[arm] = cc + rv / np.maximum(rl, 1e-6)[:, None] * want[:, None]
     Vshirt = Vs; shirt_off = np.zeros(NV)
 
+# clean, straight hems: the shirt mask runs a little past the bottom hem and the sleeve hems; fold those
+# vertices back onto the hem line (otherwise the edge follows the body's triangles and comes out jagged)
+_lo = belt_y - (C.get('untuckedDrop', 0.0) if C.get('untucked') else 0.035)
+for vi in np.nonzero(shirt)[0]:
+    for sfx in 'lr':
+        if wsum(vi, [f'upperarm_{sfx}', f'lowerarm_{sfx}', f'hand_{sfx}']) > 0.5:
+            a0, a1 = joint[BONES.index(f'upperarm_{sfx}')], joint[BONES.index(f'lowerarm_{sfx}')]; ax = a1 - a0
+            t = float(np.dot(Vshirt[vi] - a0, ax) / np.dot(ax, ax))
+            if t > C['sleeve']: Vshirt[vi] = Vshirt[vi] - ax * (t - C['sleeve'])
+    if Vshirt[vi, 1] < _lo: Vshirt[vi, 1] = _lo
+
 # straight-cut trouser legs: push each leg out to a minimum radius round the hip→ankle line
 for sfx in 'lr':
     hip = joint[BONES.index(f'thigh_{sfx}')]; ank = joint[BONES.index(f'foot_{sfx}')]; knee = joint[BONES.index(f'calf_{sfx}')]
@@ -433,11 +444,23 @@ for sfx in 'lr':
         pants_off[vi] = 0.0
 Vpants = smooth_positions_from(Vpants, pants, 2) if 'smooth_positions_from' in globals() else Vpants
 
+# the untucked shirt hangs over the shorts' waistband: keep it clear of the shorts everywhere they overlap
+if C.get('untucked'):
+    from scipy.spatial import cKDTree as _KD
+    pid = np.nonzero(pants)[0]; Pp = Vpants[pid] + N[pid] * pants_off[pid][:, None]
+    kd = _KD(Pp)
+    for vi in np.nonzero(shirt)[0]:
+        if Vshirt[vi, 1] > belt_y + 0.04: continue
+        sp = Vshirt[vi] + N[vi] * shirt_off[vi]
+        d, j = kd.query(sp)
+        if d > 0.05: continue
+        pn = N[pid[j]]; gap = float(np.dot(sp - Pp[j], pn))
+        if gap < C.get('overPants', 0.008): Vshirt[vi] = Vshirt[vi] + pn * (C.get('overPants', 0.008) - gap)
 meshes = {}
 # the feet are hidden inside the shoes: drop them from the skin so they never poke through
 feet_hidden = np.zeros(NV, bool)
 for vi in body_idx:
-    if V[vi, 1] < min(ankle_y.values()) + 0.03 and wsum(vi, ['foot_l', 'foot_r', 'ball_l', 'ball_r', 'calf_l', 'calf_r']) > 0.5: feet_hidden[vi] = True
+    if V[vi, 1] < min(ankle_y.values()) + C.get('footHide', 0.03) and wsum(vi, ['foot_l', 'foot_r', 'ball_l', 'ball_r', 'calf_l', 'calf_r']) > 0.5: feet_hidden[vi] = True
 meshes['skin'] = build_mesh(body_faces, V, keep=~feet_hidden)
 meshes['shirt'] = build_mesh(body_faces, Vshirt, normals=N, keep=shirt, extra_offset=shirt_off)
 meshes['pants'] = build_mesh(body_faces, Vpants, normals=N, keep=pants, extra_offset=pants_off)
@@ -866,6 +889,73 @@ def paint_face(p, n, base):
     out[near] = o
     return out
 
+
+# ── an unwrapped, evenly lit face texture (front + ears, cylindrical), mapped by landmarks onto the smiling head ──
+UNWRAP = None
+if F and F.get('unwrap') and lm_idx is not None:
+    U0 = F['unwrap']; uim = Image.open(U0['photo']).convert('RGB')
+    flipU = P['handed'] == 'left'
+    if flipU: uim = ImageOps.mirror(uim)
+    Lu = np.array(json.load(open(lm_file(U0['photo'], flipU)))['pts'], float)[:, :2]
+    ok = lm_idx >= 0
+    smile_d = morphs.get('smile', np.zeros_like(V)) * U0.get('smileK', 0.9)
+    head_vi = np.array([vi for vi in body_idx if np.linalg.norm(V[vi] - hc) < 0.2])
+    smile_tree = cKDTree(V[head_vi])
+    def smiling(pts):
+        dd, jj = smile_tree.query(pts, k=4); w = 1 / np.maximum(dd, 1e-4); w /= w.sum(1, keepdims=True)
+        return pts + np.einsum('nk,nkj->nj', w, smile_d[head_vi][jj])
+    def cyl(pts):
+        d = pts - hc
+        return np.c_[np.arctan2(d[:, 0], d[:, 2]), d[:, 1]]
+    # the unwrap's mouth is open (teeth showing) but the mesh mouth is closed: drop the lip landmarks and pin the
+    # painted mouth's centre to the mesh's lip seam, with the corners at the mesh's corners
+    LIPS = {0, 267, 269, 270, 409, 37, 39, 40, 185, 17, 314, 405, 321, 375, 84, 181, 91, 146,
+            13, 14, 312, 311, 310, 415, 82, 81, 80, 191, 317, 402, 318, 324, 87, 178, 88, 95, 78, 308}
+    keep = ok & ~np.isin(np.arange(len(lm_idx)), list(LIPS))
+    Ms = V[lm_idx[keep]] + smile_d[lm_idx[keep]]
+    src = cyl(Ms); dst = Lu[keep]
+    if lm_idx[13] >= 0 and lm_idx[14] >= 0:
+        seam = (V[lm_idx[13]] + smile_d[lm_idx[13]] + V[lm_idx[14]] + smile_d[lm_idx[14]]) / 2
+        src = np.r_[src, cyl(seam[None])]; dst = np.r_[dst, ((Lu[13] + Lu[14]) / 2)[None]]
+    A = np.c_[src, np.ones(len(src))]; aff, *_ = np.linalg.lstsq(A, dst, rcond=None)
+    print('unwrap affine residual', np.linalg.norm(A @ aff - dst, axis=1).mean().round(1), 'px')
+    # ears: anchor the mesh's ear centres to the ears painted at the sides of the unwrap
+    if U0.get('ears'):
+        ear_pts = []
+        for sx in (-1, 1):
+            cand = [vi for vi in head_vi if (V[vi, 0] - hc[0]) * sx > 0 and mouth_c[1] - 0.005 < V[vi, 1] < eye_c[1] + 0.015]
+            ear_pts.append(V[max(cand, key=lambda vi: abs(V[vi, 0] - hc[0]))])
+        ear_pts = np.array(ear_pts); W0 = uim.width
+        img_ears = np.array([[W0 - e[0], e[1]] if flipU else e for e in U0['ears']], float)
+        pred = np.c_[cyl(ear_pts), np.ones(2)] @ aff
+        for i in range(2):
+            j = int(np.argmin(np.linalg.norm(img_ears - pred[i], axis=1)))
+            src = np.r_[src, cyl(ear_pts[i:i + 1])]; dst = np.r_[dst, img_ears[j:j + 1]]
+        print('ears: predicted', pred.round(0).tolist(), '→ painted', img_ears.tolist())
+    uwarp = RBFInterpolator(src, dst, kernel='thin_plate_spline', smoothing=U0.get('smoothing', 2.0), degree=1)
+    uarr = np.asarray(uim).astype(np.float32) / 255.0
+    cheeks = [50, 280, 101, 330]
+    cs = [Lu[i] for i in cheeks]
+    skin_rgb = np.median(np.array([uarr[int(y) - 6:int(y) + 6, int(x) - 6:int(x) + 6].reshape(-1, 3) for x, y in cs]).reshape(-1, 3), axis=0)
+    print('unwrap skin', (skin_rgb * 255).round())
+    UNWRAP = {'warp': uwarp, 'img': uarr, 'cyl': cyl, 'smiling': smiling, 'cfg': U0}
+def unwrap_layer(p, base):
+    if UNWRAP is None: return base
+    near = (np.linalg.norm(p - hc, axis=1) < 0.19)
+    if not near.any(): return base
+    q = p[near]; ps = UNWRAP['smiling'](q); c = UNWRAP['cyl'](ps)
+    xy = UNWRAP['warp'](c); img = UNWRAP['img']; Hh, Ww = img.shape[:2]
+    x, y = xy[:, 0], xy[:, 1]
+    x0 = np.clip(np.floor(x).astype(int), 0, Ww - 2); y0 = np.clip(np.floor(y).astype(int), 0, Hh - 2)
+    fx = np.clip(x - x0, 0, 1)[:, None]; fy = np.clip(y - y0, 0, 1)[:, None]
+    col = (img[y0, x0] * (1 - fx) + img[y0, x0 + 1] * fx) * (1 - fy) + (img[y0 + 1, x0] * (1 - fx) + img[y0 + 1, x0 + 1] * fx) * fy
+    m = 4.0
+    w = np.clip(np.minimum.reduce([x - m, Ww - m - x, y - m, Hh - m - y]) / 14.0, 0, 1)
+    w *= np.clip((np.radians(UNWRAP['cfg'].get('maxAngle', 105)) - np.abs(c[:, 0])) / 0.25, 0, 1)
+    w *= np.clip((q[:, 1] - (V[chin_vi, 1] - 0.07)) / 0.03, 0, 1)   # stop above the collar
+    o = base.copy(); o[near] = base[near] * (1 - w[:, None]) + col * w[:, None]
+    return o
+
 SMILE_BAKE = False
 def skin_fn(p, n):
     base = np.tile(skin_rgb, (len(p), 1)).astype(np.float32)
@@ -911,7 +1001,8 @@ def skin_fn(p, n):
         ph = acc / np.maximum(wsum, 1e-6)[:, None]
         if PAINT: cov = cov * PAINT['photoMix']
         base = base * (1 - cov) + ph * cov
-        if PAINT: base = paint_face(p, n, base)
+        if PAINT and UNWRAP is None: base = paint_face(p, n, base)
+    base = unwrap_layer(p, base)
     # painted short hair under the hair shell (soft hairline)
     hp = P['hair']
     hcol = np.array(hp['color']) / 255.0
@@ -981,6 +1072,7 @@ meta = {
     'eyeballs': {sfx: {'c': list(map(float, V[sorted(group_verts[f'helper-{sfx}-eye'])].mean(0))),
                        'r': float(np.linalg.norm(V[sorted(group_verts[f'helper-{sfx}-eye'])] - V[sorted(group_verts[f'helper-{sfx}-eye'])].mean(0), axis=1).mean())} for sfx in 'lr'},
     'iris': P['eyes'],
+    'paintedMouth': UNWRAP is not None, 'paintedSmile': (UNWRAP['cfg'].get('smileK', 0.9) if UNWRAP else None),
     'meshes': desc, 'heightM': P['heightM'],
 }
 mj = json.dumps(meta).encode()
