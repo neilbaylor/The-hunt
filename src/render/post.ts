@@ -175,7 +175,7 @@ void main() {
 
 const GRADES: Record<Grade, { lift: [number, number, number]; gamma: [number, number, number]; gain: [number, number, number]; saturation: number; contrast: number; vignette: number; bloom: number; exposure: number }> = {
   // warm highlights, slightly lifted teal-ish shadows, a soft roll-off like broadcast golf at sunset
-  golden: { lift: [0.012, 0.016, 0.03], gamma: [1.02, 1.0, 0.97], gain: [1.06, 1.0, 0.9], saturation: 1.08, contrast: 0.18, vignette: 0.32, bloom: 0.3, exposure: 1.1 },
+  golden: { lift: [0.008, 0.02, 0.036], gamma: [1.03, 1.0, 0.95], gain: [1.11, 1.03, 0.84], saturation: 1.16, contrast: 0.22, vignette: 0.3, bloom: 0.34, exposure: 1.12 },
   midday: { lift: [0.006, 0.008, 0.014], gamma: [1.0, 1.0, 1.0], gain: [1.02, 1.01, 0.98], saturation: 1.06, contrast: 0.14, vignette: 0.2, bloom: 0.22, exposure: 1.0 },
 };
 

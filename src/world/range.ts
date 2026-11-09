@@ -63,11 +63,11 @@ interface TimePreset {
 }
 const TIMES: Record<TimeOfDay, TimePreset> = {
   golden: {
-    elev: 12, azim: 238,
+    elev: 9, azim: 238,
     // a hazy summer evening, sun low and nearly into the camera: creamy pale sky, golden light, cool green shade
     sky: { turbidity: 10, rayleigh: 0.95, mieCoefficient: 0.008, mieDirectionalG: 0.84 },
-    clouds: 0.1, sunColor: '#ffc970', sunI: 6.8, hemiSky: '#b8c2c8', hemiGround: '#46502c', hemiI: 0.2,
-    fog: '#e9dfc6', fogDensity: 0.0008, envI: 0.3, groundBounce: '#4e5e2c', trans: 1.2,
+    clouds: 0.1, sunColor: '#ffc466', sunI: 8.2, hemiSky: '#b4c0c8', hemiGround: '#46502c', hemiI: 0.15,
+    fog: '#ecdfc2', fogDensity: 0.0008, envI: 0.25, groundBounce: '#4e5e2c', trans: 1.25,
   },
   midday: {
     elev: 48, azim: -28,
@@ -1469,7 +1469,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
   const targets: RangeTarget[] = GREENS.map(g => ({ yards: g.yards, pos: new THREE.Vector3(g.x, heightAt(g.x, g.z), g.z), radius: g.r, color: FLAG_YELLOW }));
   // wind for the flags: x, z = direction it blows toward, w = strength 0..1 (eased); a light breeze when there is none
   const flagUniforms = { uTime: { value: 0 }, uWind: { value: new THREE.Vector3(0.95, -0.31, 0.36) } };
-  const windIn = new THREE.Vector3(), BREEZE = new THREE.Vector3(3.0, 0, -1.0);
+  const windIn = new THREE.Vector3(), BREEZE = new THREE.Vector3(1.1, 0, -0.4); // calm: a faint drooping flutter
   const featGroup = new THREE.Group(), featPin = new THREE.Group();
   const featTarget: RangeTarget = { yards: 150, pos: new THREE.Vector3(0, 0, -9999), radius: 9, color: FLAG_YELLOW };
   const feat = { from: new THREE.Vector2(), to: new THREE.Vector2(), r0: 9, r1: 9, t: 1, s0: 1, s1: 1 };
@@ -1680,10 +1680,15 @@ reflectedLight.indirectSpecular *= 0.3;`);
           const x = fwCenter(z) + side * dx;
           // mostly oaks and maples along the fairway, a few birches, the odd conifer
           const sp = rand() < 0.78 ? 0 : rand() < 0.65 ? 2 : 1;
-          place(x, z + (rand() - 0.5) * 3, sp, 0.85 + rand() * 0.6);
+          // an irregular line: gaps showing the sky, mostly mid-sized trees with the odd much taller one
+          if (rand() < 0.16) continue;
+          place(x, z + (rand() - 0.5) * 3, sp, rand() < 0.14 ? 1.45 + rand() * 0.5 : 0.6 + rand() * 0.8);
         }
       }
     }
+    // a few big hero oaks and maples close to the tee and down the first 100 yards, framing the shot as in the
+    // photos: broad crowns of big lobes, 15–25 m across, high over clean trunks
+    for (const [hx, hz, sp, sc] of [[-26, 6, 3, 2.0], [-34, -36, 0, 2.3], [31, -16, 4, 1.9], [-24, -66, 3, 1.7], [33, -70, 0, 2.1], [-34, -110, 4, 1.6]] as const) place(hx, hz, sp, sc);
     // the far end and behind the tee
     for (let i = 0; i < 140; i++) { const x = (rand() - 0.5) * 260, z = -345 - rand() * 120; place(x, z, rand() < 0.5 ? 0 : 1, 0.9 + rand() * 0.7); }
     // a second, taller layer further back on the rising ground, with gaps, so the backdrop has depth
