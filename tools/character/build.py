@@ -1262,6 +1262,29 @@ def eye_fn(p, n):
 Image.new('RGB', (4, 4), (230, 225, 220)).save(f'{OUT}/eyes.png')
 
 # ───────────────────────── write the binary ─────────────────────────
+# ───────────────────────── corrective shapes for bent elbows and knees ─────────────────────────
+# Linear skinning collapses a bent joint into a smooth hose. Each corrective is a skin morph the runtime blends in
+# with the bend angle: at the elbow the olecranon pushes out to a point behind and the biceps/forearm meet keeps its
+# volume in front; at the knee the kneecap makes its point in front and the back of the knee fills.
+correctives = {}
+if P.get('clothes', {}).get('correctives', True):
+    for sfx in 'lr':
+        for name, up, lo, out_dir, k_point, k_fill, width in (
+                (f'cor_elbow_{sfx}', f'upperarm_{sfx}', f'lowerarm_{sfx}', np.array([0.0, 0.0, -1.0]), 0.009, 0.004, 0.022),
+                (f'cor_knee_{sfx}', f'thigh_{sfx}', f'calf_{sfx}', np.array([0.0, 0.0, 1.0]), 0.007, 0.003, 0.028)):
+            Jc = np.array(joint[BONES.index(lo)]); a = Jc - np.array(joint[BONES.index(up)]); b = np.array(tail[BONES.index(lo)]) - Jc
+            axis = a / np.linalg.norm(a) + b / np.linalg.norm(b); axis /= np.linalg.norm(axis)
+            pdir = out_dir - axis * np.dot(out_dir, axis); pdir /= np.linalg.norm(pdir)
+            d = np.zeros_like(V)
+            for vi in body_idx:
+                if wsum(vi, [up, lo]) < 0.5: continue
+                rv = V[vi] - Jc; sv = float(np.dot(rv, axis)); r = rv - sv * axis; rl = np.linalg.norm(r)
+                if rl < 1e-6 or abs(sv) > 3 * width: continue
+                rd = r / rl; c = float(np.dot(rd, pdir)); g = math.exp(-(sv / width) ** 2)
+                d[vi] = pdir * k_point * g * max(0.0, c) ** 3 + rd * (0.002 * g * max(0.0, c) + k_fill * g * max(0.0, -c))
+            correctives[name] = d
+    print('correctives', list(correctives))
+
 blobs = bytearray(); desc = {}
 def put(arr, dtype):
     global blobs
@@ -1275,6 +1298,8 @@ for name, m in meshes.items():
          'skinIndex': put([[b for b, _ in s] for s in sw], np.uint16), 'skinWeight': put([[w for _, w in s] for s in sw], np.float32)}
     if name == 'skin':
         for mn, md in morphs.items():
+            d['morph_' + mn] = put(md[m['src']], np.float32)
+        for mn, md in correctives.items():
             d['morph_' + mn] = put(md[m['src']], np.float32)
     if name == 'teeth':
         for mn, md in morphs.items():

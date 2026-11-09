@@ -194,6 +194,28 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const genOn = !!data.head && p.head !== 'makehuman';
   applyFabric(skinMat, 'skin', data.skinSmile && !genOn ? { ...fu, smile: { map: tex(data.skinSmile), amount: smileAmt } } : fu);
   const skin = add('skin', skinMat)!;
+  // corrective shapes for bent elbows and knees: each blends in with the joint's bend, measured from the bone
+  // directions (so forearm roll doesn't count), so the olecranon / kneecap make a point and the volume holds
+  {
+    const keys = Object.keys(M.meshes.skin).filter(k => k.startsWith('morph_'));
+    const B = (n: string) => bones[M.bones.indexOf(n)];
+    const cors = (['l', 'r'] as const).flatMap(sx => [['elbow', 'upperarm', 'lowerarm', 'hand'], ['knee', 'thigh', 'calf', 'foot']].map(([n, a, b, c]) => {
+      const i = keys.indexOf(`morph_cor_${n}_${sx}`);
+      const ja = J[M.bones.indexOf(`${a}_${sx}`)], jb = J[M.bones.indexOf(`${b}_${sx}`)], jc = J[M.bones.indexOf(`${c}_${sx}`)];
+      return { i, a: B(`${a}_${sx}`), b: B(`${b}_${sx}`), c: B(`${c}_${sx}`), rest: jb.clone().sub(ja).angleTo(jc.clone().sub(jb)) };
+    })).filter(o => o.i >= 0);
+    if (cors.length && skin.morphTargetInfluences) {
+      const pa = new THREE.Vector3(), pb = new THREE.Vector3(), pc = new THREE.Vector3(), u = new THREE.Vector3(), w = new THREE.Vector3();
+      skin.onBeforeRender = () => {
+        for (const o of cors) {
+          o.a.getWorldPosition(pa); o.b.getWorldPosition(pb); o.c.getWorldPosition(pc);
+          const bend = u.subVectors(pb, pa).angleTo(w.subVectors(pc, pb)) - o.rest;
+          const t = Math.min(1, Math.max(0, (bend - 0.15) / 1.45));
+          skin.morphTargetInfluences![o.i] = t * t * (3 - 2 * t);
+        }
+      };
+    }
+  }
   const eyeL = M.eyeballs.l.c, eyeR = M.eyeballs.r.c;
   const gen = genOn ? buildGenHead(data.head!, M.bones, skeleton, root, new THREE.Vector3(...(M.eye as [number, number, number])), Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1], eyeL[2] - eyeR[2]), M.visor.center[1] - 0.022, p.look.eyes) : null;
   if (gen) { hideAboveSeam(skinMat, gen.seam, gen.skin); skinMat.color.copy(gen.tint); meshes.push(gen.mesh); }
@@ -510,11 +532,12 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const B = M.belt, H = 0.035, SEG = 128;
     const axis = (q: THREE.Vector3) => new THREE.Vector3(B.cx, q.y, B.cz);
     const { near, skinned } = surfaceOf(pantsMesh, (_x, y) => Math.abs(y - B.y) < 0.09, axis);
+    const shirtNear = surfaceOf(shirtMesh!, (_x, y) => Math.abs(y - B.y) < 0.06, axis).near;
     const brown = '#74412a';
     const leatherCanvas = (holes: boolean) => canvasTex(holes ? 512 : 2048, 64, g => {
       const W = holes ? 512 : 2048;
       g.fillStyle = brown; g.fillRect(0, 0, W, 64);
-      for (let i = 0; i < W * 6; i++) { const x = rand() * W, y = rand() * 64, r = 0.8 + rand() * 1.4; g.fillStyle = rand() < 0.5 ? 'rgba(0,0,0,.10)' : 'rgba(255,220,190,.07)'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
+      for (let i = 0; i < W * 4; i++) { const x = rand() * W, y = rand() * 64, r = 0.9 + rand() * 1.1; g.fillStyle = rand() < 0.5 ? 'rgba(0,0,0,.045)' : 'rgba(255,220,190,.035)'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }   // a fine, even pebble
       g.fillStyle = 'rgba(40,18,8,.55)'; g.fillRect(0, 0, W, 3); g.fillRect(0, 61, W, 3);           // darker burnished edges
       g.strokeStyle = 'rgba(205,170,130,.75)'; g.lineWidth = 1.6; g.setLineDash([6, 4]);
       for (const y of [8, 56]) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
@@ -527,7 +550,11 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     for (let i = 0; i < SEG; i++) {
       const a = (i / SEG) * Math.PI * 2, guess = new THREE.Vector3(B.cx + Math.sin(a) * (B.rx + 0.03), B.y, B.cz + Math.cos(a) * (B.rz + 0.03));
       const { q, n } = near(guess); n.y = 0; n.normalize();
-      ring.push({ p: new THREE.Vector3(q.x, B.y, q.z).addScaledVector(n, 0.0035), n });
+      // the belt rides outside both the waistband and the shirt just above it (so the blouse never cuts through it)
+      let rad = Math.hypot(q.x - B.cx, q.z - B.cz);
+      for (const dy of [0, H / 2 + 0.002]) { const s2 = shirtNear(new THREE.Vector3(guess.x, B.y + dy, guess.z)); rad = Math.max(rad, Math.hypot(s2.q.x - B.cx, s2.q.z - B.cz)); }
+      const dir = new THREE.Vector3(q.x - B.cx, 0, q.z - B.cz).normalize();
+      ring.push({ p: new THREE.Vector3(B.cx, B.y, B.cz).addScaledVector(dir, rad + 0.0035), n });
     }
     for (let pass = 0; pass < 3; pass++) { const r0 = ring.map(r => r.p.clone()); ring.forEach((r, i) => r.p.copy(r0[(i + SEG - 1) % SEG]).add(r0[(i + 1) % SEG]).multiplyScalar(0.25).addScaledVector(r0[i], 0.5)); }
     const at = (a: number) => {   // interpolated point + outward normal round the belt at angle a (0 = front)
