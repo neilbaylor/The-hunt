@@ -1,8 +1,10 @@
 // The driving range: Neil on the tee, the swing pad, the ball in flight, the spin ball, the cameras.
 import * as THREE from 'three';
 import { createRange, type Range } from './world/range';
+import { createPost } from './render/post';
 import { Golfer, PHI_TOP, PHI_FINISH, SHOT_STYLE, type SwingPhase } from './golfer/golfer';
 import { NEIL, feetInches } from './golfer/profile';
+import { loadNeil } from './golfer/assets';
 import { CLUB_SPECS } from './golfer/club';
 import { Ball, BALL } from './game/ball';
 import { planShot, LIES, YD, type ShotPlan } from './game/shot';
@@ -14,9 +16,9 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const smooth = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
 // ── renderer ──
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 const QS = new URLSearchParams(location.search);
-let pixelRatio = QS.has('pr') ? +QS.get('pr')! : Math.min(devicePixelRatio, 2);
+let pixelRatio = QS.has('pr') ? +QS.get('pr')! : Math.min(devicePixelRatio, 1.75);
 const fixedPR = QS.has('pr');
 renderer.setPixelRatio(pixelRatio);
 renderer.setSize(innerWidth, innerHeight);
@@ -30,12 +32,21 @@ document.getElementById('app')!.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 7000);
 let range: Range | null = null;
-try { range = createRange(renderer, scene); } catch (e) { console.error('range failed', e); }
+try { range = createRange(renderer, scene); range.setTimeOfDay(QS.get('time') === 'midday' ? 'midday' : 'golden'); } catch (e) { console.error('range failed', e); }
+// post-processing: high on desktop, medium on phones (falls back to low if frames run long)
+const coarse = matchMedia('(pointer: coarse)').matches;
+const post = createPost(renderer, scene, camera, { quality: (QS.get('q') as any) ?? (coarse ? 'med' : 'high'), grade: range?.timeOfDay ?? 'golden', toneMapping: 'agx' });
+// sharp, soft-edged shadows around the golfer while he swings; wide ones when the ball flies
+function shadowsOnGolfer(on: boolean) {
+  if (!range) return;
+  if (on) { const feet = golfer.ballWorld().add(new THREE.Vector3(golfer.lefty ? 0.9 : -0.9, 0, 0)); feet.y = 0; range.setShadowFocus(feet, 3.5); range.contactShadow(feet, 1, 0.5); }
+  else { range.setShadowFocus(null); range.contactShadow(null); }
+}
 if (!range) { scene.background = new THREE.Color('#9cc3e0'); scene.add(new THREE.HemisphereLight('#cfe6ff', '#4a6a30', 1.2)); }
 
 // ── golfer, ball, tracer ──
 const profile = NEIL;
-const golfer = new Golfer(profile);
+const golfer = new Golfer(profile, await loadNeil());
 scene.add(golfer.root);
 const ball = new Ball(range);
 const dimples = (() => {
@@ -53,6 +64,9 @@ const tee = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0018, 0.06, 10),
 const teeCup = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.0035, 0.008, 12), tee.material);
 tee.add(teeCup); teeCup.position.y = 0.03; scene.add(tee);
 const tracer = new Tracer(); scene.add(tracer.mesh);
+// a soft key/fill light that follows the camera so the golfer reads in golden-hour backlight (TV-style)
+const fill = new THREE.DirectionalLight('#fff3e6', 0.9);
+scene.add(fill, fill.target);
 
 // ── HUD + sound ──
 const hud = new Hud(document.body, profile);
@@ -155,6 +169,7 @@ function strike(now: number, p: [number, number], released: boolean) {
   state = 'flight';
   hud.showSpin(true);
   camMode = 'chase'; chaseT0 = now;
+  setTimeout(() => shadowsOnGolfer(false), 900);
   setTimeout(() => { SW.trailB = []; SW.trailD = []; }, 700);
 }
 
@@ -168,6 +183,7 @@ function nextBall() {
   setTimeout(() => { resetBall(); fader.style.opacity = '0'; fading = false; }, 240);
 }
 function resetBall() {
+  shadowsOnGolfer(true);
   state = 'ready';
   Object.assign(G, { phase: 'address', phi: 0, target: 0, arrived: null, returning: false, idleT: 0 });
   teeUp();
@@ -183,10 +199,27 @@ const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
 const want = new THREE.Vector3(), wantLook = new THREE.Vector3();
 let landingCam: THREE.Vector3 | null = null;
 const side = golfer.lefty ? 1 : -1;
+const portrait = () => innerHeight > innerWidth * 1.05;
 function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
-  out.set(-0.85 * side, 1.62, 5.6);
-  look.set(0.45 * side, 0.92, -22);
+  if (portrait()) {
+    // phone held upright: tight on the golfer from behind his trail side, like a TV swing cam
+    out.set(0.7 * side, 1.75, 3.6);
+    look.set(0.45 * side, 0.35, -6);
+  } else {
+    out.set(-0.85 * side, 1.62, 5.6);
+    look.set(0.45 * side, 0.92, -22);
+  }
 }
+let lensShift = 0;
+function fitCamera() {
+  camera.aspect = innerWidth / innerHeight;
+  camera.fov = portrait() ? 52 : 42;
+  // portrait: shift the lens so the golfer sits above the swing stick without tilting the camera
+  if (portrait() && lensShift > 0.001) camera.setViewOffset(innerWidth, innerHeight, 0, innerHeight * lensShift, innerWidth, innerHeight);
+  else camera.clearViewOffset();
+  camera.updateProjectionMatrix();
+}
+fitCamera();
 function snapCamera() { addressCam(camPos, camLook); landingCam = null; }
 
 function updateCamera(dt: number, now: number) {
@@ -235,6 +268,8 @@ function updateCamera(dt: number, now: number) {
       wantLook.copy(b).add(new THREE.Vector3(0, 0.3, 0));
     }
   }
+  const wantShift = portrait() && (camMode === 'address' || camMode === 'intro' || (camMode === 'chase' && (now - chaseT0) < 550)) ? (camMode === 'intro' ? 0.0 : 0.2) : 0;
+  if (Math.abs(wantShift - lensShift) > 0.002) { lensShift += (wantShift - lensShift) * (1 - Math.pow(0.02, dt)); fitCamera(); }
   const kk = camMode === 'landing' || camMode === 'rest' ? 1 - Math.pow(0.02, dt) : k;
   camPos.lerp(want, camMode === 'chase' ? 1 - Math.pow(0.04, dt) : kk);
   camLook.lerp(wantLook, camMode === 'landing' ? 1 - Math.pow(0.0005, dt) : kk);
@@ -262,6 +297,7 @@ function startPlay() {
 // ── loop ──
 teeUp();
 golfer.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
+shadowsOnGolfer(true);
 camMode = 'intro';
 camPos.set(3, 1.5, 3); camLook.set(0, 1, 0);
 let last = performance.now();
@@ -297,6 +333,8 @@ function frame(now: number) {
   const good = state === 'result' && !!plan && plan.tempoWord === 'Smooth' && Math.abs(ball.offline() / YD) < 10;
   golfer.smileToward(state === 'intro' || good ? 1 : 0, dt);
 
+  hud.setState(state === 'ready', state === 'flight', !card);
+
   // swing pad
   if (SW.active || SW.trailB.length) hud.setPad(SW.active ? SW.last : [0, 0], SW.trailB, SW.trailD, SW.active && SW.phase === 'back' && G.arrived !== null && SW.depth > 12);
 
@@ -330,6 +368,7 @@ function frame(now: number) {
   hud.tickSpin(dt, state === 'flight' && ball.phase === 'flight');
 
   updateCamera(dt, now);
+  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); }
   tracer.update(camera, state === 'ready' ? 0.6 : 1);
   focus.copy(state === 'flight' || state === 'result' ? ball.pos : golfer.ballWorld(tmp));
   range?.update(dt, camera, focus);
@@ -337,15 +376,15 @@ function frame(now: number) {
   // dynamic resolution: keep frames under ~20 ms
   if (frameTimes.length === 90 && !fixedPR) {
     const avg = frameTimes.reduce((a, b) => a + b, 0) / 90;
-    if (avg > 0.024 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); frameTimes.length = 0; }
+    if (avg > 0.024 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); post.setSize(innerWidth, innerHeight); if (pixelRatio <= 1 && post.quality !== 'low') post.setQuality('low'); frameTimes.length = 0; }
     else if (avg < 0.0135 && pixelRatio < Math.min(devicePixelRatio, 2)) { pixelRatio = Math.min(Math.min(devicePixelRatio, 2), pixelRatio + 0.25); renderer.setPixelRatio(pixelRatio); frameTimes.length = 0; }
   }
   const r0 = performance.now();
-  renderer.render(scene, camera);
+  post.render(dt);
   (window as any).__frameMs = performance.now() - r0;
   requestAnimationFrame(frame);
 }
-addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); post.setSize(innerWidth, innerHeight); fitCamera(); });
 // a tap anywhere during the result skips ahead
 renderer.domElement.addEventListener('pointerdown', () => { sound.unlock(); if (state === 'result') nextBall(); });
 requestAnimationFrame(t => { last = t; frame(t); });

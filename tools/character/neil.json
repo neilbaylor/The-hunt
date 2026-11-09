@@ -1,0 +1,94 @@
+{
+  "name": "Neil",
+  "handed": "left",
+  "heightM": 1.905,
+  "macro": {
+    "age": 0.6,
+    "muscle": 0.56,
+    "weight": 0.4,
+    "height": 1.0,
+    "proportions": 0.8
+  },
+  "details": {
+    "head/head-oval": 0.3,
+    "head/head-scale-vert-incr": 0.3,
+    "head/head-scale-horiz-decr": 0.12,
+    "chin/chin-height-incr": 0.25,
+    "chin/chin-prominent-incr": 0.15,
+    "chin/chin-width-incr": 0.25,
+    "nose/nose-scale-vert-incr": 0.35,
+    "nose/nose-hump-incr": 0.1,
+    "mouth/mouth-upperlip-volume-decr": 0.35,
+    "mouth/mouth-lowerlip-volume-decr": 0.1,
+    "ears/l-ear-wing-incr": 0.35,
+    "ears/r-ear-wing-incr": 0.35
+  },
+  "expressions": {
+    "smile": {
+      "expression/units/caucasian/mouth-corner-puller": 0.9,
+      "expression/units/caucasian/mouth-parling": 0.45,
+      "expression/units/caucasian/eye-left-slit": 0.25,
+      "expression/units/caucasian/eye-right-slit": 0.25
+    }
+  },
+  "face": {
+    "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/efc78715-image.jpg",
+    "eyeR": [
+      673,
+      1220
+    ],
+    "eyeL": [
+      902,
+      1210
+    ],
+    "mouth": [
+      820,
+      1515
+    ],
+    "chin": [
+      830,
+      1735
+    ],
+    "nose": [
+      810,
+      1350
+    ],
+    "skinSample": [
+      720,
+      1010,
+      900,
+      1090
+    ],
+    "faceHalfWidth": 0.062,
+    "foreheadTop": 0.07
+  },
+  "eyes": [
+    118,
+    140,
+    152
+  ],
+  "hair": {
+    "front": 0.62,
+    "temple": 0.74,
+    "side": 0.38,
+    "color": [
+      58,
+      42,
+      31
+    ],
+    "volume": 0.007
+  },
+  "visorAboveEyes": 0.03,
+  "clothes": {
+    "beltAbovePelvis": 0.025,
+    "sleeve": 0.55,
+    "shirtGap": 0.006,
+    "shirtLoose": 0.018,
+    "pantsGap": 0.006,
+    "pantsLoose": 0.012,
+    "shoeGap": 0.007,
+    "thighR": 0.098,
+    "kneeR": 0.082,
+    "hemR": 0.074
+  }
+}

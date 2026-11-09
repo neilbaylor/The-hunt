@@ -1,0 +1,580 @@
+"""
+Build a golfer character from the CC0 MakeHuman / MPFB2 base human.
+
+  python3 tools/character/build.py [--mpfb /path/to/mpfb2/src/mpfb/data] [--profile neil]
+
+Needs the MPFB2 data folder (CC0):
+  git clone --depth 1 --filter=blob:none --sparse https://github.com/makehumancommunity/mpfb2 /tmp/mh/mpfb2
+  cd /tmp/mh/mpfb2 && git sparse-checkout set src/mpfb/data
+
+What it does:
+  1. shapes the base mesh with MakeHuman macro targets (male, ~38, lean, tall) and face detail targets
+  2. computes the game-engine skeleton joints from the shaped mesh, and per-vertex skin weights
+  3. builds clothing (polo, trousers, shoes, glove) and a hair shell as offset shells of the body, so they
+     deform exactly with it
+  4. bakes a skin texture: the player's photo projected onto the face, matched procedural skin elsewhere
+  5. writes src/assets/<profile>/character.bin (+ skin.jpg, eyes.png) for src/golfer/human.ts
+
+Character space: metres, Y up, faces +Z, the character's left is +X, feet on y = 0.
+"""
+import argparse, collections, gzip, json, math, os, struct, sys
+import numpy as np
+from PIL import Image, ImageOps, ImageFilter
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ap = argparse.ArgumentParser()
+ap.add_argument('--mpfb', default='/tmp/mh/mpfb2/src/mpfb/data')
+ap.add_argument('--profile', default='neil')
+ap.add_argument('--tex', type=int, default=2048)
+args = ap.parse_args()
+D = args.mpfb
+P = json.load(open(os.path.join(os.path.dirname(__file__), f'{args.profile}.json')))
+OUT = os.path.join(ROOT, 'src/assets', args.profile)
+os.makedirs(OUT, exist_ok=True)
+
+# ───────────────────────── base mesh ─────────────────────────
+verts, uvs, faces = [], [], []
+group_verts = collections.defaultdict(set)
+g = None
+for line in open(f'{D}/3dobjs/base.obj'):
+    if line.startswith('v '):
+        verts.append([float(a) for a in line.split()[1:4]])
+    elif line.startswith('vt '):
+        uvs.append([float(a) for a in line.split()[1:3]])
+    elif line.startswith('g '):
+        g = line[2:].strip()
+    elif line.startswith('f '):
+        pts = [tuple(int(a) - 1 for a in p.split('/')[:2]) for p in line.split()[1:]]
+        faces.append((g, pts))
+        for vi, _ in pts:
+            group_verts[g].add(vi)
+V0 = np.array(verts, dtype=np.float64)
+UV = np.array(uvs, dtype=np.float64)
+NV = len(V0)
+
+def load_target(path):
+    d = np.zeros_like(V0)
+    with gzip.open(path, 'rt') as f:
+        for line in f:
+            if not line.strip() or line[0] == '#':
+                continue
+            a = line.split()
+            d[int(a[0])] = [float(a[1]), float(a[2]), float(a[3])]
+    return d
+
+def target(rel):
+    p = f'{D}/targets/{rel}.target.gz'
+    if not os.path.exists(p):
+        print('  (missing target)', rel)
+        return None
+    return load_target(p)
+
+# ───────────────────────── macro shape ─────────────────────────
+M = P['macro']
+def two(v, lo, hi):  # weights for a two-part slider (0..0.5 → low..avg, 0.5..1 → avg..high)
+    if v < 0.5:
+        return {lo: 1 - v / 0.5, 'average': v / 0.5}
+    return {'average': 1 - (v - 0.5) / 0.5, hi: (v - 0.5) / 0.5}
+age = {'young': 1 - (M['age'] - 0.5) / 0.5, 'old': (M['age'] - 0.5) / 0.5} if M['age'] >= 0.5 else {'young': M['age'] / 0.5, 'child': 1 - M['age'] / 0.5}
+mus = {('averagemuscle' if k == 'average' else k): w for k, w in two(M['muscle'], 'minmuscle', 'maxmuscle').items()}
+wei = {('averageweight' if k == 'average' else k): w for k, w in two(M['weight'], 'minweight', 'maxweight').items()}
+V = V0.copy()
+total = 0
+for a, wa in age.items():
+    if wa <= 0: continue
+    for m_, wm in mus.items():
+        if wm <= 0: continue
+        for w_, ww in wei.items():
+            if ww <= 0: continue
+            base = wa * wm * ww
+            t = target(f'macrodetails/universal-male-{a}-{m_}-{w_}')
+            if t is not None: V += base * t; total += base
+            if M['height'] > 0.5:
+                t = target(f'macrodetails/height/male-{a}-{m_}-{w_}-maxheight')
+                if t is not None: V += base * (M['height'] - 0.5) / 0.5 * t
+            if M['proportions'] > 0.5:
+                t = target(f'macrodetails/proportions/male-{a}-{m_}-{w_}-idealproportions')
+                if t is not None: V += base * (M['proportions'] - 0.5) / 0.5 * t
+    t = target(f'macrodetails/caucasian-male-{a}')
+    if t is not None: V += wa * t
+print('macro weight sum', round(total, 3))
+for rel, w in P['details'].items():
+    t = target(rel)
+    if t is not None:
+        V += w * t
+
+# expression morphs (deltas), applied on top at runtime
+morphs = {}
+for name, parts in P['expressions'].items():
+    d = np.zeros_like(V0)
+    for rel, w in parts.items():
+        t = target(rel)
+        if t is not None:
+            d += w * t
+    morphs[name] = d
+
+# ───────────────────────── units, height, floor ─────────────────────────
+body_idx = np.array(sorted(group_verts['body']))
+V *= 0.1
+for k in morphs:
+    morphs[k] *= 0.1
+top, bottom = V[body_idx, 1].max(), V[body_idx, 1].min()
+s = (P['heightM'] - 0.012) / (top - bottom)   # skin height (hair adds ~1 cm)
+V = (V - [0, bottom, 0]) * s
+for k in morphs:
+    morphs[k] *= s
+print('height scale', round(s, 4), '→', round((V[body_idx, 1].max()), 3), 'm skin top')
+
+# ───────────────────────── skeleton ─────────────────────────
+rig = json.load(open(f'{D}/rigs/standard/rig.game_engine.json'))
+def cube(name):
+    return V[sorted(group_verts[name])].mean(0)
+def end(spec):
+    if spec['strategy'] == 'CUBE':
+        return cube(spec['cube_name'])
+    return V[spec['vertex_indices']].mean(0)
+heads = {b: end(d['head']) for b, d in rig.items()}
+tails = {b: end(d['tail']) for b, d in rig.items()}
+
+# our skeleton: 18 driver bones in the order the rig code expects, then hands, toes and fingers
+DRIVERS = ['Root', 'pelvis', 'spine_01', 'spine_02', 'neck_01', 'head',
+           'clavicle_l', 'upperarm_l', 'lowerarm_l', 'clavicle_r', 'upperarm_r', 'lowerarm_r',
+           'thigh_l', 'calf_l', 'foot_l', 'thigh_r', 'calf_r', 'foot_r']
+FINGERS = [f'{f}_0{i}_{s}' for s in 'lr' for f in ['thumb', 'index', 'middle', 'ring', 'pinky'] for i in (1, 2, 3)]
+EXTRA = ['hand_l', 'hand_r', 'ball_l', 'ball_r'] + FINGERS
+BONES = DRIVERS + EXTRA
+MERGE = {'spine_03': 'spine_02'}            # spine_03's skin goes to the chest bone
+PARENT_OVERRIDE = {'neck_01': 'spine_02', 'clavicle_l': 'spine_02', 'clavicle_r': 'spine_02'}
+parents = []
+for b in BONES:
+    p = PARENT_OVERRIDE.get(b, rig[b]['parent'])
+    parents.append(BONES.index(p) if p else -1)
+joint = [heads[b] for b in BONES]
+tail = [tails[b] for b in BONES]
+tail[BONES.index('spine_02')] = heads['neck_01']   # chest runs to the neck once spine_03 is merged
+tail[BONES.index('Root')] = heads['pelvis']
+
+# ───────────────────────── skin weights ─────────────────────────
+W = json.load(open(f'{D}/rigs/standard/weights.game_engine.json'))['weights']
+vw = collections.defaultdict(dict)
+for b, lst in W.items():
+    b2 = MERGE.get(b, b)
+    if b2 not in BONES:
+        continue
+    bi = BONES.index(b2)
+    for vi, w in lst:
+        vw[vi][bi] = vw[vi].get(bi, 0) + w
+def top4(vi):
+    items = sorted(vw[vi].items(), key=lambda x: -x[1])[:4] or [(0, 1.0)]
+    tot = sum(w for _, w in items)
+    items = [(b, w / tot) for b, w in items] + [(0, 0.0)] * (4 - len(items))
+    return items
+
+# ───────────────────────── mesh assembly helpers ─────────────────────────
+def face_list(groups):
+    return [pts for gname, pts in faces if gname in groups]
+
+def build_mesh(face_pts, positions, normal_out=0.0, normals=None, keep=None, extra_offset=None):
+    """split by (vertex, uv) pairs, triangulate. Returns dict of arrays + source vertex ids."""
+    key_to_new, src, uvi, tris = {}, [], [], []
+    for pts in face_pts:
+        if keep is not None and not all(keep[vi] for vi, _ in pts):
+            continue
+        ids = []
+        for vi, ti in pts:
+            k = (vi, ti)
+            if k not in key_to_new:
+                key_to_new[k] = len(src); src.append(vi); uvi.append(ti)
+            ids.append(key_to_new[k])
+        for i in range(1, len(ids) - 1):
+            tris.append((ids[0], ids[i], ids[i + 1]))
+    src = np.array(src); uvi = np.array(uvi)
+    pos = positions[src].copy()
+    if normals is not None and (normal_out or extra_offset is not None):
+        off = extra_offset[src] if extra_offset is not None else normal_out
+        pos += normals[src] * np.reshape(off, (-1, 1))
+    return {'src': src, 'pos': pos, 'uv': UV[uvi], 'tris': np.array(tris, dtype=np.uint32)}
+
+def vertex_normals(positions, face_pts):
+    n = np.zeros_like(positions)
+    for pts in face_pts:
+        ids = [vi for vi, _ in pts]
+        for i in range(1, len(ids) - 1):
+            a, b, c = positions[ids[0]], positions[ids[i]], positions[ids[i + 1]]
+            fn = np.cross(b - a, c - a)
+            for j in (ids[0], ids[i], ids[i + 1]):
+                n[j] += fn
+    l = np.linalg.norm(n, axis=1, keepdims=True); l[l == 0] = 1
+    return n / l
+
+body_faces = face_list({'body'})
+N = vertex_normals(V, body_faces)
+# make sure normals point out of the body (MakeHuman winds faces counter-clockwise, so this is a safety check)
+if np.mean(np.sum(N[body_idx] * (V[body_idx] - V[body_idx].mean(0)), axis=1)) < 0:
+    N = -N
+
+def wsum(vi, names):
+    return sum(vw[vi].get(BONES.index(n), 0) for n in names if n in BONES)
+
+# region tests on body vertices
+pelvis_y = joint[BONES.index('pelvis')][1]
+neck_y = joint[BONES.index('neck_01')][1]
+ankle_y = {s: joint[BONES.index(f'foot_{s}')][1] for s in 'lr'}
+def along(vi, a, b):  # 0 at bone a's head, 1 at b's head
+    pa, pb = joint[BONES.index(a)], joint[BONES.index(b)]
+    d = pb - pa
+    return float(np.dot(V[vi] - pa, d) / np.dot(d, d))
+
+C = P['clothes']
+belt_y = pelvis_y + C['beltAbovePelvis']
+shirt = np.zeros(NV, bool); pants = np.zeros(NV, bool); shoes = np.zeros(NV, bool); glove = np.zeros(NV, bool)
+shirt_off = np.zeros(NV); pants_off = np.zeros(NV); shoe_off = np.zeros(NV)
+for vi in body_idx:
+    y = V[vi, 1]
+    torso = wsum(vi, ['pelvis', 'spine_01', 'spine_02', 'clavicle_l', 'clavicle_r', 'upperarm_l', 'upperarm_r', 'neck_01'])
+    arm_l, arm_r = wsum(vi, ['upperarm_l', 'lowerarm_l', 'hand_l']), wsum(vi, ['upperarm_r', 'lowerarm_r', 'hand_r'])
+    legs = wsum(vi, ['thigh_l', 'thigh_r', 'calf_l', 'calf_r', 'pelvis'])
+    feet = wsum(vi, ['foot_l', 'foot_r', 'ball_l', 'ball_r'])
+    neckw = vw[vi].get(BONES.index('neck_01'), 0) + vw[vi].get(BONES.index('head'), 0)
+    # shirt: torso and upper arms (short sleeves), from the belt up to the collar
+    if y > belt_y - 0.035 and neckw < 0.5 and y < neck_y + 0.01:
+        sleeve_ok = True
+        if arm_l > 0.5: sleeve_ok = along(vi, 'upperarm_l', 'lowerarm_l') < C['sleeve']
+        if arm_r > 0.5: sleeve_ok = along(vi, 'upperarm_r', 'lowerarm_r') < C['sleeve']
+        if sleeve_ok and (torso > 0.3 or arm_l > 0.3 or arm_r > 0.3):
+            shirt[vi] = True
+            loose = 1 - min(1, abs(y - (pelvis_y + 0.18)) / 0.3)
+            shirt_off[vi] = C['shirtGap'] + C['shirtLoose'] * loose
+    # trousers: belt line down to just above the ankle
+    if y < belt_y + 0.004 and feet < 0.5 and legs > 0.3 and y > min(ankle_y.values()) + 0.035:
+        pants[vi] = True
+        knee = min(abs(y - joint[BONES.index('calf_l')][1]), 0.3)
+        pants_off[vi] = C['pantsGap'] + C['pantsLoose'] * (0.6 + 0.4 * (1 - knee / 0.3)) * (1.2 if y < joint[BONES.index('calf_l')][1] else 1)
+    # shoes
+    if feet > 0.3 or (y < min(ankle_y.values()) + 0.06 and legs > 0.2):
+        if y < min(ankle_y.values()) + 0.07:
+            shoes[vi] = True
+            shoe_off[vi] = C['shoeGap'] + (0.008 if V[vi, 1] < 0.02 else 0)
+    # glove on the lead hand (the rig's left; a left-hander is drawn mirrored)
+    if wsum(vi, ['hand_l'] + [f for f in FINGERS if f.endswith('_l')]) > 0.5:
+        glove[vi] = True
+
+# smooth the offsets so the shells don't wrinkle at region edges
+def smooth_field(field, mask, it=6):
+    nb = collections.defaultdict(set)
+    for pts in body_faces:
+        ids = [vi for vi, _ in pts]
+        for a in ids:
+            for b in ids:
+                if a != b: nb[a].add(b)
+    f = field.copy()
+    for _ in range(it):
+        g2 = f.copy()
+        for vi in np.nonzero(mask)[0]:
+            ns = [n for n in nb[vi] if mask[n]]
+            if ns: g2[vi] = 0.5 * f[vi] + 0.5 * np.mean(f[ns])
+        f = g2
+    return f, nb
+shirt_off, NB = smooth_field(shirt_off, shirt)
+pants_off, _ = smooth_field(pants_off, pants)
+
+# smoothed positions for shells: fabric doesn't follow every muscle
+def smooth_positions(mask, it, amount=0.5):
+    # Taubin smoothing (shrink then inflate) so the fabric smooths out without losing volume
+    P2 = V.copy()
+    ids = np.nonzero(mask)[0]
+    nbs = {vi: [n for n in NB[vi] if mask[n]] for vi in ids}
+    for i in range(it * 2):
+        lam = amount if i % 2 == 0 else -amount * 1.06
+        Q = P2.copy()
+        for vi in ids:
+            ns = nbs[vi]
+            if ns: Q[vi] = P2[vi] + lam * (P2[ns].mean(0) - P2[vi])
+        P2 = Q
+    return P2
+Vshirt = smooth_positions(shirt, 3)
+Vpants = smooth_positions(pants, 3)
+
+# straight-cut trouser legs: push each leg out to a minimum radius round the hip→ankle line
+for sfx in 'lr':
+    hip = joint[BONES.index(f'thigh_{sfx}')]; ank = joint[BONES.index(f'foot_{sfx}')]; knee = joint[BONES.index(f'calf_{sfx}')]
+    ax = ank - hip; L2 = float(np.dot(ax, ax))
+    for vi in np.nonzero(pants)[0]:
+        if wsum(vi, [f'thigh_{sfx}', f'calf_{sfx}']) < 0.5 or Vpants[vi, 1] > hip[1] - 0.06:
+            continue
+        t = float(np.clip(np.dot(Vpants[vi] - hip, ax) / L2, 0, 1)); c = hip + ax * t
+        r = Vpants[vi] - c; rl = np.linalg.norm(r)
+        rmin = np.interp(t, [0, 0.45, 1.0], [C['thighR'], C['kneeR'], C['hemR']])
+        want = max(rl + pants_off[vi], rmin)
+        Vpants[vi] = c + r / max(rl, 1e-6) * want
+        pants_off[vi] = 0.0
+Vpants = smooth_positions_from(Vpants, pants, 2) if 'smooth_positions_from' in globals() else Vpants
+
+meshes = {}
+meshes['skin'] = build_mesh(body_faces, V)
+meshes['shirt'] = build_mesh(body_faces, Vshirt, normals=N, keep=shirt, extra_offset=shirt_off)
+meshes['pants'] = build_mesh(body_faces, Vpants, normals=N, keep=pants, extra_offset=pants_off)
+meshes['glove'] = build_mesh(body_faces, V, normals=N, keep=glove, normal_out=0.0012)
+meshes['eyes'] = build_mesh(face_list({'helper-l-eye', 'helper-r-eye'}), V)
+meshes['teeth'] = build_mesh(face_list({'helper-upper-teeth', 'helper-lower-teeth', 'helper-tongue'}), V)
+lash_groups = {gname for gname in group_verts if 'eyelashes' in gname}
+meshes['lashes'] = build_mesh(face_list(lash_groups), V)
+
+# shoes: flatten the sole and square the toe a little
+
+# ───────────────────────── hair shell + head measurements ─────────────────────────
+head_bi = BONES.index('head')
+head_v = np.array([vi for vi in body_idx if vw[vi].get(head_bi, 0) > 0.6])
+hc = V[head_v].mean(0)
+eye_c = (cube('joint-l-eye') + cube('joint-r-eye')) / 2
+def hair_mask(p):
+    d = p - hc
+    az = math.atan2(d[0], d[2]); el = math.atan2(d[1], math.hypot(d[0], d[2]))
+    a = abs(az)
+    H = P['hair']
+    keys = [(0, H['front']), (0.45, H['front'] + 0.02), (0.75, H['temple']), (1.05, H['side']), (1.25, -0.05), (1.38, 0.18),
+            (1.62, 0.2), (1.9, -0.1), (2.35, -0.45), (math.pi, -0.52)]
+    for i in range(1, len(keys)):
+        if a <= keys[i][0]:
+            (a0, e0), (a1, e1) = keys[i - 1], keys[i]
+            t = (a - a0) / (a1 - a0); t = t * t * (3 - 2 * t)
+            e = e0 + (e1 - e0) * t
+            break
+    return el - e, el
+def hair_mask_v(p):
+    d = p - hc
+    a = np.abs(np.arctan2(d[:, 0], d[:, 2])); el = np.arctan2(d[:, 1], np.hypot(d[:, 0], d[:, 2]))
+    H = P['hair']
+    ka = [0, 0.45, 0.75, 1.05, 1.25, 1.38, 1.62, 1.9, 2.35, math.pi]
+    ke = [H['front'], H['front'] + 0.02, H['temple'], H['side'], -0.05, 0.18, 0.2, -0.1, -0.45, -0.52]
+    return el - np.interp(a, ka, ke)
+hm = np.zeros(NV); hthick = np.zeros(NV)
+for vi in head_v:
+    m_, el = hair_mask(V[vi])
+    mm = min(1, max(0, (m_ + 0.06) / 0.16))
+    hm[vi] = mm
+    top = min(1, max(0, (el - 0.25) / 0.9))
+    hthick[vi] = (0.0025 + P['hair']['volume'] * (0.4 + 0.6 * top)) * (mm ** 0.5) + 0.0008
+keep_hair = np.zeros(NV, bool); keep_hair[head_v] = True
+hair = build_mesh(body_faces, V, normals=N, keep=keep_hair, extra_offset=hthick)
+hair['mask'] = hm[hair['src']]
+meshes['hair'] = hair
+
+# a ring round the head at visor height, for fitting hats
+band_y = eye_c[1] + P['visorAboveEyes']
+ring = V[[vi for vi in head_v if abs(V[vi, 1] - band_y) < 0.006]]
+visor = {'center': [float(hc[0]), float(band_y), float(ring[:, 2].mean())],
+         'rx': float((ring[:, 0].max() - ring[:, 0].min()) / 2 + 0.0115),
+         'rz': float((ring[:, 2].max() - ring[:, 2].min()) / 2 + 0.0125)}
+
+# ───────────────────────── measurements for collar, belt, shoes ─────────────────────────
+def boundary_loop(mesh, ypred):
+    from collections import Counter
+    t = mesh['tris']; cnt = Counter()
+    for a, b, c in t:
+        for e in ((a, b), (b, c), (c, a)):
+            cnt[tuple(sorted(e))] += 1
+    # boundary edges by source vertex (uv seams split vertices, so compare by position)
+    pts = [mesh['pos'][i] for e, n in cnt.items() if n == 1 for i in e if ypred(mesh['pos'][i])]
+    return np.array(pts)
+neck_c = joint[BONES.index('neck_01')]
+coll = boundary_loop(meshes['shirt'], lambda q: q[1] > neck_y - 0.09 and abs(q[0]) < 0.12)
+ang = np.arctan2(coll[:, 0] - neck_c[0], coll[:, 2] - neck_c[2])
+order = np.argsort(ang); coll = coll[order]; ang = ang[order]
+# resample to 48 points round the neck
+samples = []
+for a in np.linspace(-math.pi, math.pi, 48, endpoint=False):
+    d = np.abs(((ang - a + math.pi) % (2 * math.pi)) - math.pi)
+    w = np.exp(-(d / 0.12) ** 2); samples.append((coll * w[:, None]).sum(0) / w.sum())
+collar = [list(map(float, q)) for q in samples]
+waist = V[[vi for vi in body_idx if abs(V[vi, 1] - belt_y) < 0.006 and wsum(vi, ['pelvis', 'spine_01', 'thigh_l', 'thigh_r']) > 0.6]]
+belt = {'y': float(belt_y), 'cx': float(waist[:, 0].mean()), 'cz': float((waist[:, 2].max() + waist[:, 2].min()) / 2),
+        'rx': float((waist[:, 0].max() - waist[:, 0].min()) / 2), 'rz': float((waist[:, 2].max() - waist[:, 2].min()) / 2)}
+feet = {}
+for sfx in 'lr':
+    fv = V[[vi for vi in body_idx if wsum(vi, [f'foot_{sfx}', f'ball_{sfx}']) > 0.5 and V[vi, 1] < 0.12]]
+    feet[sfx] = {'heelZ': float(fv[:, 2].min()), 'toeZ': float(fv[:, 2].max()), 'x': float(fv[:, 0].mean()),
+                 'halfW': float((np.percentile(fv[:, 0], 98) - np.percentile(fv[:, 0], 2)) / 2), 'ankleY': float(joint[BONES.index(f'foot_{sfx}')][1])}
+print('belt', {k: round(v, 3) for k, v in belt.items()}, 'feet', {k: {a: round(b, 3) for a, b in v.items()} for k, v in feet.items()})
+
+# ───────────────────────── skin texture ─────────────────────────
+T = args.tex
+def raster(mesh, fn, size, bg=(0, 0, 0)):
+    """bake fn(pos, nrm) -> rgb over the mesh's UV layout"""
+    pos, uv, tris = mesh['pos'], mesh['uv'], mesh['tris']
+    nrm = N[mesh['src']] if mesh is meshes['skin'] else None
+    P_all, N_all, X_all, Y_all = [], [], [], []
+    for a, b, c in tris:
+        ua, ub, uc = uv[a] * size, uv[b] * size, uv[c] * size
+        x0, x1 = int(max(0, math.floor(min(ua[0], ub[0], uc[0])))), int(min(size - 1, math.ceil(max(ua[0], ub[0], uc[0]))))
+        y0, y1 = int(max(0, math.floor(min(ua[1], ub[1], uc[1])))), int(min(size - 1, math.ceil(max(ua[1], ub[1], uc[1]))))
+        if x1 < x0 or y1 < y0: continue
+        xs, ys = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
+        xs, ys = xs.ravel(), ys.ravel()
+        den = (ub[1] - uc[1]) * (ua[0] - uc[0]) + (uc[0] - ub[0]) * (ua[1] - uc[1])
+        if abs(den) < 1e-12: continue
+        w0 = ((ub[1] - uc[1]) * (xs - uc[0]) + (uc[0] - ub[0]) * (ys - uc[1])) / den
+        w1 = ((uc[1] - ua[1]) * (xs - uc[0]) + (ua[0] - uc[0]) * (ys - uc[1])) / den
+        w2 = 1 - w0 - w1
+        inside = (w0 >= -0.02) & (w1 >= -0.02) & (w2 >= -0.02)
+        if not inside.any(): continue
+        w0, w1, w2 = w0[inside], w1[inside], w2[inside]
+        P_all.append(w0[:, None] * pos[a] + w1[:, None] * pos[b] + w2[:, None] * pos[c])
+        if nrm is not None:
+            N_all.append(w0[:, None] * nrm[a] + w1[:, None] * nrm[b] + w2[:, None] * nrm[c])
+        X_all.append(xs[inside].astype(int)); Y_all.append(ys[inside].astype(int))
+    Pp = np.concatenate(P_all); Xp = np.concatenate(X_all); Yp = np.concatenate(Y_all)
+    Np = np.concatenate(N_all) if N_all else None
+    rgb = fn(Pp, Np)
+    img = np.zeros((size, size, 3), np.float32); filled = np.zeros((size, size), bool)
+    img[size - 1 - Yp, Xp] = rgb; filled[size - 1 - Yp, Xp] = True
+    # dilate into the gutters so mip-maps don't bleed black seams
+    for _ in range(12):
+        nf = filled.copy(); acc = np.zeros_like(img); cnt = np.zeros((size, size), np.float32)
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            sh = np.roll(np.roll(filled, dy, 0), dx, 1); si = np.roll(np.roll(img, dy, 0), dx, 1)
+            add = sh & ~filled
+            acc[add] += si[add]; cnt[add] += 1; nf |= add
+        newp = cnt > 0
+        img[newp] = acc[newp] / cnt[newp][:, None]
+        filled = nf
+    img[~filled] = bg
+    return img
+
+rng = np.random.default_rng(7)
+def value_noise(p, freq, seed=0):
+    # cheap 3D value noise via hashed lattice
+    q = p * freq + seed * 17.13
+    i = np.floor(q).astype(np.int64); f = q - i
+    f = f * f * (3 - 2 * f)
+    def h(ix, iy, iz):
+        n = (ix * 73856093) ^ (iy * 19349663) ^ (iz * 83492791) ^ (seed * 2654435761)
+        n = (n ^ (n >> 13)) * 1274126177
+        return ((n ^ (n >> 16)) & 0xFFFF) / 65535.0
+    out = 0
+    for dx in (0, 1):
+        for dy in (0, 1):
+            for dz in (0, 1):
+                w = (f[:, 0] if dx else 1 - f[:, 0]) * (f[:, 1] if dy else 1 - f[:, 1]) * (f[:, 2] if dz else 1 - f[:, 2])
+                out = out + w * h(i[:, 0] + dx, i[:, 1] + dy, i[:, 2] + dz)
+    return out
+
+# the photo
+photo = None
+F = P.get('face')
+if F:
+    im = ImageOps.exif_transpose(Image.open(F['photo'])).convert('RGB')
+    sk = np.asarray(im.crop(tuple(F['skinSample']))).reshape(-1, 3).astype(np.float32) / 255.0
+    skin_rgb = np.median(sk, axis=0)
+    if P['handed'] == 'left':
+        # a left-hander is drawn mirrored, so project a mirrored photo: the final render reads true
+        im = ImageOps.mirror(im)
+        W0 = im.width
+        for k in ('eyeR', 'eyeL', 'mouth', 'chin', 'nose'):
+            F[k] = [W0 - F[k][0], F[k][1]]
+        F['eyeR'], F['eyeL'] = F['eyeL'], F['eyeR']
+    photo = np.asarray(im).astype(np.float32) / 255.0
+    # landmark correspondences: mesh (x, y) in front projection → photo (px, py)
+    mouth_d = np.linalg.norm(load_target(f'{D}/targets/expression/units/caucasian/mouth-parling.target.gz'), axis=1)
+    lips = np.array([vi for vi in body_idx if mouth_d[vi] > np.percentile(mouth_d[body_idx], 99.6)])
+    mouth_c = V[lips].mean(0)
+    face_front = [vi for vi in head_v if V[vi, 2] > hc[2] and abs(V[vi, 0] - hc[0]) < 0.02]
+    chin_cands = [vi for vi in body_idx if abs(V[vi, 0]) < 0.006 and V[vi, 2] > mouth_c[2] - 0.04 and mouth_c[1] - 0.09 < V[vi, 1] < mouth_c[1]]
+    # the chin's lowest point: where the front of the face turns under toward the neck
+    chin_vi = min(chin_cands, key=lambda vi: V[vi, 1] - 2.0 * max(0, V[vi, 2] - (mouth_c[2] - 0.035)) * 0 + (0 if N[vi, 2] > 0.05 else 9))
+    nose_vi = max(face_front, key=lambda vi: V[vi, 2])
+    src_pts = np.array([[cube('joint-r-eye')[0], cube('joint-r-eye')[1]], [cube('joint-l-eye')[0], cube('joint-l-eye')[1]],
+                        [mouth_c[0], mouth_c[1]], [V[chin_vi, 0], V[chin_vi, 1]]])
+    # the photo's right eye (subject's right) is on the image left; the mesh's right eye is at -x
+    dst_pts = np.array([F['eyeR'], F['eyeL'], F['mouth'], F['chin']], dtype=np.float64)
+    A = np.c_[src_pts, np.ones(4)]
+    affine, *_ = np.linalg.lstsq(A, dst_pts, rcond=None)
+    print('photo affine residual px', np.round(np.linalg.norm(A @ affine - dst_pts, axis=1), 1))
+    print('mesh landmarks (x,y m):', np.round(src_pts, 4), 'nose', np.round(V[nose_vi], 4), 'hc', np.round(hc, 4), 'lips n', len(lips))
+    print('sampled skin', (skin_rgb * 255).round())
+    F['photoSkin'] = list(skin_rgb * 255)
+else:
+    skin_rgb = np.array([0.86, 0.66, 0.56])
+
+def skin_fn(p, n):
+    base = np.tile(skin_rgb, (len(p), 1)).astype(np.float32)
+    # subtle variation: warmer on hands, knuckles, elbows, ears; blotchy noise; pores
+    nz = value_noise(p, 40) * 0.6 + value_noise(p, 140, 1) * 0.4
+    base *= (0.94 + 0.1 * nz)[:, None]
+    base *= 1 + 0.03 * (value_noise(p, 9, 2) - 0.5)[:, None]
+    if photo is not None:
+        d = p - hc
+        xy = np.c_[p[:, 0], p[:, 1], np.ones(len(p))] @ affine
+        px = np.clip(xy[:, 0], 0, photo.shape[1] - 1).astype(int); py = np.clip(xy[:, 1], 0, photo.shape[0] - 1).astype(int)
+        ph = photo[py, px]
+        # blend: front-facing parts of the face only, fading toward the ears, the neck and the hairline
+        facing = np.clip((n[:, 2] - 0.25) / 0.45, 0, 1)
+        inface = np.clip(1 - (np.abs(d[:, 0]) - F['faceHalfWidth']) / 0.012, 0, 1)
+        yband = np.clip((p[:, 1] - (V[chin_vi, 1] - 0.03)) / 0.025, 0, 1) * np.clip(((hc[1] + F['foreheadTop']) - p[:, 1]) / 0.02, 0, 1)
+        front = (d[:, 2] > 0).astype(np.float32)
+        wgt = (facing * inface * yband * front)[:, None]
+        # colour-match the photo to the body skin so the seam disappears
+        base = base * (1 - wgt) + ph * wgt
+    # painted short hair under the hair shell (soft hairline)
+    hp = P['hair']
+    hcol = np.array(hp['color']) / 255.0
+    mm = hair_mask_v(p)
+    hw = np.clip((mm + 0.03) / 0.06, 0, 1)[:, None] * (np.linalg.norm(p - hc, axis=1) < 0.16)[:, None]
+    base = base * (1 - 0.92 * hw) + hcol * 0.92 * hw
+    return np.clip(base, 0, 1)
+
+print('baking skin texture…')
+skin_img = raster(meshes['skin'], skin_fn, T)
+Image.fromarray((skin_img * 255).astype(np.uint8)).save(f'{OUT}/skin.jpg', quality=86)
+
+# eyes: iris colour from the profile, a little radial detail
+iris = np.array(P['eyes']) / 255.0
+eye_l, eye_r = cube('joint-l-eye'), cube('joint-r-eye')
+def eye_fn(p, n):
+    c = np.where((p[:, 0] > 0)[:, None], eye_l, eye_r)
+    d = p - c; d /= np.linalg.norm(d, axis=1, keepdims=True)
+    ang = np.degrees(np.arccos(np.clip(d[:, 2], -1, 1)))
+    out = np.tile([0.93, 0.9, 0.88], (len(p), 1)).astype(np.float32)
+    rad = value_noise(np.c_[np.arctan2(d[:, 1], d[:, 0]) * 3, ang * 0.2, d[:, 2]], 6, 3)
+    iris_c = iris * (0.75 + 0.4 * rad)[:, None]
+    ir = (ang < 17)[:, None]; ring = ((ang > 15.5) & (ang < 17.5))[:, None]; pupil = (ang < 6.5)[:, None]
+    out = np.where(ir, iris_c, out); out = np.where(ring, iris * 0.45, out); out = np.where(pupil, [0.03, 0.03, 0.035], out)
+    return out
+eye_img = raster(meshes['eyes'], eye_fn, 512, bg=(0.9, 0.88, 0.86))
+Image.fromarray((eye_img * 255).astype(np.uint8)).save(f'{OUT}/eyes.png')
+
+# ───────────────────────── write the binary ─────────────────────────
+blobs = bytearray(); desc = {}
+def put(arr, dtype):
+    global blobs
+    a = np.ascontiguousarray(arr, dtype=dtype)
+    while len(blobs) % 4: blobs += b'\0'
+    off = len(blobs); blobs += a.tobytes()
+    return {'offset': off, 'count': int(a.size), 'type': np.dtype(dtype).name}
+for name, m in meshes.items():
+    sw = [top4(vi) for vi in m['src']]
+    d = {'position': put(m['pos'], np.float32), 'uv': put(m['uv'], np.float32), 'index': put(m['tris'].ravel(), np.uint32),
+         'skinIndex': put([[b for b, _ in s] for s in sw], np.uint16), 'skinWeight': put([[w for _, w in s] for s in sw], np.float32)}
+    if name == 'skin':
+        for mn, md in morphs.items():
+            d['morph_' + mn] = put(md[m['src']], np.float32)
+    if name == 'teeth':
+        for mn, md in morphs.items():
+            d['morph_' + mn] = put(md[m['src']], np.float32)
+    if 'mask' in m:
+        d['mask'] = put(m['mask'], np.float32)
+    desc[name] = d
+    print(f'  {name}: {len(m["pos"])} verts, {len(m["tris"])} tris')
+meta = {
+    'bones': BONES, 'parents': parents,
+    'joint': [list(map(float, j)) for j in joint], 'tail': [list(map(float, t)) for t in tail],
+    'eye': list(map(float, eye_c)), 'headCenter': list(map(float, hc)), 'visor': visor,
+    'collar': collar, 'belt': belt, 'feet': feet,
+    'meshes': desc, 'heightM': P['heightM'],
+}
+mj = json.dumps(meta).encode()
+with open(f'{OUT}/character.bin', 'wb') as f:
+    f.write(b'GOLF'); f.write(struct.pack('<I', len(mj))); f.write(mj)
+    while (8 + len(mj)) % 4: f.write(b' '); mj += b' '
+    f.write(blobs)
+print('wrote', OUT, os.path.getsize(f'{OUT}/character.bin') // 1024, 'KB')

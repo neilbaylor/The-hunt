@@ -6,6 +6,7 @@ import { buildBody, BONE, type Body } from './body';
 import { Rig, type BodyPose } from './rig';
 import { buildClub, buildHands, CLUB_SPECS, type ClubModel } from './club';
 import type { GolferProfile } from './profile';
+import { buildHumanBody, type HumanData, type HumanExtras } from './human';
 
 export type ShotMode = 'full' | 'punch' | 'pitch' | 'flop';
 export type SwingPhase = 'address' | 'back' | 'down' | 'follow';
@@ -39,7 +40,7 @@ export const SHOT_STYLE: Record<ShotMode, { back: number; finish: number; stance
   pitch: { back: 0.58, finish: 0.58, stance: 0.75, hinge: 0.85, open: 0.05, handsFwd: 0.02, tempo: 0.9 },
   flop:  { back: 0.92, finish: 0.9,  stance: 1.05, hinge: 1.1,  open: 0.3,  handsFwd: -0.02, tempo: 1.15 },
 };
-export const PHI_TOP = 2.45;     // hands angle at the top of a full swing
+export const PHI_TOP = 2.6;     // hands angle at the top of a full swing
 export const PHI_FINISH = -3.2; // hands angle at a full finish
 
 export class Golfer {
@@ -68,10 +69,13 @@ export class Golfer {
   /** ease the face toward a smile (1) or neutral (0) */
   smileToward(target: number, dt: number) { this.smile += (target - this.smile) * (1 - Math.exp(-dt * 5)); this.body.setSmile(this.smile); }
 
-  constructor(readonly profile: GolferProfile) {
+  private extras: HumanExtras | null = null;
+  private handFrame: { L: { dir: THREE.Vector3; palm: THREE.Vector3 }; R: { dir: THREE.Vector3; palm: THREE.Vector3 } } | null = null;
+  constructor(readonly profile: GolferProfile, human?: HumanData) {
     this.k = profile.heightM / 1.905;
     this.lefty = profile.handed === 'left';
-    this.body = buildBody(profile);
+    if (human) { const b = buildHumanBody(human, profile); this.body = b; this.extras = b.extras; }
+    else this.body = buildBody(profile);
     this.rig = new Rig(this.body);
     this.char.add(this.body.root);
     this.char.rotation.y = Math.PI / 2;         // char +Z (facing) → world +X; char +X (target) → world -Z
@@ -112,7 +116,7 @@ export class Golfer {
     let lo = -1.2, hi = -0.2;
     for (let it = 0; it < 22; it++) {
       const z = (lo + hi) / 2;
-      this.pelvisBase.set(this.stanceX + st.handsFwd * 0, 0.925 * k - st.stance * 0.01, z);
+      this.pelvisBase.set(this.stanceX + st.handsFwd * 0, this.body.skel.joint[BONE.pelvis].y - 0.07 * k - st.stance * 0.01, z);
       this.addressKeys(pos);
       this.rig.apply(pos);
       const sh = this.rig.P[BONE.upperL];
@@ -130,7 +134,21 @@ export class Golfer {
     const shL = this.rig.P[BONE.upperL].clone(), shR = this.rig.P[BONE.upperR].clone();
     const towardL = shL.sub(this.gripAddr).normalize();
     const towardR = shR.sub(this.clubAt.clone().add(this.club.gripTrail)).normalize();
-    this.hands = buildHands(this.club, towardL, towardR, this.body.materials.glove, this.body.materials.skin);
+    if (this.extras) {
+      // real hands: a hand frame per hand in club space, the wrist set back from the grip
+      const gl = this.club.gripLead, gr = this.club.gripTrail;
+      const frame = (toward: THREE.Vector3, palmToward: THREE.Vector3, grip: THREE.Vector3) => {
+        const dir = toward.clone().negate();
+        const palm = palmToward.clone().addScaledVector(dir, -palmToward.dot(dir)).normalize();
+        const wrist = grip.clone().addScaledVector(dir, -0.072 * k).addScaledVector(palm, -0.024 * k);
+        return { dir, palm, wrist };
+      };
+      const fL = frame(towardL, new THREE.Vector3(-1, 0, 0), gl), fR = frame(towardR, new THREE.Vector3(1, 0, 0), gr);
+      this.handFrame = { L: fL, R: fR };
+      this.hands = { group: new THREE.Group(), wristLead: fL.wrist, wristTrail: fR.wrist };
+    } else {
+      this.hands = buildHands(this.club, towardL, towardR, this.body.materials.glove, this.body.materials.skin);
+    }
     this.club.group.add(this.hands.group);
     this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
   }
@@ -156,10 +174,14 @@ export class Golfer {
     const fz = this.pelvisBase.z + 0.1 * k;
     const flareL = 0.38 + st.open, flareR = -0.12;
     const openBack = st.open * 0.12; // open stance: lead foot pulled back from the line
-    p.ankleL.set(this.stanceX + half, 0.09 * k, fz - openBack);
-    p.ankleR.set(this.stanceX - half, 0.09 * k, fz);
-    p.toeL.copy(p.ankleL).add(new THREE.Vector3(Math.sin(flareL), -0.068 * k / 0.17, Math.cos(flareL)).multiplyScalar(0.17 * k));
-    p.toeR.copy(p.ankleR).add(new THREE.Vector3(Math.sin(flareR), -0.068 * k / 0.17, Math.cos(flareR)).multiplyScalar(0.17 * k));
+    const J = this.body.skel.joint, T = this.body.skel.tail;
+    p.ankleL.set(this.stanceX + half, J[BONE.footL].y, fz - openBack);
+    p.ankleR.set(this.stanceX - half, J[BONE.footR].y, fz);
+    // feet keep their bind shape, turned out (flared) a little
+    const fL = T[BONE.footL].clone().sub(J[BONE.footL]), fR = T[BONE.footR].clone().sub(J[BONE.footR]);
+    fL.x = 0; fR.x = 0;
+    p.toeL.copy(p.ankleL).add(fL.applyAxisAngle(new THREE.Vector3(0, 1, 0), flareL));
+    p.toeR.copy(p.ankleR).add(fR.applyAxisAngle(new THREE.Vector3(0, 1, 0), flareR));
     // trail heel comes up and the trail knee kicks in toward the target in the follow-through
     if (heel > 0) {
       const toe = p.toeR.clone();
@@ -259,7 +281,40 @@ export class Golfer {
       p.wristL.add(miss); p.wristR.add(miss);
       this.rig.apply(p);
     }
+    if (this.extras && this.handFrame) this.poseHands(qc, key.heel);
     this.char.updateMatrixWorld(true);
     return this.club.group.localToWorld(this.clubHeadWorld.set(0, 0, 0));
+  }
+
+  /** hands follow the club, fingers wrap the grip, toes stay flat */
+  private poseHands(qc: THREE.Quaternion, _heel: number) {
+    const E = this.extras!, F = this.handFrame!, Q = this.rig.Q, bones = this.body.bones;
+    const m1 = new THREE.Matrix4(), m2 = new THREE.Matrix4();
+    const basis = (dir: THREE.Vector3, hint: THREE.Vector3, out: THREE.Matrix4) => {
+      const y = dir.clone().normalize(), z = hint.clone().addScaledVector(y, -hint.dot(y)).normalize(), x = new THREE.Vector3().crossVectors(y, z);
+      return out.makeBasis(x, y, z);
+    };
+    const local = (bi: number, parentQ: THREE.Quaternion, q: THREE.Quaternion) => { bones[bi].quaternion.copy(parentQ.clone().invert().multiply(q)); };
+    for (const s of ['L', 'R'] as const) {
+      const fore = s === 'L' ? BONE.foreL : BONE.foreR;
+      const dir = F[s].dir.clone().applyQuaternion(qc), palm = F[s].palm.clone().applyQuaternion(qc);
+      basis(dir, palm, m1); basis(E.handDir[s], E.palm[s], m2);
+      const qh = new THREE.Quaternion().setFromRotationMatrix(m1.multiply(m2.transpose()));
+      local(E.hand[s], Q[fore], qh);
+      // fingers: curl round the grip; the thumb lies along it
+      const curls = [[0.25, 0.35, 0.3], [0.95, 1.15, 0.7], [1.05, 1.2, 0.75], [1.1, 1.2, 0.75], [1.15, 1.15, 0.7]];
+      E.fingers[s].forEach((chain, fi) => {
+        let parentQ = qh, acc = 0;
+        chain.forEach((b, si) => {
+          acc += curls[fi][si];
+          const axis = fi === 0 ? E.palm[s].clone().cross(E.handDir[s]).normalize().lerp(E.curlAxis[s], 0.5).normalize() : E.curlAxis[s];
+          const q = qh.clone().multiply(new THREE.Quaternion().setFromAxisAngle(axis, acc));
+          local(b, parentQ, q); parentQ = q;
+        });
+      });
+    }
+    // toes stay flat on the ground when the heel comes up
+    local(E.ball.L, Q[BONE.footL], new THREE.Quaternion());
+    local(E.ball.R, Q[BONE.footR], new THREE.Quaternion());
   }
 }

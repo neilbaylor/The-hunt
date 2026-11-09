@@ -24,6 +24,7 @@ export interface Headwear {
 
 export interface Outfit {
   top: 'hoodie' | 'polo';
+  shirt: string;      // polo colour (realistic body)
   topColor: string;
   topTrim: string;
   emblem: string;     // small chest emblem colour
@@ -75,17 +76,18 @@ export const NEIL: GolferProfile = {
     earOut: 1.1,
   },
   outfit: {
-    top: 'hoodie',
+    top: 'polo',
+    shirt: '#1f2f4f',
     topColor: '#d6d3cc',
     topTrim: '#c9c5bd',
     emblem: '#b3262e',
-    pants: '#2b3039',
+    pants: '#c9bfa6',
     shoes: '#f3f2ee',
     shoeTrim: '#b3262e',
     glove: '#f6f5f1',
     headwear: { kind: 'visor', color: '#f3efe4', under: '#24382b', logo: 'pizza-hut' },
   },
-  swing: { tempo: 0.95, length: 1.0, finishHigh: 1.0, waggle: true },
+  swing: { tempo: 1.2, length: 1.0, finishHigh: 1.0, waggle: true },
 };
 
 export const feetInches = (m: number) => {

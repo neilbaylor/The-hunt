@@ -37,7 +37,7 @@ export function padSVG(skin: Skin) {
     <style>#${id} .tick{stroke:${tick};stroke-width:1.5} #${id} .tlab{fill:${tlab}}</style>
     <line x1="0" x2="0" y1="-78" y2="84" stroke="${lane}" stroke-width="2" stroke-dasharray="3 5" stroke-linecap="round"/>
     <path d="M-7 -40 L0 -50 L7 -40" fill="none" stroke="${lane}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M-7 40 L0 50 L7 40" fill="none" stroke="${lane}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity=".6"/>
+    <g class="hint"><path d="M-9 34 L0 44 L9 34" fill="none" stroke="${trailB}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M-9 46 L0 56 L9 46" fill="none" stroke="${trailB}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" opacity=".55"/></g>
     ${ticks}
     <circle r="95" fill="none" stroke="${ring}" stroke-width="5" class="top-ring"/>
     <path class="trail-b" d="" fill="none" stroke="${trailB}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
@@ -131,7 +131,7 @@ export class Hud {
       <div class="corner tr"><div id="lieSlot"></div></div>
       <div class="corner tc"><div class="who" id="who"></div></div>
       <div class="corner bl"><div id="cardSlot"></div></div>
-      <div class="corner br"><div class="pad" id="pad" aria-label="Swing pad: press, pull down, push up"></div></div>
+      <div class="corner br"><div class="pad" id="pad" aria-label="Swing pad: press, pull down, push up"></div><div class="pad-label">Pull <b>back</b> · push <b>through</b></div></div>
       <div class="corner bc"><div class="spin off" id="spin"><canvas width="272" height="272" aria-label="Spin ball: swipe to add spin"></canvas><div class="spin-label" id="spinLabel">Swipe the ball to add spin</div></div></div>
       <div class="toast" id="toast"></div>`;
     parent.appendChild(this.el);
@@ -154,14 +154,18 @@ export class Hud {
     this.fit(); addEventListener('resize', () => this.fit());
   }
 
+  /** state classes for layout: ready (waiting for a swing), flying (ball in the air), idle (no shot yet) */
+  setState(ready: boolean, flying: boolean, idle: boolean) { this.el.classList.toggle('ready', ready); this.el.classList.toggle('flying', flying); this.el.classList.toggle('idle', idle); }
+
   fit() {
-    const s = clamp(Math.min(innerWidth / 960, innerHeight / 540), 0.42, 1.35);
+    const portrait = innerHeight > innerWidth * 1.05;
+    const s = portrait ? clamp(innerWidth / 430, 0.72, 1.25) : clamp(Math.min(innerWidth / 960, innerHeight / 540), 0.42, 1.35);
     this.el.style.setProperty('--s', String(s));
   }
 
   setSkin(k: Skin) {
-    const hidden = this.el.classList.contains('hidden');
-    this.skin = k; this.el.className = 'hud skin-' + k + (hidden ? ' hidden' : '');
+    const keep = ['hidden', 'ready', 'flying', 'idle'].filter(c => this.el.classList.contains(c));
+    this.skin = k; this.el.className = ['hud', 'skin-' + k, ...keep].join(' ');
     this.pad.innerHTML = padSVG(k);
     this.render();
     drawSpinBall(this.spinCv, this.spinPts, this.spin, k, this.spinOn);
