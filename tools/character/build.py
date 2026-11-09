@@ -77,26 +77,45 @@ def two(v, lo, hi):  # weights for a two-part slider (0..0.5 → low..avg, 0.5..
     return {'average': 1 - (v - 0.5) / 0.5, hi: (v - 0.5) / 0.5}
 age = {'young': 1 - (M['age'] - 0.5) / 0.5, 'old': (M['age'] - 0.5) / 0.5} if M['age'] >= 0.5 else {'young': M['age'] / 0.5, 'child': 1 - M['age'] / 0.5}
 mus = {('averagemuscle' if k == 'average' else k): w for k, w in two(M['muscle'], 'minmuscle', 'maxmuscle').items()}
-wei = {('averageweight' if k == 'average' else k): w for k, w in two(M['weight'], 'minweight', 'maxweight').items()}
-V = V0.copy()
-total = 0
-for a, wa in age.items():
-    if wa <= 0: continue
-    for m_, wm in mus.items():
-        if wm <= 0: continue
-        for w_, ww in wei.items():
-            if ww <= 0: continue
-            base = wa * wm * ww
-            t = target(f'macrodetails/universal-male-{a}-{m_}-{w_}')
-            if t is not None: V += base * t; total += base
-            if M['height'] > 0.5:
-                t = target(f'macrodetails/height/male-{a}-{m_}-{w_}-maxheight')
-                if t is not None: V += base * (M['height'] - 0.5) / 0.5 * t
-            if M['proportions'] > 0.5:
-                t = target(f'macrodetails/proportions/male-{a}-{m_}-{w_}-idealproportions')
-                if t is not None: V += base * (M['proportions'] - 0.5) / 0.5 * t
-    t = target(f'macrodetails/caucasian-male-{a}')
-    if t is not None: V += wa * t
+def macro_shape(weight):
+    wei = {('averageweight' if k == 'average' else k): w for k, w in two(weight, 'minweight', 'maxweight').items()}
+    V = V0.copy()
+    total = 0
+    for a, wa in age.items():
+        if wa <= 0: continue
+        for m_, wm in mus.items():
+            if wm <= 0: continue
+            for w_, ww in wei.items():
+                if ww <= 0: continue
+                base = wa * wm * ww
+                t = target(f'macrodetails/universal-male-{a}-{m_}-{w_}')
+                if t is not None: V += base * t; total += base
+                if M['height'] > 0.5:
+                    t = target(f'macrodetails/height/male-{a}-{m_}-{w_}-maxheight')
+                    if t is not None: V += base * (M['height'] - 0.5) / 0.5 * t
+                if M['proportions'] > 0.5:
+                    t = target(f'macrodetails/proportions/male-{a}-{m_}-{w_}-idealproportions')
+                    if t is not None: V += base * (M['proportions'] - 0.5) / 0.5 * t
+        t = target(f'macrodetails/caucasian-male-{a}')
+        if t is not None: V += wa * t
+    return V, total
+V, total = macro_shape(M['weight'])
+# the body below the neck can carry a different weight from the head (bodyWeight): blended by the rig's
+# head/neck skin weights, so the face and head keep exactly the shape they were fitted with
+if M.get('bodyWeight') is not None and M['bodyWeight'] != M['weight']:
+    _W = json.load(open(f'{D}/rigs/standard/weights.game_engine.json'))['weights']
+    hm = np.zeros(NV)
+    for bn, k in (('head', 1.0), ('neck_01', 0.6)):
+        for vi, w in _W.get(bn, []): hm[vi] += k * w
+    hm = np.clip(hm, 0, 1)
+    # helper geometry (eyes, teeth, lashes…) has no rig weights: it follows the nearest body vertex
+    from scipy.spatial import cKDTree as _KDh
+    _bodyv = np.array(sorted(group_verts['body'])); _kd = _KDh(V0[_bodyv])
+    _oth = np.setdiff1d(np.arange(NV), _bodyv)
+    hm[_oth] = hm[_bodyv[_kd.query(V0[_oth])[1]]]
+    hm = hm[:, None]
+    Vb, _ = macro_shape(M['bodyWeight'])
+    V = hm * V + (1 - hm) * Vb
 print('macro weight sum', round(total, 3))
 for rel, w in P['details'].items():
     t = target(rel)
@@ -407,6 +426,23 @@ if C.get('hang', 0) > 0:
         bl = np.clip((tt - 0.12) / 0.3, 0, 1); bl = bl * bl * (3 - 2 * bl)
         want = rl + bl * (C.get('sleeveEase', 0.008) + 0.7 * (rmax - rl))
         Vs[arm] = cc + rv / np.maximum(rl, 1e-6)[:, None] * want[:, None]
+    # bridge the hollows round the seat (between the glutes, the small of the back): per 1 cm slice, the radius
+    # round the torso axis is closed over ±12° so the fabric spans across instead of dipping in
+    lo_y = pelvis_y + 0.14
+    sel = tors[Vs[tors, 1] < lo_y]
+    if len(sel):
+        th2 = np.arctan2(Vs[sel, 0], Vs[sel, 2] - zc); rr2 = np.hypot(Vs[sel, 0], Vs[sel, 2] - zc)
+        rb = ((Vs[sel, 1] - Vs[sel, 1].min()) / 0.01).astype(int); ab = ((th2 + math.pi) / (2 * math.pi) * 90).astype(int) % 90
+        R = np.zeros((rb.max() + 1, 90))
+        np.maximum.at(R, (rb, ab), rr2)
+        Rd = np.max(np.stack([np.roll(R, k, axis=1) for k in range(-3, 4)]), axis=0)
+        d2 = np.zeros(NV)
+        for k, vi in enumerate(sel):
+            d2[vi] = max(0.0, 0.985 * Rd[rb[k], ab[k]] - rr2[k])
+        d2, _ = smooth_field(d2, shirt, 4)
+        for vi in sel:
+            if d2[vi] > 0:
+                dv = np.array([Vs[vi, 0], 0.0, Vs[vi, 2] - zc]); dv /= max(np.linalg.norm(dv), 1e-6); Vs[vi] += dv * d2[vi]
     Vshirt = Vs; shirt_off = np.zeros(NV)
 
 # clean, straight hems: the mask's edge follows the body's triangles and comes out jagged, so move the
@@ -490,7 +526,14 @@ for vi in body_idx:
     if V[vi, 1] < min(ankle_y.values()) + C.get('footHide', 0.03) and wsum(vi, ['foot_l', 'foot_r', 'ball_l', 'ball_r', 'calf_l', 'calf_r']) > 0.5: feet_hidden[vi] = True
 meshes['skin'] = build_mesh(body_faces, V, keep=~feet_hidden & ~under_shirt)
 meshes['shirt'] = build_mesh(body_faces, Vshirt, normals=N, keep=shirt, extra_offset=shirt_off)
-meshes['pants'] = build_mesh(body_faces, Vpants, normals=N, keep=pants, extra_offset=pants_off)
+# the shorts' top under the untucked shirt is never seen: drop it (above the hem + a margin) so the waistband
+# can't poke through the shirt in big poses
+pants_keep = pants.copy()
+if C.get('untucked'):
+    _lo2 = belt_y - C.get('untuckedDrop', 0.0) + C.get('pantsHideMargin', 0.03)
+    for vi in np.nonzero(pants)[0]:
+        if V[vi, 1] > _lo2: pants_keep[vi] = False
+meshes['pants'] = build_mesh(body_faces, Vpants, normals=N, keep=pants_keep, extra_offset=pants_off)
 meshes['glove'] = build_mesh(body_faces, V, normals=N, keep=glove, normal_out=0.0012)
 if C.get('socks'):
     socks = np.zeros(NV, bool)
