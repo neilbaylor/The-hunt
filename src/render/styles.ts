@@ -415,7 +415,7 @@ void main() {
   vec2 uv = vUv; vec2 p = uv * res / px;
   vec3 c = texture2D(tDiffuse, uv).rgb;
   float z = viewZ(uv);
-  float near = smoothstep(16.0, 4.0, z), mid = 1.0 - smoothstep(30.0, 120.0, z);
+  float near = smoothstep(16.0, 4.0, z), mid = 1.0 - smoothstep(45.0, 160.0, z);
   vec3 d0 = disp(c); float L = luma(d0);
   // face mask: the head's screen circle at the head's depth, softened
   vec2 fd = (uv - face.xy) * vec2(aspect, 1.0);
@@ -424,7 +424,7 @@ void main() {
   float keep = 1.0 - max(fm, 0.6 * skin * near);   // 1 = full effect, 0 = untouched
 
   // depth taps (shared by contour and crease)
-  float w = (0.9 + 0.8 * near) * px * (0.8 + 0.4 * vnoise(p * 0.07));
+  float w = (1.2 + 1.0 * near) * px * (0.75 + 0.5 * vnoise(p * 0.07));
   vec2 o = w / res;
   float za = viewZ(uv + vec2(o.x, 0.0)), zb = viewZ(uv - vec2(o.x, 0.0)), zc = viewZ(uv + vec2(0.0, o.y)), zd = viewZ(uv - vec2(0.0, o.y));
 
@@ -461,13 +461,13 @@ void main() {
   float shade = L / max(loc, 0.03);
   float wob = 0.3 * vnoise(p * 0.045);
   float h1 = 1.0 - smoothstep(0.12, 0.34, abs(fract(dot(p, vec2(0.6, -0.8)) / 3.0 + wob) - 0.5) * 2.0);
-  float hat = h1 * max(1.0 - smoothstep(0.55, 0.85, shade), 0.6 * (1.0 - smoothstep(0.1, 0.22, L)));
+  float hat = h1 * max(1.0 - smoothstep(0.7, 0.95, shade), 0.7 * (1.0 - smoothstep(0.12, 0.3, L)));
 #ifdef HIGH
   float h2 = 1.0 - smoothstep(0.12, 0.34, abs(fract(dot(p, vec2(0.8, 0.6)) / 3.3 + wob) - 0.5) * 2.0);
-  hat = max(hat, h2 * (1.0 - smoothstep(0.35, 0.6, shade)));
+  hat = max(hat, h2 * (1.0 - smoothstep(0.45, 0.72, shade)));
 #endif
   hat *= mid * keep * (0.6 + 0.4 * vnoise(p * 0.5)) * strength;
-  c *= 1.0 - 0.42 * hat;
+  c *= 1.0 - 0.6 * hat;
 
   // ink: silhouettes (relative depth jumps, gated so gentle terrain steps never draw) + creases (normal breaks)
   float m = min(min(za, zb), min(zc, zd));
@@ -475,15 +475,19 @@ void main() {
   float gate = max(smoothstep(8.0, 5.0, m), smoothstep(0.5, 0.9, jump));
   float sil = smoothstep(0.1, 0.28, jump) * gate;
   float crease = abs(za + zb + zc + zd - 4.0 * z) / max(z, 0.3);
-  float cr = smoothstep(0.015, 0.05, crease) * near * 0.6;
-  float ink = max(sil, cr) * (0.75 + 0.25 * vnoise(p * 0.4));
-  ink *= 1.0 - 0.75 * smoothstep(25.0, 300.0, z);                // fades with distance
+  float cr = smoothstep(0.012, 0.04, crease) * near * 0.7;
+  // interior lines where the tone breaks sharply (collar, sleeves, belt, folds), near subjects only
+  vec2 q = px / res;
+  float gx = Ld(uv + vec2(q.x, 0.0)) - Ld(uv - vec2(q.x, 0.0)), gy = Ld(uv + vec2(0.0, q.y)) - Ld(uv - vec2(0.0, q.y));
+  float te = smoothstep(0.1, 0.24, length(vec2(gx, gy))) * mid * 0.55;
+  float ink = max(max(sil, cr), te * keep) * (0.7 + 0.3 * vnoise(p * 0.4));
+  ink *= 1.0 - 0.65 * smoothstep(40.0, 450.0, z);                // fades with distance
   ink *= mix(1.0, 0.45, fm);                                     // a lighter line around the face
-  c = mix(c, vec3(0.032, 0.018, 0.011), ink * 0.8 * strength);
+  c = mix(c, vec3(0.03, 0.016, 0.01), clamp(ink, 0.0, 1.0) * 0.92 * strength);
 
   // paper grain: static (no shimmer), strongest in the mid tones
   float g = 0.65 * vnoise(p * 0.75) + 0.35 * hash(floor(p));
-  c *= 1.0 + (g - 0.5) * 0.09 * strength * (0.4 + 0.6 * (1.0 - abs(L - 0.55) * 1.6)) * (1.0 - 0.7 * fm);
+  c *= 1.0 + (g - 0.5) * 0.17 * strength * (0.4 + 0.6 * (1.0 - abs(L - 0.55) * 1.6)) * (1.0 - 0.7 * fm);
   gl_FragColor = vec4(c, texture2D(tDiffuse, uv).a);
 }`;
 
