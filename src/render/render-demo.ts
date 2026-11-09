@@ -3,18 +3,21 @@
 import * as THREE from 'three';
 import { createRange, YD, type TimeOfDay } from '../world/range';
 import { createPost, type Quality } from './post';
+import { TIERS, type Tier } from './perf';
 import { Golfer, PHI_TOP } from '../golfer/golfer';
 import { NEIL } from '../golfer/profile';
 import { loadNeil } from '../golfer/assets';
 
 const qs = new URLSearchParams(location.search);
 const view = qs.get('view') ?? (innerHeight > innerWidth ? 'portrait' : 'landscape');
-const quality = (qs.get('q') ?? 'high') as Quality;
+// ?perf=low|med|high: the game's performance tier (range detail, post quality, pixel-ratio cap)
+const perfTier = qs.get('perf') as Tier | null;
+const quality = (qs.get('q') ?? (perfTier ? TIERS[perfTier].post : 'high')) as Quality;
 const time = (qs.get('time') ?? 'golden') as TimeOfDay;
 const maxFrames = Number(qs.get('frames') ?? 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: quality === 'low', powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, perfTier ? TIERS[perfTier].prCap : 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -23,7 +26,7 @@ renderer.info.autoReset = false;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(view === 'portrait' ? 52 : 40, innerWidth / innerHeight, 0.1, 7000);
-const range = createRange(renderer, scene);
+const range = createRange(renderer, scene, { detail: perfTier ?? 'high' });
 range.setTimeOfDay(time);
 // the featured target (the game sets it from the club in hand): ?feat=yards, 0 to hide
 if (qs.get('feat') !== '0') range.setFeaturedTarget(Number(qs.get('feat') ?? 160));
@@ -89,7 +92,8 @@ else if (view === 'flight') {
 if (view === 'portrait' || view === 'landscape' || view === 'turf') { range.setShadowFocus(new THREE.Vector3(0.95, 0, 0), 3.5); range.contactShadow(new THREE.Vector3(0.95, 0, 0), 1, 0.5); }
 
 (window as unknown as { __scene: THREE.Scene; __range: unknown; __focus: unknown; __cam: unknown }).__scene = scene;
-Object.assign(window, { __range: range, __focus: focus, __cam: camera });
+Object.assign(window, { __range: range, __focus: focus, __cam: camera, __renderer: renderer, __post: post,
+  /** render one frame by hand (profiling) */ __step: () => { renderer.info.reset(); range.update(1 / 60, camera, focus); post.render(1 / 60); return { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }; } });
 const stats = document.getElementById('stats')!;
 if (qs.get('stats') === '0') stats.style.display = 'none';
 let last = performance.now(), frames = 0;

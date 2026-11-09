@@ -27,6 +27,9 @@ export interface Range {
   /** soft ambient-occlusion blob on the ground under the golfer (null hides it). strength 0..1, radius in m. */
   contactShadow(position: THREE.Vector3 | null, strength?: number, radius?: number): void;
   setTimeOfDay(t: TimeOfDay): void;
+  /** scale blade, tree and far-tree counts, tree LOD distance and the shadow map to a performance tier (cheap, any time) */
+  setDetail(d: Detail): void;
+  readonly detail: Detail;
   /**
    * Put the featured target green (yellow crest flag, real cup) at this carry distance in yards, a little off the
    * line so it clears the scenery greens and bunkers; it slides there if already shown. null hides it.
@@ -42,6 +45,9 @@ export interface Range {
 }
 
 export const YD = 0.9144;
+/** how much the range draws: 'low' for weak phones (coarser terrain, fewer blades and trees, smaller shadow map) */
+export type Detail = 'low' | 'med' | 'high';
+export interface RangeOptions { detail?: Detail }
 
 // ───────────────────────── layout ─────────────────────────
 // Two looks. Golden hour: a low sun ahead and to the left down the range, so the golfer is rim lit and long
@@ -690,7 +696,7 @@ function axis(lo: number, hi: number, step: number, minV: number, maxV: number, 
   return left.reverse().concat(out);
 }
 /** The terrain as a grid of chunks (dense in the playing corridor), so the camera and frustum culling skip what is off screen. */
-function terrainChunks(): THREE.BufferGeometry[] {
+function terrainChunks(coarse = false): THREE.BufferGeometry[] {
   // 2 m everywhere in the corridor, 0.5 m over the bunkers so their lips and faces are crisp
   const refine = (arr: number[], spans: [number, number][]) => {
     let out = arr.filter(v => !spans.some(([a, b]) => v > a && v < b));
@@ -698,8 +704,9 @@ function terrainChunks(): THREE.BufferGeometry[] {
     out = [...new Set(out.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
     return out;
   };
-  const xs = refine(axis(-110, 110, 2, -5200, 5200, 1.13), BUNKERS.map(b => [Math.floor(b.x - b.rx * 1.7), Math.ceil(b.x + b.rx * 1.7)]));
-  const zs = refine(axis(-372, 60, 2, -5600, 4200, 1.13), BUNKERS.map(b => [Math.floor(b.z - b.rx * 1.7), Math.ceil(b.z + b.rx * 1.7)]));
+  // low detail: 3 m in the corridor, no bunker refinement, faster growth outward (about a third of the triangles)
+  const xs = coarse ? axis(-111, 111, 3, -5200, 5200, 1.2) : refine(axis(-110, 110, 2, -5200, 5200, 1.13), BUNKERS.map(b => [Math.floor(b.x - b.rx * 1.7), Math.ceil(b.x + b.rx * 1.7)]));
+  const zs = coarse ? axis(-372, 60, 3, -5600, 4200, 1.2) : refine(axis(-372, 60, 2, -5600, 4200, 1.13), BUNKERS.map(b => [Math.floor(b.z - b.rx * 1.7), Math.ceil(b.z + b.rx * 1.7)]));
   const nx = xs.length, nz = zs.length;
   const pos = new Float32Array(nx * nz * 3), nrm = new Float32Array(nx * nz * 3), v = new THREE.Vector3();
   let k = 0;
@@ -1141,7 +1148,9 @@ reflectedLight.indirectSpecular *= 0.1;`);
 }
 
 // ───────────────────────── build ─────────────────────────
-export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): Range {
+export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, opts: RangeOptions = {}): Range {
+  // the terrain's density is fixed when it is built; everything else follows setDetail() at runtime
+  const buildDetail: Detail = opts.detail ?? 'high';
   let tod: TimeOfDay = 'golden';
   const sunDir = new THREE.Vector3();
   const sunFrom = (P: TimePreset, out: THREE.Vector3) => out.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - P.elev), THREE.MathUtils.degToRad(P.azim));
@@ -1216,7 +1225,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
   // ground
   const noise = makeNoiseTexture(renderer);
   const gmat = groundMaterial(noise, makeForestTexture(), makeTurfTexture(renderer));
-  for (const g of terrainChunks()) {
+  for (const g of terrainChunks(buildDetail === 'low')) {
     const terrain = new THREE.Mesh(g, gmat);
     terrain.receiveShadow = true;
     terrain.name = 'terrain';
@@ -1272,8 +1281,19 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 12, 6), new THREE.MeshStandardMaterial({ color: '#e8e8e4', roughness: 0.5 })); pole.position.set(C.w / 2 + 14, 6, 9); grp.add(pole);
     const fl = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.6), new THREE.MeshStandardMaterial({ color: FLAG_YELLOW, roughness: 0.9, side: THREE.DoubleSide })); fl.position.set(C.w / 2 + 15.4, 11, 9); grp.add(fl);
     grp.position.set(C.x, gy, C.z); grp.rotation.y = C.yaw;
-    grp.traverse(o => { if ((o as THREE.Mesh).isMesh) { o.castShadow = false; o.receiveShadow = false; } });
-    scene.add(grp);
+    // bake into two meshes: the textured walls, and everything else in vertex colours
+    grp.updateMatrixWorld(true);
+    const walls: THREE.BufferGeometry[] = [], rest: THREE.BufferGeometry[] = [];
+    grp.traverse(o => {
+      const m = o as THREE.Mesh; if (!m.isMesh) return;
+      const mat = m.material as THREE.MeshStandardMaterial, g = m.geometry.clone().applyMatrix4(m.matrixWorld);
+      if (mat.map) walls.push(g.index ? g.toNonIndexed() : g);
+      else rest.push(paint(g, (_x, _y, _z, _a, _b, _c, c) => c.copy(mat.color)));
+    });
+    const wallMesh = new THREE.Mesh(mergeGeometries(walls, false)!, body.material);
+    const restMesh = new THREE.Mesh(finish(rest), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide }));
+    wallMesh.name = restMesh.name = 'clubhouse';
+    scene.add(wallMesh, restMesh);
   }
 
   // greens: yellow flagsticks with waving crest flags, cups, and yardage boards
@@ -1416,13 +1436,17 @@ reflectedLight.indirectSpecular *= 0.3;`);
 
   // trees
   const treeLods: { zA: number; zB: number; hi: THREE.InstancedMesh[]; lo: THREE.InstancedMesh[] }[] = [];
+  // instanced sets whose count follows the detail tier (their instances are in shuffled order, so a prefix is an even sample)
+  const thin: { im: THREE.InstancedMesh; full: number; f: Record<Detail, number> }[] = [];
+  const DETAIL = { lodFar: { low: 55, med: 90, high: 120 } as Record<Detail, number>, shadow: { low: 1024, med: 2048, high: 2048 } as Record<Detail, number>, patch: { low: 0.45, med: 0.8, high: 1 } as Record<Detail, number> };
+  let detail: Detail = buildDetail, lodFar = DETAIL.lodFar[detail], patchMax = 0;
   {
     const species = [broadleafCards(true), pineCards(true), poplarCards(true), broadleafB(true), mapleCards(true)];
     const speciesLo = [broadleafCards(false), pineCards(false), poplarCards(false), broadleafB(false), mapleCards(false)];
     const treeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
     const cardMat = foliageMaterial(makeFoliageAtlas(renderer), treeUniforms);
     // near the corridor: grouped by distance down the range so frustum culling (camera and shadows) works
-    const CH = [[200, -40], [-40, -150], [-150, -260], [-260, -720]];
+    const CH = [[200, 30], [30, -40], [-40, -150], [-150, -260], [-260, -720]];
     const buckets: THREE.Matrix4[][][] = CH.map(() => species.map(() => []));
     const tints: THREE.Color[][][] = CH.map(() => species.map(() => []));
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
@@ -1491,12 +1515,16 @@ reflectedLight.indirectSpecular *= 0.3;`);
       const hi: THREE.InstancedMesh[] = [], lo: THREE.InstancedMesh[] = [];
       species.forEach((geo, si) => {
         const list = buckets[ci][si]; if (!list.length) return;
+        const order = list.map((_, i) => i).sort((a, b) => hash2(a, ci * 7 + si) - hash2(b, ci * 7 + si));
         for (const [g, set] of [[geo, hi], [speciesLo[si], lo]] as const) {
           const im = new THREE.InstancedMesh(g, cardMat, list.length);
-          list.forEach((mm, i) => { im.setMatrixAt(i, mm); im.setColorAt(i, tints[ci][si][i]); });
+          im.name = `trees-${set === hi ? 'hi' : 'lo'}-c${ci}-s${si}`;
+          order.forEach((j, i) => { im.setMatrixAt(i, list[j]); im.setColorAt(i, tints[ci][si][j]); });
           im.computeBoundingSphere();
           scene.add(im);
           set.push(im);
+          // the far end of the range thins out on weaker tiers (a backdrop of hundreds of card trees)
+          if (zB <= -150) thin.push({ im, full: list.length, f: zB <= -260 ? { low: 0.55, med: 0.85, high: 1 } : { low: 0.8, med: 1, high: 1 } });
         }
       });
       treeLods.push({ zA, zB, hi, lo });
@@ -1569,18 +1597,22 @@ reflectedLight.indirectSpecular *= 0.3;`);
     const fgeos = [farTreeGeo(0), farTreeGeo(1)];
     // split by species and left / right so each part can be culled
     for (const sp of [0, 1]) for (const sgn of [-1, 1]) {
-      const idx = far.map((m, i) => [m, i] as const).filter(([m, i]) => Math.sign(m.elements[12] - fwCenter(m.elements[14])) === sgn && ((hash2(i, 77) < 0.3 ? 1 : 0) === sp));
+      const idx = far.map((m, i) => [m, i] as const).filter(([m, i]) => Math.sign(m.elements[12] - fwCenter(m.elements[14])) === sgn && ((hash2(i, 77) < 0.3 ? 1 : 0) === sp))
+        .sort((a, b) => hash2(a[1], 31) - hash2(b[1], 31));
       if (!idx.length) continue;
       const im = new THREE.InstancedMesh(fgeos[sp], treeMat, idx.length);
+      im.name = `far-trees-${sp}`;
       idx.forEach(([m, i], k) => { im.setMatrixAt(k, m); im.setColorAt(k, farTint[i]); });
       im.computeBoundingSphere();
       scene.add(im);
+      thin.push({ im, full: idx.length, f: { low: 0.35, med: 0.7, high: 1 } });
     }
   }
 
   // grass blades around the tee: real turf in the foreground
   const grassUniforms = { uTime: { value: 0 } };
   let grassPatch: (x: number, z: number, now: number) => void = () => {};
+  let relayPatch = () => {};
   const patchAt = new THREE.Vector2(1e9, 0);
   {
     // a curved, tapering blade: 3 segments, darker at the root, lighter and a touch yellow at the tip
@@ -1664,7 +1696,9 @@ gl_Position = projectionMatrix * mvPosition;`);
     im.count = n;
     im.computeBoundingSphere();
     im.receiveShadow = true;
+    im.name = 'grass';
     scene.add(im);
+    thin.push({ im, full: n, f: { low: 0.4, med: 0.75, high: 1 } });
     // a patch of blades that follows the ball once it is down the range (landing and rest cameras): rough reads
     // tall and breaks the ball's silhouette, fairway reads as cut turf. Re-laid when the ball has moved on.
     const PATCH = 12000, PR = 4;
@@ -1672,22 +1706,25 @@ gl_Position = projectionMatrix * mvPosition;`);
     patchMat.onBeforeCompile = (sh, r) => { mat.onBeforeCompile(sh, r); sh.uniforms.uFade = patchMat.userData.fade; };
     patchMat.userData.fade = { value: new THREE.Vector2(30, 46) };
     const patch = new THREE.InstancedMesh(bladeGeo, patchMat, PATCH);
-    patch.count = 0; patch.receiveShadow = true; patch.frustumCulled = false;
+    patch.name = 'grass-patch';
+    patch.count = 0; patch.visible = false; patch.receiveShadow = true; patch.frustumCulled = false;
+    relayPatch = () => { patchAt.set(1e9, 0); };
     scene.add(patch);
     let lastLay = -1;
     grassPatch = (cx: number, cz: number, now: number) => {
-      if (Math.hypot(cx, cz) < 24) { patch.count = 0; patchAt.set(1e9, 0); return; } // the tee's own blades cover it
+      if (Math.hypot(cx, cz) < 24) { patch.count = 0; patch.visible = false; patchAt.set(1e9, 0); return; } // the tee's own blades cover it
       if (Math.hypot(cx - patchAt.x, cz - patchAt.y) < 2.5 || now - lastLay < 0.25) return;
       lastLay = now; patchAt.set(cx, cz);
       let k = 0;
       const save = seed; seed = (Math.floor(cx * 7.1) * 7919 + Math.floor(cz * 3.3)) | 1;
-      for (let t = 0; t < PATCH * 2 && k < PATCH; t++) {
+      const max = Math.round(PATCH * patchMax);
+      for (let t = 0; t < max * 2 && k < max; t++) {
         // thicker right round the ball so it sits down in the rough, shorter and thinner out to nothing at the edge
         const a = rand() * Math.PI * 2, r = PR * Math.pow(rand(), 0.8);
         if (blade(patch, k, cx + Math.cos(a) * r, cz + Math.sin(a) * r, 1 - smooth(PR * 0.35, PR, r))) k++;
       }
       seed = save;
-      patch.count = k;
+      patch.count = k; patch.visible = k > 0;
       patch.instanceMatrix.needsUpdate = true;
       if (patch.instanceColor) patch.instanceColor.needsUpdate = true;
     };
@@ -1705,6 +1742,16 @@ gl_Position = projectionMatrix * mvPosition;`);
     scene.add(m);
     return m;
   })();
+
+  function applyDetail(d: Detail) {
+    detail = d;
+    for (const t of thin) t.im.count = Math.max(0, Math.round(t.full * t.f[d]));
+    lodFar = DETAIL.lodFar[d];
+    patchMax = DETAIL.patch[d]; relayPatch();
+    const ms = DETAIL.shadow[d];
+    if (sun.shadow.mapSize.x !== ms) { sun.shadow.mapSize.set(ms, ms); sun.shadow.map?.dispose(); sun.shadow.map = null; half = 0; }
+  }
+  applyDetail(buildDetail);
 
   // featured target: ease from where it was to where it goes (slides down the range when the club changes)
   function placeFeat(t: number) {
@@ -1735,6 +1782,8 @@ gl_Position = projectionMatrix * mvPosition;`);
     get hazeColor() { return fogColor; },
     setTimeOfDay(t) { if (t !== tod) applyTime(t); },
     get featured() { return FEAT.on > 0.5 ? featTarget : null; },
+    get detail() { return detail; },
+    setDetail(d) { applyDetail(d); },
     setFeaturedTarget(yards) {
       if (yards === null || !(yards > 0)) {
         FEAT.on = 0; FEAT_U.value.w = 0; featGroup.visible = false;
@@ -1785,7 +1834,7 @@ gl_Position = projectionMatrix * mvPosition;`);
       // tree detail by distance from the camera to each chunk's stretch of the range
       for (const t of treeLods) {
         const cz = camera.position.z, d = Math.max(0, cz - t.zA, t.zB - cz) + Math.max(0, camera.position.y - 60);
-        const far = d > 90;
+        const far = d > lodFar;
         for (const m of t.hi) m.visible = !far;
         for (const m of t.lo) m.visible = far;
       }

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { createRange, type Range } from './world/range';
 import { createPost } from './render/post';
+import { PerfGovernor, initialTier } from './render/perf';
 import { Golfer, PHI_TOP, PHI_FINISH, SHOT_STYLE, type SwingPhase } from './golfer/golfer';
 import { NEIL } from './golfer/profile';
 import { loadNeil } from './golfer/assets';
@@ -22,9 +23,8 @@ const smooth = (a: number, b: number, x: number) => { const t = clamp((x - a) / 
 // ── renderer ──
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 const QS = new URLSearchParams(location.search);
-let pixelRatio = QS.has('pr') ? +QS.get('pr')! : Math.min(devicePixelRatio, 1.75);
-const fixedPR = QS.has('pr');
-renderer.setPixelRatio(pixelRatio);
+// the starting pixel ratio; PerfGovernor (below) sets it per tier and lowers it when frames run long
+renderer.setPixelRatio(QS.has('pr') ? +QS.get('pr')! : Math.min(devicePixelRatio, 1.75));
 renderer.setSize(viewport().w, viewport().h);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -36,10 +36,14 @@ document.getElementById('app')!.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(42, viewport().w / viewport().h, 0.1, 7000);
 let range: Range | null = null;
-try { range = createRange(renderer, scene); range.setTimeOfDay(QS.get('time') === 'midday' ? 'midday' : 'golden'); } catch (e) { console.error('range failed', e); }
+// performance tier (src/render/perf.ts): ?perf=low|med|high pins it; otherwise device hints, then a frame probe
+const perfInit = initialTier(renderer, QS);
+try { range = createRange(renderer, scene, { detail: perfInit.tier }); range.setTimeOfDay(QS.get('time') === 'midday' ? 'midday' : 'golden'); } catch (e) { console.error('range failed', e); }
 // post-processing: high on desktop, medium on phones (falls back to low if frames run long)
 const coarse = matchMedia('(pointer: coarse)').matches;
 const post = createPost(renderer, scene, camera, { quality: (QS.get('q') as any) ?? (coarse ? 'med' : 'high'), grade: range?.timeOfDay ?? 'golden', toneMapping: 'agx' });
+// tiers drive the pixel-ratio cap, post quality and range detail, and step down while frames run long (>20 ms)
+const perf = new PerfGovernor(renderer, { post, range, resize: () => onViewport() }, perfInit, QS);
 // sharp, soft-edged shadows around the golfer while he swings; wide ones when the ball flies
 function shadowsOnGolfer(on: boolean) {
   if (!range) return;
@@ -479,11 +483,7 @@ function frame(now: number) {
   range?.update(dt, camera, focus);
 
   // dynamic resolution: keep frames under ~20 ms
-  if (frameTimes.length === 90 && !fixedPR) {
-    const avg = frameTimes.reduce((a, b) => a + b, 0) / 90;
-    if (avg > 0.024 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); post.setSize(viewport().w, viewport().h); if (pixelRatio <= 1 && post.quality !== 'low') post.setQuality('low'); frameTimes.length = 0; }
-    else if (avg < 0.0135 && pixelRatio < Math.min(devicePixelRatio, 2)) { pixelRatio = Math.min(Math.min(devicePixelRatio, 2), pixelRatio + 0.25); renderer.setPixelRatio(pixelRatio); frameTimes.length = 0; }
-  }
+  perf.frame(frameTimes[frameTimes.length - 1]);
   const r0 = performance.now();
   post.render(dt);
   (window as any).__frameMs = performance.now() - r0;
