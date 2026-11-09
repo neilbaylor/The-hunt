@@ -66,6 +66,8 @@ export interface ShotPlan {
 const rnd = () => Math.random() * 2 - 1;
 const gauss = () => { let u = 0; for (let i = 0; i < 4; i++) u += Math.random(); return (u - 2) / 0.58; };
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+/** the shortest full swing, as a fraction of the club's full carry */
+export const FULL_MIN = 0.6;
 
 export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie: Lie, lefty: boolean): ShotPlan {
   const id = CLUB_SPECS[clubIndex].id, C = CLUB_DATA[id];
@@ -74,7 +76,10 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   const eB = clamp((r.drift - 0.06) / 0.25, 0, 1);
   const e = clamp(eT + 0.6 * eB, 0, 1);
 
-  let carry = MODES[mode].max(id) * clamp(r.power, 0.05, 1) * lie.pct / 100 * (1 - 0.12 * clamp(eP, 0, 1));
+  // a full swing always goes a decent way: the stick's travel maps onto 60–100% of the club's full carry
+  // (shorter shots are what punch, pitch and flop are for)
+  const pw = mode === 'full' ? FULL_MIN + (1 - FULL_MIN) * clamp(r.power, 0, 1) : clamp(r.power, 0.05, 1);
+  let carry = MODES[mode].max(id) * pw * lie.pct / 100 * (1 - 0.12 * clamp(eP, 0, 1));
   carry *= 1 - Math.random() * 0.09 * e;
   // launch and spin by mode
   let la = C.launch, spin = C.spin;
@@ -94,7 +99,9 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   carry *= 1 - 0.03 * Math.min(1, Math.hypot(sx, sy));
   let speed = speedForCarry(carry * YD, la * D, spin);
   // direction: push angle sets the curve (spin-axis tilt); the start line goes a little the other way
-  const ang = clamp(r.angle, -35, 35);
+  // the stick's push angle is read relative to the golfer: a left-hander's swing is the mirror image, so the same
+  // push that hooks a right-hander's ball left hooks a lefty's ball right
+  const ang = clamp(r.angle, -35, 35) * (lefty ? -1 : 1);
   // inner half of the ball → draw, outer → fade (a lefty's draw curves right)
   const execTilt = (ang / 35) * 0.42 * C.curve + (lefty ? -1 : 1) * sx * 0.1 * C.curve;   // swing push + strike point
   // planned shape (aim view): a realistic spin-axis tilt (up to ~17° on a 7i), ball speed re-solved so the
@@ -119,7 +126,7 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   const tempoWord = eT === 0 && eP < 0.2 ? 'Smooth' : r.offMs < -70 ? 'Quick' : r.offMs > 160 ? 'Late' : 'Slow push';
   const tempoCls = tempoWord === 'Smooth' ? 'good' : (eT > 0.5 || eP > 0.5) ? 'bad' : 'warn';
   const why = tempoWord === 'Smooth'
-    ? `${shape}${Math.abs(ang) >= 3 ? ` · pushed ${Math.abs(ang).toFixed(0)}° ${ang < 0 ? 'left' : 'right'}` : ''}`
+    ? `${shape}${Math.abs(ang) >= 3 ? ` · pushed ${Math.abs(r.angle).toFixed(0)}° ${r.angle < 0 ? 'left' : 'right'}` : ''}`
     : tempoWord === 'Quick' ? `Pushed ${Math.round(-r.offMs)} ms before the top`
     : tempoWord === 'Late' ? `Hung at the top for ${Math.round(r.offMs)} ms`
     : `Push took ${Math.round(r.pushMs)} ms. Snap it up quicker`;
