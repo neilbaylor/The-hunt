@@ -189,7 +189,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   weldNormals(shirtMesh);
   const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.82, sheen: 0.3, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.6), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   applyFabric(pantsMat, 'chino', fu);
-  const pantsMesh = add('pants', pantsMat); weldNormals(pantsMesh); if (pantsMesh && location.search.includes('dbgnopants')) pantsMesh.visible = false;
+  weldNormals(add('pants', pantsMat));
   const glove = new THREE.MeshPhysicalMaterial({ color: O.glove, roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color('#ffffff'), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   applyFabric(glove, 'glove', fu);
   add('glove', glove);
@@ -446,9 +446,10 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     if (t > 0.74) { const k = (t - 0.74) / 0.26; return Math.pow(Math.max(0, 1 - Math.pow(k, 2.3)), 1 / 2.3) * (1 - 0.18 * k); }  // long rounded toe
     return widthK(t);
   };
-  const hRel = smooth([[0, 0.063], [0.1, 0.062], [0.27, 0.052], [0.42, 0.06], [0.5, 0.072], [0.6, 0.064], [0.7, 0.052], [0.8, 0.043], [0.88, 0.036], [0.94, 0.028], [0.98, 0.017], [1, 0.006]]);
+  const hRel = smooth([[0, 0.066], [0.1, 0.065], [0.27, 0.054], [0.42, 0.064], [0.5, 0.076], [0.6, 0.068], [0.7, 0.055], [0.8, 0.042], [0.88, 0.034], [0.94, 0.025], [0.98, 0.015], [1, 0.005]]);
   const spring = (t: number) => (t > 0.68 ? ((t - 0.68) / 0.32) ** 2 * 0.022 : 0);
-  const SOLE_TOP = 0.021;
+  const SOLE_TOP = 0.016;
+  const heelLift = smooth([[0.22, 0.008], [0.42, 0.0]]);            // a low stacked heel
   const T0 = 0.045, T1 = 0.5;                                            // the ankle opening runs from T0 back... to T1 (the throat)
   const xOpen = (t: number, W: number) => { const k = (t - (T0 + T1) / 2) / ((T1 - T0) / 2); return Math.abs(k) >= 1 ? 0 : Math.min(0.9 * W, 0.036 * Math.sqrt(1 - k * k)); };
   const shoeDims = (f: { heelZ: number; toeZ: number; halfW: number }) => ({ len: f.toeZ - f.heelZ + 0.02, z0: f.heelZ - 0.012, hw: f.halfW + 0.012 });
@@ -496,7 +497,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       line(c, 'rgba(55,50,44,.85)', 4);
       line(offset(c, side * 10), 'rgba(85,78,70,.75)', 3, [9, 6]);
       line(offset(c, side * 44), 'rgba(85,78,70,.6)', 3, [9, 6]);
-      if (punch) { holes(offset(c, side * 21), 19, 6); if (fancy) holes(offset(c, side * 33), 13, 3.4); }
+      if (punch) { holes(offset(c, side * 22), 20, 7.5); if (fancy) holes(offset(c, side * 35), 14, 4); }
     };
     for (const m of [1, -1]) {
       const U = (u: number) => (m > 0 ? u : 1 - u);
@@ -544,7 +545,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const xc = (t: number) => f.x - so * 0.005 * t * t;              // the toe points a touch inwards
     const wOut = (t: number) => plan(t) * hw, wIn = (t: number) => plan(t) * hw * 0.96;
     const zAt = (t: number) => z0 + t * len;
-    const base = (t: number) => SOLE_TOP + spring(t);
+    const base = (t: number) => SOLE_TOP + heelLift(t) + spring(t);
     const grp = new THREE.Group();
     // ── upper: two halves (outer, inner) lofted heel → toe, meeting over the top except at the ankle opening
     const pos: number[] = [], uv: number[] = [], idx: number[] = [];
@@ -626,7 +627,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
         if (n.dot(p.clone().sub(cen)) < 0) n.negate();
         return p.clone().addScaledVector(n, 0.0045);
       });
-      const yTop = (t: number) => base(t) + 0.001, yBot = (t: number) => 0.004 + spring(t) * 0.9;
+      const yTop = (t: number) => base(t) + 0.001, yBot = (t: number) => 0.003 + (t > 0.27 && t < 0.56 ? 0.006 * Math.sin(Math.PI * (t - 0.27) / 0.29) ** 0.5 : 0) + spring(t);   // heel block, arch gap under the waist, toe spring
       const wp: number[] = [], wu: number[] = [], wi: number[] = [];
       let per = 0;
       for (let i = 0; i <= out.length; i++) {
