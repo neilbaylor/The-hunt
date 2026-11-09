@@ -219,7 +219,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       tb.copy(target).applyMatrix4(m4).sub(eyeBind);
       gx = mirroredX * Math.atan2(tb.x, tb.z) / 0.6; gy = Math.atan2(tb.y, Math.hypot(tb.x, tb.z)) / 0.45;
     } else {
-      if (now > nextGlance) { idleGaze.set((Math.random() - 0.5) * 0.7, (Math.random() - 0.5) * 0.3); if (Math.random() < 0.55) idleGaze.set(0, 0); nextGlance = now + 0.8 + Math.random() * 2.2; }
+      if (now > nextGlance) { idleGaze.set(0, 0);   // (no idle glances: at rest the real painted eyes show; lookAt / setGaze move them) nextGlance = now + 0.8 + Math.random() * 2.2; }
       gx = idleGaze.x; gy = idleGaze.y;
     }
     gx = Math.max(-1, Math.min(1, gx)); gy = Math.max(-1, Math.min(1, gy));
@@ -264,7 +264,7 @@ export function buildHairCards(head: GenHead, opts: { color: string; eye: THREE.
     tot += vb.clone().sub(va).cross(vc.clone().sub(va)).length() / 2 * Math.min(1, (m - 0.55) / 0.3); tris.push(i); cum.push(tot);
   }
   if (!tris.length) return null;
-  const e = opts.eye, base = new THREE.Color(opts.color), N = opts.count ?? 5000, SEG = 3;
+  const e = opts.eye, base = new THREE.Color(opts.color), N = opts.count ?? 2600, SEG = 3;
   const pos: number[] = [], uv: number[] = [], col: number[] = [], nrmA: number[] = [], ind: number[] = [];
   const root = new THREE.Vector3(), nrm = new THREE.Vector3(), gdir = new THREE.Vector3(), side = new THREE.Vector3(), p = new THREE.Vector3(), tn = new THREE.Vector3();
   let skipped = 0;
@@ -277,6 +277,8 @@ export function buildHairCards(head: GenHead, opts: { color: string; eye: THREE.
     // the short back and sides below the band read better as the painted scalp: cards only from the band up
     if (root.y < (opts.band ? opts.band.y - 0.012 : e.y + 0.02)) { k--; if (++skipped > N * 20) break; continue; }
     const rel = root.clone().sub(e);
+    // thinner at the crown (a little scalp shows), and thinning toward the temples
+    if (rel.y > 0.1 && rel.z < -0.04 && rand() < 0.45) { k--; if (++skipped > N * 20) break; continue; }
     const top = THREE.MathUtils.smoothstep(rel.y, 0.045, 0.085);           // 0 at the sides and back, 1 on top
     const front = THREE.MathUtils.smoothstep(rel.z, -0.03, 0.02);          // the front of the top: pushed up and back
     // growth: straight back on top (and up off the forehead), down and back at the sides and nape
