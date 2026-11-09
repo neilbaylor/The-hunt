@@ -272,9 +272,11 @@ const portrait = () => { const v = viewport(); return v.h > v.w * 1.05; };
 const addressShift = () => { const { w, h } = viewport(); const sc = clamp(Math.min(w / 430, h / 800), 0.62, 1.15); const f = (14 + 272 * sc) / h; return clamp(0.06 + 0.45 * f, 0.12, 0.27); };
 function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
   if (portrait()) {
-    // phone held upright: tight on the golfer from behind his trail side, like a TV swing cam
-    out.set(0.7 * side, 1.75, 3.6);
-    look.set(0.45 * side, 0.35, -6);
+    // phone held upright: from behind, down the line, with the golfer near the centre of the frame (camera between
+    // the ball and his hips, looking straight down the target line) and pulled back so the club at the top and the
+    // finish fit. side: +1 for a left-hander (he stands on +x of the ball), -1 for a right-hander
+    out.set(0.48 * side, 1.95, 4.3);
+    look.set(0.48 * side, 0.5, -6);
   } else {
     out.set(-0.85 * side, 1.62, 5.6);
     look.set(0.45 * side, 0.92, -22);
@@ -523,6 +525,12 @@ requestAnimationFrame(t => { last = t; frame(t); });
   /** debug (storyboards): stop the RAF loop and step the game by hand: manual(true); tick(ms) */
   manual(on: boolean) { manualClock = on; if (!on) requestAnimationFrame(t => { last = t; frame(t); }); },
   tick(ms: number) { frame(last + ms); },
+  /** debug (framing checks): hold the golfer at the top of a full backswing, or in the finish, on the swing camera */
+  pose(which: 'top' | 'finish' | 'address') {
+    if (which === 'top') Object.assign(G, { phase: 'back', target: fullBack(), phi: 0 }), SW.t0 = last;
+    else if (which === 'finish') Object.assign(G, { phase: 'follow', followT0: last, followTo: PHI_FINISH, phi: 0 });
+    else Object.assign(G, { phase: 'address', phi: 0 });
+  },
   /** debug: a full-power, on-tempo swing with the current club, as if pushed through the pad */
   demoShot() {
     if (state !== 'ready') return;

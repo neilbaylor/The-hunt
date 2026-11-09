@@ -35,6 +35,9 @@ ap.add_argument('--head-scale', type=float, default=1.0)
 ap.add_argument('--head-width', type=float, default=1.0, help='overall width of the whole head (the face reshape sets the face itself)')
 ap.add_argument('--head-width-face', type=float, default=0.96, help='starting face width for the reshape fit')
 ap.add_argument('--no-reshape', dest='reshape', action='store_false')
+ap.add_argument('--face-length', type=float, default=1.08, help='stretch below the nose (the user reads the face as too short)')
+ap.add_argument('--forehead', type=float, default=1.12, help='stretch of the brow-to-hairline band (~3 cm)')
+ap.add_argument('--cheek-fill', type=float, default=0.0025, help='extra fullness (m) at the cheek apples')
 ap.add_argument('--hair-top', type=float, default=0.125, help='top of the hair above the eyes (m)')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
@@ -279,23 +282,24 @@ def reshape(P, q):
     for sx_, tip_ in ear_tips:
         we_ = np.clip(1 - np.linalg.norm(P - tip_, axis=1) / 0.03, 0, 1) ** 1.5 * (P[:, 0] * sx_ > abs(tip_[0]) - 0.02)
         P[:, 0] += sx_ * 0.004 * we_
-    # a slight hollow under the cheekbones, in front of the jaw muscle (the portrait's lean cheeks)
-    hol = np.exp(-(((np.abs(x) - 0.042) / 0.016) ** 2 + ((y - (yZ - 0.03)) / 0.018) ** 2)) * front
-    P[:, 0] -= np.sign(x) * 0.0025 * hol
-    # the portrait's smile pushes the cheek apples out; ease them back a little (2 mm forward, 1 mm sideways)
-    apple = np.exp(-(((np.abs(x) - 0.034) / 0.015) ** 2 + ((y - (yN - 0.012)) / 0.016) ** 2)) * front
-    P[:, 2] -= 0.002 * apple; P[:, 0] -= np.sign(x) * 0.001 * apple
+    # (no hollow under the cheekbones: the user wants the cheeks fuller)
+    # fuller cheeks where his smile lifts them (the apples, upper/mid cheek), the jaw below stays defined
+    apple = np.exp(-(((np.abs(x) - 0.036) / 0.016) ** 2 + ((y - (yN + 0.002)) / 0.016) ** 2)) * front
+    P[:, 2] += A.cheek_fill * apple; P[:, 0] += np.sign(x) * 0.6 * A.cheek_fill * apple
+    # a slightly taller forehead (the hairline sits higher above the brows)
+    fh_ = sstep(eyeYf + 0.012, eyeYf + 0.04, y)
+    P[:, 1] += (A.forehead - 1) * np.maximum(y - (eyeYf + 0.012), 0) * (1 - fh_) + (A.forehead - 1) * 0.028 * fh_
     below = y < yN
     P[below, 1] = yN - (yN - y[below]) * lower
     return P
 from scipy.optimize import least_squares
 r0 = ratios(cam_fit(lm_f))
 if A.reshape:
-    q0 = np.array([A.head_width_face, 1.0, 1.0, 1.0, 1.0, 1.0])
+    q0 = np.array([A.head_width_face, 1.0, 1.0, 1.0, A.face_length, 1.0])
     def resid(q): return np.r_[np.log(ratios(cam_fit(reshape(lm_f, q))) / r_ref), 0.15 * np.log(q)]
     # the face reads round next to the portrait: keep it 2-5 % leaner overall and never shorten the lower face
     # (the landmarks put ours already a little long there); the rest is fitted to the portrait's proportions
-    fit = least_squares(resid, q0, bounds=([0.95, 0.88, 0.8, 0.75, 1.0, 0.95], [0.98, 1.06, 1.06, 1.06, 1.08, 1.12]), diff_step=1e-3)
+    fit = least_squares(resid, q0, bounds=([0.95, 0.88, 0.8, 0.75, A.face_length, 0.95], [0.98, 1.06, 1.06, 1.06, A.face_length + 1e-4, 1.12]), diff_step=1e-3)
     qf = fit.x
     FV = reshape(FV, qf); lm_f = reshape(lm_f, qf)
     # ── then the outline: render our head with the portrait's camera and fit the far cheek/jaw contour to the
@@ -478,6 +482,9 @@ tree = cKDTree(SP)
 _, nn = tree.query(LV)
 wts = []
 kk = np.clip(hgt / BAND, 0, 1); kk = kk * kk * (3 - 2 * kk)
+# with the jaw cap the body's own neck rises into the head: the head is rigid on the head bone (blending the jaw's
+# underside into neck weights pulled the chin about as the neck bent through the swing)
+if A.neck == 'cap': kk[:] = 1.0
 for i in range(len(LV)):
     w = {}
     for j in range(4):

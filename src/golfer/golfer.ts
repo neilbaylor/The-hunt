@@ -119,6 +119,10 @@ export class Golfer {
   private leanSign = 1;
   /** extra forward bend from the hips found at set-up (radians), faded out as the golfer stands up in the finish */
   private tiltAdj = 0;
+  /** height of the ball's bottom above the turf (on a tee), 0 on the turf */
+  private teeH = 0;
+  /** tee the ball up (metres of tee showing under the ball); re-sets the address */
+  setTee(h: number) { if (Math.abs(h - this.teeH) > 1e-4) { this.teeH = h; this.setupAddress(); } }
   /** the trail foot's toes: their flat (on the ground) heel→toe direction, turned with the foot's pivot */
   private trailToeFlat = new THREE.Vector3(0, 0, 1);
   private pelvisBase = new THREE.Vector3();
@@ -163,12 +167,19 @@ export class Golfer {
     const k = this.k, spec = this.club.spec, st = SHOT_STYLE[this.mode];
     const teed = spec.kind === 'driver';
     // ball and club head
-    this.ballC.set(0, teed ? this.club.sweetToGround + 0.012 : BALL_R, 0);
-    this.clubAt.set(-BALL_R, this.club.sweetToGround, 0);
+    // the ball on its tee (teeH = ball bottom above the turf), else on the turf; woods hover so the sweet spot
+    // meets the ball's centre (an upward strike on a teed driver), irons rest on the ground
+    this.ballC.set(0, BALL_R + this.teeH, 0);
+    const woody = spec.kind === 'driver' || spec.kind === 'wood';
+    this.clubAt.set(-BALL_R, Math.max(this.club.sweetToGround, woody ? this.ballC.y : 0), 0);
+    void teed;
     this.gripAddr.copy(this.clubAt).add(this.club.gripLead);
     // stance: wider for long clubs, ball forward for the driver
-    const long = (this.club.length - 0.88) / 0.3;
-    this.stanceX = teed ? -0.1 * k : -0.035 * k * long;
+    // ball position (ahead of the stance centre): driver just inside the lead heel, 3 wood two balls back, middle
+    // irons a touch ahead of centre, wedges in the middle
+    const L = this.club.length;
+    const ahead = spec.kind === 'driver' ? 0.215 : spec.kind === 'wood' ? 0.13 : Math.max(0, Math.min(0.07, (L - 0.9) * 0.6));
+    this.stanceX = -ahead * k;
     // set-up like a tour player: arms hang (shoulder sockets roughly above the hands), relaxed and nearly
     // straight. Find the distance from the ball that puts the lead shoulder over the hands, then bend more or
     // less from the hips until the lead arm is ~98% extended.
@@ -183,7 +194,7 @@ export class Golfer {
         this.addressKeys(pos); this.rig.apply(pos);
         const sh = this.rig.P[BONE.upperL];
         // shoulder a touch outside the hands (toward the ball) — a plumb line from it hangs just inside the toes
-        if (sh.z < wristAddr.z + 0.015) lo = z; else hi = z;   // over the lead wrist
+        if (sh.z < (wristAddr.z + this.gripAddr.z) / 2 + 0.015) lo = z; else hi = z;   // over the hands (between wrist and grip)
       }
       // arm length to the actual wrist on the grip (real hands), else to the grip less a hand
       return this.extras ? this.rig.P[BONE.upperL].distanceTo(wristAddr) : this.rig.P[BONE.upperL].distanceTo(this.gripAddr) - 0.072 * k;
@@ -264,8 +275,8 @@ export class Golfer {
 
   private feet(p: BodyPose, heel: number, shift: number) {
     const k = this.k, st = SHOT_STYLE[this.mode];
-    const long = (this.club.length - 0.88) / 0.3;
-    const half = (0.16 + 0.1 * long) * k * st.stance;
+    // stance (ankle joints): ~36 cm with a wedge, ~42 cm with a 7 iron, ~54 cm with the driver
+    const half = 0.5 * (0.36 + 0.667 * Math.max(0, this.club.length - 0.9)) * k * st.stance;
     // ankles just ahead of the hip joints (tour set-up from behind: knees over the balls of the feet, not a squat)
     const fz = this.pelvisBase.z + 0.04 * k;
     const flareL = 0.38 + st.open, flareR = -0.12;
@@ -382,6 +393,7 @@ export class Golfer {
       qc.premultiply(qr);
       g.position.sub(wL0).applyQuaternion(qr).add(wL0);
     }
+    if (this.club.spec.kind === 'driver') leanW *= 0.15; else if (this.club.spec.kind === 'wood') leanW *= 0.5;
     if (leanW > 0) qc.premultiply(new THREE.Quaternion().setFromAxisAngle(this.axis, LEAN * leanW * this.leanSign));
     g.quaternion.copy(qc);
     // arms: lead wrist first; if it can't reach, move the club with the hand

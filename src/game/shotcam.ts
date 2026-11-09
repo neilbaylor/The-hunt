@@ -7,12 +7,12 @@ import * as THREE from 'three';
 
 export const SHOTCAM = {
   minCarryYds: 120,      // only shots predicted to carry at least this far get the cinematic
-  hold: 0.28,            // s: stay on the swing cam to see the strike
-  face: 1.45,            // s: arc from behind to a ¾ front view of the face / follow-through
+  hold: 0.18,            // s: stay on the swing cam to see the strike
+  face: 0.95,            // s: arc from behind to a ¾ front view of the face / follow-through
   faceAngle: 50,         // deg: ¾ front = this far from straight-in-front towards the target
   faceRadius: 2.35,      // m from the head at the end of the arc (push-in from ~3.6)
   faceDrop: 0.28,        // m: aim this far below the head so the face sits in the upper third (portrait)
-  catch: 1.6,            // s: crane up off the golfer and fly after the ball
+  catch: 0.85,           // s: crane up off the golfer and fly after the ball (fast start, smooth catch-up)
   crane: 6,              // m: how high the fly-by arcs over the golfer
   chaseBack: 11,         // m behind the ball while following (close enough that the ball itself reads)
   chaseSide: 2.5,        // m off the line (to the golfer's back side) so the tracer reads as an arc
@@ -23,9 +23,12 @@ export const SHOTCAM = {
   apexZoom: 9,           // deg: fov punch-in at the apex (the camera backs off to match: a soft dolly-zoom)
   apexWidth: 7,          // m/s of vertical speed over which the apex zoom fades
   fallTilt: 3,           // deg: camera roll as the ball falls
-  landLead: 1.7,         // s before touchdown to start settling on the landing view
+  landLead: 1.9,         // s before touchdown to start settling on the landing view (and zooming in)
+  landZoom: 13,          // deg: the fov narrows this much over the settle, so the ball and green fill the frame at touchdown
+  breathe: 1.2,          // deg: a slow fov breathe while following (speed feel)
+  closeIn: 0.3,          // share of the chase distance the camera closes while following
   land: 1.4,             // s: settle from the chase to the landing view
-  landFwd: 12, landSide: 24, landUp: 6.5,   // landing view: beside the landing spot (a touch past it), raised; never across the ball's path
+  landFwd: 9, landSide: 17, landUp: 5,   // landing view: beside the landing spot (a touch past it), raised; never across the ball's path
 };
 
 export interface ShotCamCtx {
@@ -79,7 +82,7 @@ export class ShotCam {
       return o;
     }
     if (this.phase === 'catch') {
-      const s = smoother((this.t - this.t0Phase) / C.catch);
+      const k = Math.min(1, (this.t - this.t0Phase) / C.catch), s = k >= 1 ? 1 : 1 - Math.pow(1 - k, 3) * (1 - 0.0 * k);   // ease-out: leaves the golfer briskly, settles onto the ball
       const f = this.followPose(ctx, new THREE.Vector3(), new THREE.Vector3());
       // the face view keeps watching the golfer (live head) while we leave it
       const fp = this.faceEnd.pos, fl = this.faceEnd.look.clone().lerp(ctx.head.clone().addScaledVector(Y, -C.faceDrop), 1);
@@ -114,7 +117,7 @@ export class ShotCam {
     // the ball stays the subject (eye just ahead of it, towards where it comes down); the camera's move brings the landing area in
     const lookNow = (b.phase === 'flight' ? b.pos.clone().lerp(this.landLook, 0.2) : b.pos.clone()).addScaledVector(Y, 0.3);
     o.look.copy(fromLook).lerp(lookNow, smoother(Math.min(1, s * 2)));
-    o.dFov = (f ? f.dFov : this.from.dFov) * (1 - s); o.roll = (f ? f.roll : this.from.roll) * (1 - s);
+    o.dFov = (f ? f.dFov : this.from.dFov) * (1 - s) - C.landZoom * s; o.roll = (f ? f.roll : this.from.roll) * (1 - s);
     if (f) { this.from.pos.copy(f.pos); this.from.look.copy(f.look); this.from.dFov = f.dFov; this.from.roll = f.roll; }
     return o;
   }
@@ -139,14 +142,15 @@ export class ShotCam {
     const lat = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(this.side);
     const apex = b.phase === 'flight' ? Math.exp(-((b.vel.y / C.apexWidth) ** 2)) : 0;
     const fall = b.phase === 'flight' && b.vel.y < 0 ? smoother(-b.vel.y / 22) : 0;
-    const back = C.chaseBack * (1 + 0.55 * apex);
+    const fol = this.phase === 'follow' ? this.t - this.t0Phase : 0;
+    const back = C.chaseBack * (1 + 0.55 * apex) * (1 - C.closeIn * smoother(fol / 2.2));
     pos.copy(b.pos).addScaledVector(dir, -back).addScaledVector(lat, C.chaseSide);
     const g = ctx.groundAt(pos.x, pos.z);
     pos.y = g + C.chaseUp + Math.max(0, b.pos.y - g) * C.chaseUpK;
     const v = b.vel.lengthSq() > 1 ? b.vel.clone().normalize() : dir;
     look.copy(b.pos).addScaledVector(v, C.lookAhead);
     look.y -= pos.distanceTo(b.pos) * Math.tan(C.frameLift * Math.PI / 180);
-    return { pos, look, dFov: -C.apexZoom * apex, roll: C.fallTilt * Math.PI / 180 * fall * -this.side };
+    return { pos, look, dFov: -C.apexZoom * apex + C.breathe * Math.sin(this.t * 2.4) * smoother(fol / 0.6), roll: C.fallTilt * Math.PI / 180 * fall * -this.side };
   }
 
   private nearLanding(ctx: ShotCamCtx) {
