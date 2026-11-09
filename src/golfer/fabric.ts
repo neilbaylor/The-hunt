@@ -43,7 +43,7 @@ const BODY: Record<FabricKind, string> = {
     // twill weave: diagonal ribs
     float rib = 0.5 + 0.5 * sin((vB.y * 0.7 + vB.x + vB.z) * 1400.0);
     float fine = 1.0 - smoothstep(0.0006, 0.0025, fwidth(vB.y));
-    h += 0.00003 * rib * fine;   // very fine: stronger reads as moire stripes up close
+    rib *= fine;   // no twill bump: even a faint one reads as moire stripes up close
     // pressed front crease (sharp ridge) and softer back crease
     h += 0.0007 * (1.0 - smoothstep(0.0, 0.005, crease));
     // knee bunching and the break over the shoe: horizontal folds
