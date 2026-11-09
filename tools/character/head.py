@@ -30,6 +30,7 @@ ap.add_argument('--unwrap', default=None, help="front-on cylindrical face textur
 ap.add_argument('--hair', default=None, help='hair colour (default: the profile look.hair in src/golfer/profile.ts, else #4a3628)')
 ap.add_argument('--unwrap-weight', type=float, default=4.0, help='how strongly the unwrap wins over the portrait where both see')
 ap.add_argument('--mpfb', default='/tmp/mh/mpfb2/src/mpfb/data', help='MakeHuman (MPFB2) data, for the expression targets')
+ap.add_argument('--neck', default='cap', choices=['cap', 'loft'], help="cap: keep the generator's cap, the body's neck shows below; loft: grow a neck down into the collar")
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
 ap.add_argument('--debug', default=None, help='directory for debug images')
@@ -206,6 +207,7 @@ lowest = FV[:, 1].min()
 capf = cap[GF].all(1) & (FV[GF][:, :, 1].max(1) < lowest + 0.012)
 # and the generator's flared rim round the bottom of the neck stub: the loft below takes over from here
 capf |= FV[GF][:, :, 1].min(1) < lowest + A.crop
+if A.neck == 'cap': capf[:] = False
 GF2 = GF[~capf]
 hm = trimesh.Trimesh(FV, GF2, process=False); hm.remove_unreferenced_vertices()
 hm = max(hm.split(only_watertight=False), key=lambda m: len(m.faces))
@@ -234,63 +236,73 @@ for it in range(14):
 _vn0 = vnormals(LV, LF)
 lift = np.clip((LV[:, 1] - (eyeY0 + 0.07)) / 0.04, 0, 1) ** 1.2 * (0.7 + 0.3 * np.clip((LV[:, 2] - (eye_lmh[2] - 0.12)) / 0.1, 0, 1))
 LV += _vn0 * (0.006 * lift)[:, None]
-# the generator cuts the head off flat at about chin level: grow a neck down from that cut to the body's own neck
-# (a loft from the cut ring to the body's neck surface just above the collar), so the seam lies on the body's skin
-edges = np.r_[LF[:, [0, 1]], LF[:, [1, 2]], LF[:, [2, 0]]]
-key = np.sort(edges, 1); ue, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
-bed = edges[cnt[inv] == 1]                          # boundary edges, with the faces' direction
-nxt = {int(a): int(b) for a, b in bed}
-loops, seen = [], set()
-for s0 in nxt:
-    if s0 in seen: continue
-    lp = [s0]; seen.add(s0); c_ = nxt[s0]
-    while c_ != s0 and c_ not in seen and c_ in nxt: lp.append(c_); seen.add(c_); c_ = nxt[c_]
-    loops.append(lp)
-loop = max(loops, key=len)
-print('cut ring', len(loop), 'verts (', len(loops), 'boundary loops)')
-collar = np.array(M['collar'])
-# the seam follows the collar (low at the front, high at the back, so it stays under the polo at the back and sides)
-cz = np.polyfit(collar[:, 2], collar[:, 1], 1)
-def y_seam_at(z): return cz[0] * z + cz[1] + 0.01
-neck_z = SP[(np.abs(SP[:, 1] - (y_seam_at(SP[:, 2]) - 0.012)) < 0.008) & (np.abs(SP[:, 0]) < 0.075)]
-axis_c = np.array([0.0, (neck_z[:, 2].min() + neck_z[:, 2].max()) / 2])
-neckv = neck_z
-na = np.arctan2(neckv[:, 0] - axis_c[0], neckv[:, 2] - axis_c[1]); nr = np.hypot(neckv[:, 0] - axis_c[0], neckv[:, 2] - axis_c[1])
-def neck_r(a):
-    da = np.abs((na - a + np.pi) % (2 * np.pi) - np.pi); sel = da < 0.15
-    return np.percentile(nr[sel], 75) if sel.sum() > 2 else nr.mean()
-top = LV[loop]
-ta = np.arctan2(top[:, 0] - axis_c[0], top[:, 2] - axis_c[1])
-OVER = 0.012   # the neck runs on past the seam, down inside the collar, over the body's neck
-bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) + 0.0015), 0, axis_c[1] + math.cos(a) * (neck_r(a) + 0.0015)] for a in ta]); bot[:, 1] = y_seam_at(bot[:, 2]) - OVER
-# smooth the bottom ring a little round the neck
-for _ in range(3): bot = 0.5 * bot + 0.25 * (np.roll(bot, 1, 0) + np.roll(bot, -1, 0))
-ROWS = 7
-rows = [np.array(loop)]
-Lv = list(LV)
-for r_ in range(1, ROWS + 1):
-    u = r_ / ROWS
-    # Hermite: leave the cut heading straight down, arrive at the neck heading straight down
-    h00, h10, h01, h11 = 2 * u ** 3 - 3 * u ** 2 + 1, u ** 3 - 2 * u ** 2 + u, -2 * u ** 3 + 3 * u ** 2, u ** 3 - u ** 2
-    Ld = np.linalg.norm(bot - top, axis=1, keepdims=True)
-    # leave the cut heading toward the neck (under the jaw the neck tucks in), arrive heading straight down
-    t0 = (bot - top) * 0.8; t1 = np.array([0, -1.0, 0]) * Ld
-    pts = h00 * top + h10 * t0 + h01 * bot + h11 * t1
-    rows.append(np.arange(len(Lv), len(Lv) + len(pts))); Lv.extend(pts)
-LV = np.array(Lv)
-nf = []
-for r_ in range(ROWS):
-    a, b = rows[r_], rows[r_ + 1]
-    for i in range(len(loop)):
-        j = (i + 1) % len(loop)
-        # boundary edge a[i]→a[j] runs with its face; the new faces run against it
-        nf += [[a[j], a[i], b[i]], [a[j], b[i], b[j]]]
-LF = np.r_[LF, np.array(nf, np.int64)]
-lo = trimesh.Trimesh(LV, LF, process=False)
-cen = np.array([axis_c[0], y_seam_at(axis_c[1]), axis_c[1]]); pn = np.array([0, 1.0, -cz[0]]); pn /= np.linalg.norm(pn)
-print('neck loft', len(nf), 'tris from y', round(top[:, 1].mean(), 3), 'down to', round(cen[1], 3), '(tilt', round(math.degrees(math.atan(cz[0])), 1), '°); head now', len(LF), 'tris')
-hgt = (LV - cen) @ pn
-BAND = float(((top - cen) @ pn).mean())   # from the seam up to the cut           # the loft's height: weights and colour blend over it
+if A.neck == 'loft':
+    # the generator cuts the head off flat at about chin level: grow a neck down from that cut to the body's own neck
+    # (a loft from the cut ring to the body's neck surface just above the collar), so the seam lies on the body's skin
+    edges = np.r_[LF[:, [0, 1]], LF[:, [1, 2]], LF[:, [2, 0]]]
+    key = np.sort(edges, 1); ue, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+    bed = edges[cnt[inv] == 1]                          # boundary edges, with the faces' direction
+    nxt = {int(a): int(b) for a, b in bed}
+    loops, seen = [], set()
+    for s0 in nxt:
+        if s0 in seen: continue
+        lp = [s0]; seen.add(s0); c_ = nxt[s0]
+        while c_ != s0 and c_ not in seen and c_ in nxt: lp.append(c_); seen.add(c_); c_ = nxt[c_]
+        loops.append(lp)
+    loop = max(loops, key=len)
+    print('cut ring', len(loop), 'verts (', len(loops), 'boundary loops)')
+    collar = np.array(M['collar'])
+    # the seam follows the collar (low at the front, high at the back, so it stays under the polo at the back and sides)
+    cz = np.polyfit(collar[:, 2], collar[:, 1], 1)
+    def y_seam_at(z): return cz[0] * z + cz[1] + 0.01
+    neck_z = SP[(np.abs(SP[:, 1] - (y_seam_at(SP[:, 2]) - 0.012)) < 0.008) & (np.abs(SP[:, 0]) < 0.075)]
+    axis_c = np.array([0.0, (neck_z[:, 2].min() + neck_z[:, 2].max()) / 2])
+    neckv = neck_z
+    na = np.arctan2(neckv[:, 0] - axis_c[0], neckv[:, 2] - axis_c[1]); nr = np.hypot(neckv[:, 0] - axis_c[0], neckv[:, 2] - axis_c[1])
+    def neck_r(a):
+        da = np.abs((na - a + np.pi) % (2 * np.pi) - np.pi); sel = da < 0.15
+        return np.percentile(nr[sel], 75) if sel.sum() > 2 else nr.mean()
+    top = LV[loop]
+    ta = np.arctan2(top[:, 0] - axis_c[0], top[:, 2] - axis_c[1])
+    OVER = 0.012   # the neck runs on past the seam, down inside the collar, over the body's neck
+    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) + 0.0015), 0, axis_c[1] + math.cos(a) * (neck_r(a) + 0.0015)] for a in ta]); bot[:, 1] = y_seam_at(bot[:, 2]) - OVER
+    # smooth the bottom ring a little round the neck
+    for _ in range(3): bot = 0.5 * bot + 0.25 * (np.roll(bot, 1, 0) + np.roll(bot, -1, 0))
+    ROWS = 7
+    rows = [np.array(loop)]
+    Lv = list(LV)
+    for r_ in range(1, ROWS + 1):
+        u = r_ / ROWS
+        # Hermite: leave the cut heading straight down, arrive at the neck heading straight down
+        h00, h10, h01, h11 = 2 * u ** 3 - 3 * u ** 2 + 1, u ** 3 - 2 * u ** 2 + u, -2 * u ** 3 + 3 * u ** 2, u ** 3 - u ** 2
+        Ld = np.linalg.norm(bot - top, axis=1, keepdims=True)
+        # leave the cut heading toward the neck (under the jaw the neck tucks in), arrive heading straight down
+        t0 = (bot - top) * 0.8; t1 = np.array([0, -1.0, 0]) * Ld
+        pts = h00 * top + h10 * t0 + h01 * bot + h11 * t1
+        rows.append(np.arange(len(Lv), len(Lv) + len(pts))); Lv.extend(pts)
+    LV = np.array(Lv)
+    nf = []
+    for r_ in range(ROWS):
+        a, b = rows[r_], rows[r_ + 1]
+        for i in range(len(loop)):
+            j = (i + 1) % len(loop)
+            # boundary edge a[i]→a[j] runs with its face; the new faces run against it
+            nf += [[a[j], a[i], b[i]], [a[j], b[i], b[j]]]
+    LF = np.r_[LF, np.array(nf, np.int64)]
+    lo = trimesh.Trimesh(LV, LF, process=False)
+    cen = np.array([axis_c[0], y_seam_at(axis_c[1]), axis_c[1]]); pn = np.array([0, 1.0, -cz[0]]); pn /= np.linalg.norm(pn)
+    print('neck loft', len(nf), 'tris from y', round(top[:, 1].mean(), 3), 'down to', round(cen[1], 3), '(tilt', round(math.degrees(math.atan(cz[0])), 1), '°); head now', len(LF), 'tris')
+    hgt = (LV - cen) @ pn
+    BAND = float(((top - cen) @ pn).mean())   # from the seam up to the cut           # the loft's height: weights and colour blend over it
+else:
+    # keep the generator's own flat cap under the jaw: the body's neck rises into the head from below (its skin is
+    # discarded a few mm inside the cap), so the jaw line and the neck are the real ones, not a lofted tube
+    cap_y = LV[:, 1].min()
+    nkv = SP[(np.abs(SP[:, 1] - cap_y) < 0.008) & (np.abs(SP[:, 0]) < 0.075)]
+    cen = np.array([0.0, cap_y + 0.006, (nkv[:, 2].min() + nkv[:, 2].max()) / 2]); pn = np.array([0, 1.0, 0])
+    hgt = (LV - cen) @ pn
+    BAND = 0.012
+    print('neck: generator cap kept at y', round(cap_y, 3), '; the body neck shows below it')
 
 # skin weights: the body's own weights at the seam, all head from the cut up
 tree = cKDTree(SP)
@@ -430,7 +442,9 @@ def pose_photo(img):
     return K, Rm, tv[:, 0], lm
 
 skin_samples, hair_samples = [], []
-for ph in photos:
+use_photos = photos if (A.photo or not (A.unwrap not in (None, 'none') or json.load(open(os.path.join(HERE, 'neil.json')))['face'].get('unwrap'))) else []
+if not use_photos: print('portrait projection off: the unwrap covers the face (pass --photo to blend it in)')
+for ph in use_photos:
     print('photo', ph)
     im = np.asarray(Image.open(ph).convert('RGB')).astype(float)
     H, W = im.shape[:2]
@@ -512,7 +526,7 @@ if A.unwrap != 'none' and os.path.exists(A.unwrap):
     cu = np.stack([map_coordinates(U[..., k], [xy[:, 1] - 0.5, xy[:, 0] - 0.5], order=1, mode='nearest') for k in range(3)], 1)
     ang = np.abs(np.arctan2(cp[:, 0] - hc_[0], cp[:, 2] - hc_[2]))
     wu = np.clip(np.minimum.reduce([xy[:, 0] - 4, UW - 4 - xy[:, 0], xy[:, 1] - 4, UH - 4 - xy[:, 1]]) / 60, 0, 1) ** 1.5   # wide, soft edges
-    wu *= np.clip((np.radians(UCFG.get('maxAngle', 105)) - ang) / 0.25, 0, 1)
+    wu *= np.clip((np.radians(UCFG.get('maxAngle', 105)) - ang) / 0.6, 0, 1) ** 1.5   # a long, soft fade round the back
     wu *= np.clip((cp[:, 1] - (lm_f[152, 1] - 0.05)) / 0.02, 0, 1)
     # the unwrap's flat orange margins (round the ears, the corners) are not skin detail
     # where the unwrap sees, the portrait steps back (two lightings side by side read as seams)
@@ -532,7 +546,8 @@ eyeY = (lm_f[IRIS[0], 1] + lm_f[IRIS[1], 1]) / 2
 ear_lo = eyeY - 0.045
 # short hair: everything above the temples, and behind the ears down to a nape line (lowest at the centre of the
 # back), with a ragged soft edge
-xr = np.abs(cp[:, 0] - eye_lmh[0]); back = np.clip(-(cp[:, 2] - (eye_lmh[2] - 0.075)) / 0.03, 0, 1)
+ear_z = np.mean([e_[2] for e_ in ear_pts]) if ear_pts else eye_lmh[2] - 0.08
+xr = np.abs(cp[:, 0] - eye_lmh[0]); back = np.clip(-(cp[:, 2] - (ear_z - 0.012)) / 0.02, 0, 1)   # hair starts just behind the ears
 nape = eyeY - 0.045 - 0.03 * np.clip(1 - xr / 0.065, 0, 1) ** 1.5
 ragged = 0.006 * (np.sin(cp[:, 0] * 900) * 0.5 + np.sin(cp[:, 0] * 2300 + 1.3) * 0.5)
 hair_amt = np.clip((cp[:, 1] - nape - ragged) / 0.008 + 0.5, 0, 1) * back
@@ -574,7 +589,8 @@ gd -= hiN * np.einsum('ij,ij->i', gd, hiN)[:, None]; gd /= np.linalg.norm(gd, ax
 def aniso(F_perp, F_par):
     q = cp * F_perp + gd * np.einsum('ij,ij->i', cp, gd)[:, None] * (F_par - F_perp); return snoise(q)
 strand = 0.55 + 0.7 * (0.55 * aniso(2600, 70) + 0.3 * aniso(900, 30) + 0.15 * snoise(cp * 150))
-fill = hair_amt[:, None] * hair_c * strand[:, None] * (0.55 + 0.45 * relief[:, None]) + (1 - hair_amt[:, None]) * neck_c * (0.92 + 0.08 * relief[:, None])
+hshade = strand * (0.55 + 0.45 * relief); hshade /= np.mean(hshade[hairy]) if hairy.any() else 1   # same level as the textured hair
+fill = hair_amt[:, None] * hair_c * hshade[:, None] + (1 - hair_amt[:, None]) * neck_c * (0.92 + 0.08 * relief[:, None])
 # soft hair edge at the nape
 out = col * conf[:, None] + fill * (1 - conf[:, None])
 # ── hair colour: his own dark brown, whatever the textures say (the unwrap's hair is lighter and redder) ──
@@ -590,9 +606,12 @@ near_eye = np.minimum(np.linalg.norm(cp - lm_f[IRIS[0]], axis=1), np.linalg.norm
 sideang = np.abs(np.arctan2(cp[:, 0] - eye_lmh[0], cp[:, 2] - (eye_lmh[2] - 0.09)))
 near_ear = np.zeros(len(cp), bool)
 for e_ in ear_pts: near_ear |= np.linalg.norm((cp - e_) * [1.6, 0.8, 1], axis=1) < 0.04   # the ears stay skin
-region = ~near_ear & ((cp[:, 1] > eyeY + 0.03) | ((sideang > np.radians(55)) & (cp[:, 1] > eyeY - 0.06))) & ~near_eye
+region = ((cp[:, 1] > eyeY + 0.03) | ((sideang > np.radians(55)) & (cp[:, 1] > eyeY - 0.06))) & ~near_eye
 dark = np.clip((0.8 * skinL - L_) / (0.2 * skinL), 0, 1) * region
-H_ = np.maximum(hair_amt * ~near_ear, dark)
+# round the ears only clearly dark texels are hair (the ear's own shadows are not)
+dark_ear = np.clip((0.6 * skinL - L_) / (0.15 * skinL), 0, 1) * region
+dark = np.where(near_ear, dark_ear, dark)
+H_ = np.maximum(np.where(near_ear, hair_amt * dark_ear, hair_amt), dark)
 H_ = H_ * np.clip(1 - 0.7 * near_eye, 0, 1)
 hm_mean = np.median(L_[H_ > 0.8]) if (H_ > 0.8).sum() > 100 else L_.mean()
 rec = hair_t[None, :] * np.clip(L_ / max(hm_mean, 1), 0.35, 1.8)[:, None] ** 0.9
@@ -603,7 +622,7 @@ rec = rec * (1 - cr[:, None]) + skin_c * 0.8 * cr[:, None]
 out = out * (1 - H_[:, None]) + rec * H_[:, None]
 print('hair recoloured to', hair_hex, 'over', int((H_ > 0.5).sum()), 'texels; source hair lum', round(float(hm_mean), 1))
 # the neck band fades to the body's skin tone (the body is tinted to the face below)
-nk = np.clip(((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn / (BAND + 0.012), 0, 1) ** 0.7
+nk = np.clip(((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn / (BAND + 0.012), 0, 1) ** 0.7 if A.neck == 'loft' else np.clip((((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn + 0.004) / 0.004, 0, 1)
 out = out * nk[:, None] + neck_c * (1 - nk[:, None])
 tex = np.zeros((T, T, 3), np.float32); have = np.zeros((T, T), np.uint8)
 tex[ty, tx] = out; have[ty, tx] = 255
