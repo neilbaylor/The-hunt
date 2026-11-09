@@ -28,11 +28,13 @@ const BODY: Record<FabricKind, string> = {
     vec3 q = vB * 520.0;
     float cell = abs(sin(q.x) * sin(q.y + 0.5 * sin(q.z)));
     float fine = 1.0 - smoothstep(0.0006, 0.0025, fwidth(vB.y));
-    h += 0.00014 * cell * fine;
-    // soft drape: long horizontal-ish folds, stronger low on the shirt (bloused over the belt)
-    float low = 1.0 - smoothstep(0.02, 0.14, hem) * step(vB.y, 1.25);
-    float folds = fbm3(vB * vec3(7.0, 19.0, 7.0));
-    h += 0.0012 * folds + 0.0007 * low * fbm3(vB * vec3(10.0, 40.0, 10.0));
+    h += 0.00005 * cell * fine;   // fine jersey knit (smooth performance polo)
+    // drape: soft diagonal folds from the shoulders and vertical folds where the boxy body hangs
+    float folds = fbm3(vB * vec3(7.0, 16.0, 7.0));
+    float hang = smoothstep(uBeltY + 0.22, uBeltY - 0.05, vB.y);
+    float vfold = 0.5 + 0.5 * sin(atan(vB.x, vB.z + 0.02) * 9.0 + fbm3(vB * 6.0) * 4.0);
+    float diag = 0.5 + 0.5 * sin((vB.y * 1.3 + abs(vB.x) * 1.6) * 48.0 + fbm3(vB * 9.0) * 3.0) * smoothstep(1.2, 1.45, vB.y);
+    h += 0.0022 * folds + 0.0012 * hang * vfold + 0.0008 * diag;
     // seams: a narrow groove with stitching either side
     float sg = 1.0 - smoothstep(0.0, 0.003, seam);
     h -= 0.00012 * sg;

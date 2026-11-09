@@ -300,7 +300,8 @@ for vi in body_idx:
     feet = wsum(vi, ['foot_l', 'foot_r', 'ball_l', 'ball_r'])
     neckw = vw[vi].get(BONES.index('neck_01'), 0) + vw[vi].get(BONES.index('head'), 0)
     # shirt: torso and upper arms (short sleeves), from the belt up to the collar
-    if y > belt_y - 0.035 and neckw < 0.5 and y < neck_y + 0.01:
+    shirt_lo = belt_y - (C.get('untuckedDrop', 0.0) if C.get('untucked') else 0.035)
+    if y > shirt_lo and neckw < 0.5 and y < neck_y + 0.01:
         sleeve_ok = True
         if arm_l > 0.5: sleeve_ok = along(vi, 'upperarm_l', 'lowerarm_l') < C['sleeve']
         if arm_r > 0.5: sleeve_ok = along(vi, 'upperarm_r', 'lowerarm_r') < C['sleeve']
@@ -308,6 +309,9 @@ for vi in body_idx:
             shirt[vi] = True
             loose = 1 - min(1, abs(y - (pelvis_y + 0.2)) / 0.3)
             tuck = min(1.0, max(0.0, (y - (belt_y - 0.04)) / 0.08))  # tucked in: hugs the body at the waistband
+            if C.get('untucked'):
+                tuck = 1.0
+                if y < pelvis_y + 0.2: loose = 1.0 + 0.6 * min(1.0, (pelvis_y + 0.2 - y) / 0.15)  # hangs straight and boxy below the waist
             shirt_off[vi] = C['shirtGap'] * (0.5 + 0.5 * tuck) + C['shirtLoose'] * loose * tuck
     # trousers: belt line down to just above the ankle
     hem_y = (joint[BONES.index('calf_l')][1] + C['shortsAboveKnee']) if C.get('shorts') else min(ankle_y.values()) - 0.012
@@ -535,7 +539,7 @@ def crown_thin(d):
     cdir = np.array([0.0, math.sin(1.2), -math.cos(1.2)])
     dn = d / np.maximum(np.linalg.norm(d, axis=-1, keepdims=True), 1e-9)
     ang = np.arccos(np.clip(dn @ cdir, -1, 1))
-    return np.clip((ang - 0.12) / 0.14, 0, 1)  # 0 at the centre of the spot, 1 outside
+    return np.clip((ang - 0.2) / 0.16, 0, 1)  # 0 at the centre of the spot, 1 outside
 def hair_mask_v(p):
     d = p - hcr
     a = np.abs(np.arctan2(d[:, 0], d[:, 2])); el = np.arctan2(d[:, 1], np.hypot(d[:, 0], d[:, 2]))
@@ -755,7 +759,7 @@ def skin_fn(p, n):
             # which way this camera looks at the head, in head space
             cy, sy, cp, sp = math.cos(v['yaw']), math.sin(v['yaw']), math.cos(v['pitch']), math.sin(v['pitch'])
             camdir = np.array([-sy * cp, sp, cy * cp]); camdir /= np.linalg.norm(camdir)
-            facing = np.clip((n @ camdir - 0.3) / 0.5, 0, 1) ** 2
+            facing = np.clip((n @ camdir - 0.3) / 0.5, 0, 1) ** 4
             xy = np.c_[q[:, 0], q[:, 1], np.ones(len(p))] @ v['aff']
             if v['warp'] is not None and near.any():
                 xy[near] += v['warp'](q[near, :2])
@@ -768,6 +772,8 @@ def skin_fn(p, n):
             sig = np.where(p[:, 1] < hc[1] - 0.03, 0.26, 0.15)
             skinlike = np.exp(-np.sum((col - skin_rgb) ** 2, axis=1) / (2 * sig ** 2))
             w = facing * yband * near * inside * v['weight'] * skinlike
+            if v is not views[0]:  # side views never paint the nose/mouth/chin strip (avoids double features)
+                w *= np.clip((np.abs(d[:, 0]) - 0.022) / 0.02, 0, 1)
             if v['noMouth']:  # a smiling photo: use its cheeks, temples and jaw, not its mouth
                 w *= np.clip((np.linalg.norm((p - mouth_c) * [1.0, 1.3, 1.0], axis=1) - 0.03) / 0.02, 0, 1)
             acc += col * w[:, None]; wsum += w

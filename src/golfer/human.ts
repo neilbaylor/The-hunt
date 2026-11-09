@@ -123,21 +123,24 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const skinMat = new THREE.MeshPhysicalMaterial({ map: tex(data.skin), roughness: 0.5, sheen: 0.4, sheenColor: new THREE.Color('#ff8e6e'), sheenRoughness: 0.5, clearcoat: 0.06, clearcoatRoughness: 0.45 });
   applyFabric(skinMat, 'skin', fu);
   const skin = add('skin', skinMat)!;
-  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.4, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.72, sheen: 0.9, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.45), sheenRoughness: 0.42, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
     // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
-    const crest = O.chestLogo === 'malbon-m' ? canvasTex(256, 256, g => {
-      // white embroidered script 'm' (loopy single stroke)
-      g.clearRect(0, 0, 256, 256); g.strokeStyle = '#f4f2ec'; g.lineWidth = 15; g.lineCap = 'round'; g.lineJoin = 'round';
-      g.beginPath(); g.moveTo(34, 190); g.bezierCurveTo(48, 120, 70, 66, 92, 70); g.bezierCurveTo(116, 74, 96, 150, 104, 176);
-      g.bezierCurveTo(112, 120, 138, 70, 160, 74); g.bezierCurveTo(186, 80, 160, 170, 182, 182); g.bezierCurveTo(196, 190, 214, 176, 226, 158);
-      g.moveTo(60, 120); g.bezierCurveTo(30, 108, 30, 70, 60, 64); g.stroke();
+    const crest = O.chestLogo === 'malbon-m' ? canvasTex(512, 512, g => {
+      // white embroidered script 'm': a small entry loop, two rounded arches, a curled tail
+      g.clearRect(0, 0, 512, 512); g.lineCap = 'round'; g.lineJoin = 'round';
+      const path = () => { g.beginPath(); g.moveTo(150, 205); g.bezierCurveTo(95, 170, 70, 230, 120, 250); g.bezierCurveTo(150, 262, 150, 300, 132, 360);
+        g.bezierCurveTo(165, 250, 215, 205, 238, 228); g.bezierCurveTo(258, 250, 232, 320, 226, 362);
+        g.bezierCurveTo(262, 250, 318, 205, 345, 230); g.bezierCurveTo(372, 256, 322, 336, 352, 360); g.bezierCurveTo(372, 376, 410, 352, 430, 318); };
+      g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 30; g.save(); g.translate(3, 4); path(); g.stroke(); g.restore(); // thread shadow
+      g.strokeStyle = '#f4f2ec'; g.lineWidth = 24; path(); g.stroke();
+      g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 6; path(); g.stroke();                          // satin-stitch sheen
     }, true, 1) : new THREE.TextureLoader().load(crestUrl);
     crest.colorSpace = THREE.SRGBColorSpace; crest.anisotropy = 8; crest.wrapS = crest.wrapT = THREE.ClampToEdgeWrapping; crest.repeat.set(1, 1);
     const chest = J[M.bones.indexOf('spine_02')];
     const side = p.handed === 'left' ? -1 : 1;
     const cz = M.collar.reduce((a, c) => Math.max(a, c[2]), -9) - 0.01;
-    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.055 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
+    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.07, M.collar.reduce((a, c) => Math.max(a, c[1]), -9) - 0.115, cz) : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.06 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
   }
   add('shirt', shirtMat);
   const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.82, sheen: 0.3, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.6), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
@@ -217,10 +220,10 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       side.crossVectors(nrm, gdir).normalize();
       // under the visor band the hair is pressed flat
       const vy = M.visor.center[1], underBand = (O.headwear && root.y > vy - 0.03 && root.y < vy + 0.026) ? 1 : 0;
-      const L = (0.012 + 0.04 * top) * (0.7 + 0.6 * rand()) * (underBand ? 0.55 : 1), W = 0.006 + 0.004 * rand();
+      const L = (0.014 + 0.026 * top) * (0.7 + 0.6 * rand()) * (underBand ? 0.55 : 1), W = 0.006 + 0.004 * rand();
       const lift = underBand ? 0.15 : 1;
       const base = pos.length / 3;
-      const shade = 0.75 + 0.45 * rand(); const c0 = hc.clone().multiplyScalar(shade).lerp(grey, rand() < 0.05 ? 0.3 : 0);
+      const shade = 0.75 + 0.45 * rand(); const c0 = hc.clone().multiplyScalar(shade).lerp(grey, 0);
       for (let s = 0; s <= SEG; s++) {
         const t = s / SEG;
         // rises off the scalp then lies down onto it
@@ -235,10 +238,14 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
     const cg = new THREE.BufferGeometry();
     cg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); cg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); cg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    cg.setIndex(ind); cg.computeVertexNormals();
+    cg.setIndex(ind);
+    // every card is lit like the scalp under it (outward normal), so no card flips bright or dark
+    { const nn: number[] = []; const pa = cg.getAttribute('position') as THREE.BufferAttribute; const hcv = new THREE.Vector3(...(M.headCenter as [number, number, number])); const t = new THREE.Vector3();
+      for (let i = 0; i < pa.count; i++) { t.fromBufferAttribute(pa, i).sub(hcv).normalize(); nn.push(t.x, t.y, t.z); }
+      cg.setAttribute('normal', new THREE.Float32BufferAttribute(nn, 3)); }
     const headBi0 = M.bones.indexOf('head');
     cg.translate(-J[headBi0].x, -J[headBi0].y, -J[headBi0].z);
-    const cm = new THREE.MeshStandardMaterial({ map: tint, alphaMap: strandTex, vertexColors: true, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.6 });
+    const cm = new THREE.MeshStandardMaterial({ map: tint, alphaMap: strandTex, vertexColors: true, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.7 });
     const cards = new THREE.Mesh(cg, cm); cards.name = 'hair-shell'; cards.castShadow = true; cards.receiveShadow = true;
     bones[headBi0].add(cards); meshes.push(cards);
     void Mk;
@@ -278,9 +285,15 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     col.castShadow = col.receiveShadow = true; bones[chestBi].add(col); meshes.push(col);
     // placket: a short strip with two buttons
     const front = sorted.reduce((b, o) => (Math.abs(o.a) < Math.abs(b.a) ? o : b)).p;
-    const plk = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.1), shirtMat.clone());
-    plk.position.set(front.x, front.y - 0.055, front.z + 0.004).sub(J[chestBi]); plk.rotation.x = -0.12; bones[chestBi].add(plk);
-    for (const dy of [-0.035, -0.075]) { const b = new THREE.Mesh(new THREE.CircleGeometry(0.0055, 16), new THREE.MeshStandardMaterial({ color: '#f2f0ea', roughness: 0.3 })); b.position.set(front.x, front.y + dy, front.z + 0.0065).sub(J[chestBi]); b.rotation.x = -0.12; bones[chestBi].add(b); }
+    // placket: a raised, stitched strip, 2 white four-hole buttons
+    const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.35)'; g.setLineDash([6, 5]); g.lineWidth = 2; g.strokeRect(6, 4, 52, 244); }, true, 1);
+    plkTex.wrapS = plkTex.wrapT = THREE.ClampToEdgeWrapping; plkTex.repeat.set(1, 1);
+    const plkMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, map: plkTex, roughness: 0.72, sheen: 0.9, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.45), side: THREE.DoubleSide });
+    const plk = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.115, 0.003), plkMat);
+    plk.position.set(front.x, front.y - 0.06, front.z + 0.005).sub(J[chestBi]); plk.rotation.x = -0.14; bones[chestBi].add(plk);
+    const btnTex = canvasTex(64, 64, g => { g.fillStyle = '#f4f2ec'; g.beginPath(); g.arc(32, 32, 30, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 3; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.stroke(); g.fillStyle = 'rgba(0,0,0,.45)'; for (const [x, y] of [[26, 26], [38, 26], [26, 38], [38, 38]]) { g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill(); } }, true, 1);
+    btnTex.wrapS = btnTex.wrapT = THREE.ClampToEdgeWrapping; btnTex.repeat.set(1, 1);
+    for (const dy of [-0.03, -0.085]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.0058, 0.0058, 0.0025, 20), [new THREE.MeshStandardMaterial({ color: '#e8e5dc', roughness: 0.35 }), new THREE.MeshStandardMaterial({ map: btnTex, roughness: 0.3 }), new THREE.MeshStandardMaterial({ map: btnTex, roughness: 0.3 })]); b.rotation.x = Math.PI / 2 - 0.14; b.position.set(front.x, front.y + dy, front.z + 0.0085).sub(J[chestBi]); bones[chestBi].add(b); }
   }
   // belt: a leather band round the waist with a buckle, on the pelvis
   {
@@ -294,8 +307,10 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     g.translate(-J[pelvisBi].x, -J[pelvisBi].y, -J[pelvisBi].z);
     const leather = new THREE.MeshPhysicalMaterial({ color: (O as any).belt ?? '#2a1d14', roughness: 0.45, clearcoat: 0.3, side: THREE.DoubleSide });
     const belt = new THREE.Mesh(g, leather); belt.castShadow = true; bones[pelvisBi].add(belt); meshes.push(belt);
+    if (O.untucked) belt.visible = false;
     const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.036, 0.006), new THREE.MeshStandardMaterial({ color: '#c9ccd1', metalness: 1, roughness: 0.25 }));
     buckle.position.set(B.cx, B.y, B.cz + B.rz + 0.02).sub(J[pelvisBi]); bones[pelvisBi].add(buckle);
+    if (O.untucked) buckle.visible = false;
   }
   // shoes: modern spikeless golf shoes sized to the feet (on the foot bones): rubber sole, leather upper,
   // laces, toe perforations and an accent stripe, all from one UV-mapped texture
@@ -470,7 +485,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   }
 
   const setSmile = (v0: number) => {
-    const v = v0;
+    const v = 0.22 + 0.78 * v0; // a hint of a smile at rest
     if (skin.morphTargetInfluences) skin.morphTargetInfluences[0] = v;
     if (teeth?.morphTargetInfluences) teeth.morphTargetInfluences[0] = v;
     if (teeth) teeth.visible = v > 0.08; // closed mouth: keep teeth from showing through the lips

@@ -33,6 +33,7 @@ export interface Outfit {
   shoeTrim: string;
   glove: string;
   chestLogo?: 'malbon-m' | 'toronto-hunt';
+  untucked?: boolean;
   headwear: Headwear | null;
 }
 
@@ -87,6 +88,7 @@ export const NEIL: GolferProfile = {
     shoeTrim: '#e6e5e0',
     glove: '#f6f5f1',
     chestLogo: 'malbon-m',
+    untucked: true,
     headwear: { kind: 'visor', color: '#f3efe4', under: '#24382b', logo: 'pizza-hut' },
   },
   swing: { tempo: 1.1, length: 1.0, finishHigh: 1.0, waggle: true }, // ≈1.3 s to a full top with the eased approach

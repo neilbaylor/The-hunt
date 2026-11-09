@@ -6,7 +6,7 @@ import pizzaHutUrl from '../assets/brand/pizza-hut-classic.svg?url';
 
 // The front patch is drawn from the classic logo's vector art (src/assets/brand), so it's sharp at any size.
 function logoTexture(kind: Headwear['logo'], base: string) {
-  const W = 4096, H = 384;
+  const W = 4096, H = 512;
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d')!;
   g.fillStyle = base; g.fillRect(0, 0, W, H);
@@ -17,12 +17,12 @@ function logoTexture(kind: Headwear['logo'], base: string) {
   g.strokeStyle = 'rgba(0,0,0,.16)'; g.setLineDash([12, 9]); g.lineWidth = 3;
   for (const y of [18, 34, H - 18, H - 34]) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
   g.setLineDash([]);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 16;
   if (kind === 'pizza-hut') {
     const img = new Image();
     img.onload = () => {
       // the patch spans about a fifth of the band, centred on the front (u = 0.5)
-      const h = H * 0.72, w = h * (img.width / img.height || 1.254);
+      const h = H * 0.8, w = h * (img.width / img.height || 1.254);
       g.drawImage(img, W / 2 - w / 2, H / 2 - h / 2 - 4, w, h);
       t.needsUpdate = true;
     };
@@ -36,7 +36,7 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   // measured radius of the head/hair round the band (64 angles from the back, a = -PI)
   const rAt = (a: number) => { if (!profile) return null; const t = ((a + Math.PI) / (2 * Math.PI)) * 64; const i = Math.floor(t) % 64, f = t - Math.floor(t); return profile[i] * (1 - f) + profile[(i + 1) % 64] * f; };
   const group = new THREE.Group(); group.name = 'visor';
-  const fabric = new THREE.MeshStandardMaterial({ map: logoTexture(profile ? null : h.logo, h.color), roughness: 0.85, side: THREE.DoubleSide });
+  const fabric = new THREE.MeshStandardMaterial({ map: logoTexture(h.logo, h.color), roughness: 0.85, side: THREE.DoubleSide });
   // band: an open ring, a bit taller at the front, tilted so the front sits lower on the forehead
   const seg = 96, height = 0.038, pos: number[] = [], uv: number[] = [], idx: number[] = [];
   for (let i = 0; i <= seg; i++) {
@@ -108,7 +108,7 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   const edge: THREE.Vector3[] = [];
   for (let i = 0; i <= bs; i++) { const k = (rows * (bs + 1) + i) * 3; edge.push(new THREE.Vector3(bp[k], bp[k + 1] - 0.0012, bp[k + 2])); }
   group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(edge), 64, 0.0018, 6), new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.7 })));
-  if (h.logo === 'pizza-hut' && profile) {
+  if (false && h.logo === 'pizza-hut' && profile) {
     const PW = 1024, PH = 512, pc = document.createElement('canvas'); pc.width = PW; pc.height = PH;
     const pg = pc.getContext('2d')!;
     const ptex = new THREE.CanvasTexture(pc); ptex.colorSpace = THREE.SRGBColorSpace; ptex.anisotropy = 16;
