@@ -31,6 +31,8 @@ ap.add_argument('--hair', default=None, help='hair colour (default: the profile 
 ap.add_argument('--unwrap-weight', type=float, default=4.0, help='how strongly the unwrap wins over the portrait where both see')
 ap.add_argument('--mpfb', default='/tmp/mh/mpfb2/src/mpfb/data', help='MakeHuman (MPFB2) data, for the expression targets')
 ap.add_argument('--neck', default='cap', choices=['cap', 'loft'], help="cap: keep the generator's cap, the body's neck shows below; loft: grow a neck down into the collar")
+ap.add_argument('--head-scale', type=float, default=1.0)
+ap.add_argument('--head-width', type=float, default=1.04)
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
 ap.add_argument('--debug', default=None, help='directory for debug images')
@@ -179,12 +181,15 @@ s_ipd = ipd_lm_mh / ipd_g
 s_len = np.linalg.norm(lm_mh[152] - eye_lmh) / np.linalg.norm(lm_g[152] - eye_g)
 A0, B0 = lm_mh[upper] - lm_mh[upper].mean(0), (R @ (lm_g[upper] - lm_g[upper].mean(0)).T).T
 s_ume = (A0 * B0).sum() / (B0 ** 2).sum()
-s = math.sqrt(s_ipd * s_len)
+# leaning to the eye spacing: on a 6'3" frame the head should read ~1/7.5 of stature, and the eye→chin match alone
+# leaves it small; --head-scale / --head-width tune it further (width: across only, the face looked narrow)
+s = s_ipd ** 0.75 * s_len ** 0.25 * A.head_scale
+WID = np.array([A.head_width, 1.0, 1.0])
 print(f'scale candidates: eyes {s_ipd:.4f}, eye→chin {s_len:.4f}, upper face {s_ume:.4f} → {s:.4f}')
 eye_g = (lm_g[IRIS[0]] + lm_g[IRIS[1]]) / 2; eye_lmh = (lm_mh[IRIS[0]] + lm_mh[IRIS[1]]) / 2
-t = eye_lmh - s * R @ eye_g
-def place(P): return (s * (R @ P.T)).T + t
-FV = place(GV); FN = (R @ GN.T).T
+t = eye_lmh - s * (R @ eye_g) * WID
+def place(P): return (s * (R @ P.T)).T * WID + t
+FV = place(GV); FN = (R @ GN.T).T / WID; FN /= np.linalg.norm(FN, axis=1, keepdims=True)
 lm_f = place(lm_g)
 res = np.linalg.norm(lm_f[upper] - lm_mh[upper], axis=1)
 ang = np.degrees(np.arctan2(R[2, 1], R[1, 1]))
@@ -590,7 +595,9 @@ def aniso(F_perp, F_par):
     q = cp * F_perp + gd * np.einsum('ij,ij->i', cp, gd)[:, None] * (F_par - F_perp); return snoise(q)
 strand = 0.55 + 0.7 * (0.55 * aniso(2600, 70) + 0.3 * aniso(900, 30) + 0.15 * snoise(cp * 150))
 hshade = strand * (0.55 + 0.45 * relief); hshade /= np.mean(hshade[hairy]) if hairy.any() else 1   # same level as the textured hair
-fill = hair_amt[:, None] * hair_c * hshade[:, None] + (1 - hair_amt[:, None]) * neck_c * (0.92 + 0.08 * relief[:, None])
+# where nothing paints it, the side of the head above the ears is hair too (else a skin stripe shows behind the ear)
+hair_fill = np.maximum(hair_amt, np.clip((cp[:, 1] - (eyeY + 0.0)) / 0.012, 0, 1) * np.clip((eye_lmh[2] - 0.03 - cp[:, 2]) / 0.02, 0, 1))
+fill = hair_fill[:, None] * hair_c * hshade[:, None] + (1 - hair_fill[:, None]) * neck_c * (0.92 + 0.08 * relief[:, None])
 # soft hair edge at the nape
 out = col * conf[:, None] + fill * (1 - conf[:, None])
 # ── hair colour: his own dark brown, whatever the textures say (the unwrap's hair is lighter and redder) ──
@@ -612,6 +619,7 @@ dark = np.clip((0.8 * skinL - L_) / (0.2 * skinL), 0, 1) * region
 dark_ear = np.clip((0.6 * skinL - L_) / (0.15 * skinL), 0, 1) * region
 dark = np.where(near_ear, dark_ear, dark)
 H_ = np.maximum(np.where(near_ear, hair_amt * dark_ear, hair_amt), dark)
+H_ = np.maximum(H_, hair_fill * (1 - conf))
 H_ = H_ * np.clip(1 - 0.7 * near_eye, 0, 1)
 hm_mean = np.median(L_[H_ > 0.8]) if (H_ > 0.8).sum() > 100 else L_.mean()
 rec = hair_t[None, :] * np.clip(L_ / max(hm_mean, 1), 0.35, 1.8)[:, None] ** 0.9
@@ -624,6 +632,11 @@ print('hair recoloured to', hair_hex, 'over', int((H_ > 0.5).sum()), 'texels; so
 # the neck band fades to the body's skin tone (the body is tinted to the face below)
 nk = np.clip(((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn / (BAND + 0.012), 0, 1) ** 0.7 if A.neck == 'loft' else np.clip((((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn + 0.004) / 0.004, 0, 1)
 out = out * nk[:, None] + neck_c * (1 - nk[:, None])
+# per (uv) vertex hair weight, for the hair cards the game roots on the scalp
+hv_sum = np.zeros(len(UV)); hv_n = np.zeros(len(UV))
+for k_ in range(3): np.add.at(hv_sum, UF[tt, k_], H_ * tw[:, k_]); np.add.at(hv_n, UF[tt, k_], tw[:, k_])
+hair_v = hv_sum / np.maximum(hv_n, 1e-6)
+hair_v[(VV - cen) @ pn < 0.01] = 0
 tex = np.zeros((T, T, 3), np.float32); have = np.zeros((T, T), np.uint8)
 tex[ty, tx] = out; have[ty, tx] = 255
 # dilate into the gutters so mips don't bleed black
@@ -678,6 +691,7 @@ def put(name, a):
     desc[name] = {'offset': len(blob), 'count': int(a.size), 'type': a.dtype.name}; blob += np.ascontiguousarray(a).tobytes()
 put('position', PV.ravel()); put('normal', PN.ravel()); put('uv', UV.astype(np.float32).ravel())
 put('index', IDX.astype(np.uint16 if len(UV) < 65536 else np.uint32).ravel())
+put('hair', np.round(np.clip(hair_v, 0, 1) * 255).astype(np.uint8))
 put('skinIndex', bidx.ravel()); put('skinWeight', bw.ravel()); put('seam', seamw)
 _ea, _eb = eyeA[vmap], eyeB[vmap]; _ei = np.nonzero(_ea[:, 0] < 8)[0]          # sparse: only the verts round the eyes
 put('eye_i', _ei.astype(np.uint16 if len(UV) < 65536 else np.uint32)); put('eye_v', np.c_[_ea[_ei], _eb[_ei]].astype(np.float32).ravel())

@@ -94,6 +94,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     const ii = arr('eye_i'), vv = arr('eye_v') as Float32Array;
     for (let j = 0; j < ii.length; j++) { for (let c = 0; c < 4; c++) eyeA[ii[j] * 4 + c] = vv[j * 6 + c]; eyeB[ii[j] * 2] = vv[j * 6 + 4]; eyeB[ii[j] * 2 + 1] = Math.min(0.3, Math.max(-0.2, vv[j * 6 + 5])); }
   }
+  if (G.arrays.hair) g.setAttribute('hair', new THREE.BufferAttribute(arr('hair'), 1));   // 0..255 hair weight (for the hair cards)
   g.setAttribute('eyeA', new THREE.BufferAttribute(eyeA, 4)); g.setAttribute('eyeB', new THREE.BufferAttribute(eyeB, 2));
   const t = new THREE.Texture(gh.tex); t.needsUpdate = true; t.flipY = true; t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
@@ -209,6 +210,73 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
 
 /** discard the MakeHuman skin above the seam (face, scalp, ears), keeping the neck and everything below.
  *  Works in bind space (the fabric shader's vB), so it holds through the swing. */
+/** hair cards on the generated head's scalp: thousands of short strand strips, swept straight back with some length
+ *  on top, short and tapered at the sides and back, flattened under a visor band. Bind space; the caller parents it. */
+export function buildHairCards(head: GenHead, opts: { color: string; eye: THREE.Vector3; band?: { y: number }; count?: number }) {
+  const g = head.mesh.geometry, P = g.getAttribute('position') as THREE.BufferAttribute, Nn = g.getAttribute('normal') as THREE.BufferAttribute;
+  const Hm = g.getAttribute('hair') as THREE.BufferAttribute | undefined;
+  if (!Hm) return null;
+  const idx = g.getIndex()!.array;
+  let seed = 11; const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // strand alpha: a bundle of fine tapering strands
+  const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d')!;
+  for (let i = 0; i < 90; i++) {
+    const x0 = 6 + rand() * 244, w = 0.8 + rand() * 1.8, len = 150 + rand() * 106, bend = (rand() - 0.5) * 16;
+    const gr = x.createLinearGradient(0, 256, 0, 256 - len); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.7, 'rgba(255,255,255,.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    x.strokeStyle = gr; x.lineWidth = w; x.lineCap = 'round'; x.beginPath(); x.moveTo(x0, 256); x.quadraticCurveTo(x0 + bend, 256 - len / 2, x0 + bend * 1.6, 256 - len); x.stroke();
+  }
+  const alpha = new THREE.CanvasTexture(c); alpha.wrapS = alpha.wrapT = THREE.ClampToEdgeWrapping;
+  // area-weighted roots where the scalp is hair
+  const tris: number[] = [], cum: number[] = []; let tot = 0;
+  const va = new THREE.Vector3(), vb = new THREE.Vector3(), vc = new THREE.Vector3();
+  for (let i = 0; i < idx.length; i += 3) {
+    const m = (Hm.getX(idx[i]) + Hm.getX(idx[i + 1]) + Hm.getX(idx[i + 2])) / (3 * 255); if (m < 0.55) continue;
+    va.fromBufferAttribute(P, idx[i]); vb.fromBufferAttribute(P, idx[i + 1]); vc.fromBufferAttribute(P, idx[i + 2]);
+    tot += vb.clone().sub(va).cross(vc.clone().sub(va)).length() / 2 * Math.min(1, (m - 0.55) / 0.3); tris.push(i); cum.push(tot);
+  }
+  if (!tris.length) return null;
+  const e = opts.eye, base = new THREE.Color(opts.color), N = opts.count ?? 6000, SEG = 3;
+  const pos: number[] = [], uv: number[] = [], col: number[] = [], nrmA: number[] = [], ind: number[] = [];
+  const root = new THREE.Vector3(), nrm = new THREE.Vector3(), gdir = new THREE.Vector3(), side = new THREE.Vector3(), p = new THREE.Vector3(), tn = new THREE.Vector3();
+  let skipped = 0;
+  for (let k = 0; k < N; k++) {
+    const r = rand() * tot; let lo = 0, hi = cum.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < r) lo = mid + 1; else hi = mid; }
+    const i = tris[lo]; let u = rand(), v = rand(); if (u + v > 1) { u = 1 - u; v = 1 - v; }
+    va.fromBufferAttribute(P, idx[i]); vb.fromBufferAttribute(P, idx[i + 1]); vc.fromBufferAttribute(P, idx[i + 2]);
+    root.copy(va).multiplyScalar(1 - u - v).addScaledVector(vb, u).addScaledVector(vc, v);
+    nrm.fromBufferAttribute(Nn, idx[i]).add(tn.fromBufferAttribute(Nn, idx[i + 1])).add(tn.fromBufferAttribute(Nn, idx[i + 2])).normalize();
+    // the short back and sides below the band read better as the painted scalp: cards only from the band up
+    if (root.y < (opts.band ? opts.band.y - 0.012 : e.y + 0.02)) { k--; if (++skipped > N * 20) break; continue; }
+    const rel = root.clone().sub(e);
+    const top = THREE.MathUtils.smoothstep(rel.y, 0.045, 0.085);           // 0 at the sides and back, 1 on top
+    const front = THREE.MathUtils.smoothstep(rel.z, -0.03, 0.02);          // the front of the top: pushed up and back
+    // growth: straight back on top (and up off the forehead), down and back at the sides and nape
+    gdir.set((rand() - 0.5) * 0.2, -1 + top * 0.95, -0.35 - top * 0.8);   // on top: straight back
+    gdir.addScaledVector(nrm, -gdir.dot(nrm)).normalize();
+    side.crossVectors(nrm, gdir).normalize();
+    const under = opts.band && Math.abs(root.y - opts.band.y) < 0.022 ? 1 : 0;
+    const L = (0.007 + 0.022 * top * (0.7 + 0.3 * front)) * (0.7 + 0.6 * rand()) * (under ? 0.5 : 1), W = (0.0035 + 0.003 * rand()) * (0.7 + 0.3 * top);
+    const lift = (0.0008 + 0.0035 * top * (0.6 + 0.4 * front)) * (under ? 0.1 : 1);
+    const b0 = pos.length / 3, shade = 0.7 + 0.5 * rand();
+    for (let s2 = 0; s2 <= SEG; s2++) {
+      const t = s2 / SEG;
+      p.copy(root).addScaledVector(gdir, L * t).addScaledVector(nrm, 0.001 + lift * Math.sin(t * Math.PI * 0.75));
+      const w = W * (1 - 0.4 * t);
+      pos.push(p.x - side.x * w / 2, p.y - side.y * w / 2, p.z - side.z * w / 2, p.x + side.x * w / 2, p.y + side.y * w / 2, p.z + side.z * w / 2);
+      const ux = rand() * 0.6; uv.push(ux, t, ux + 0.4, t);
+      const cc = base.clone().multiplyScalar(shade * (0.75 + 0.35 * t));
+      for (let q = 0; q < 2; q++) { col.push(cc.r, cc.g, cc.b); nrmA.push(nrm.x, nrm.y, nrm.z); }
+    }
+    for (let s2 = 0; s2 < SEG; s2++) { const q = b0 + s2 * 2; ind.push(q, q + 2, q + 1, q + 1, q + 2, q + 3); }
+  }
+  const cg = new THREE.BufferGeometry();
+  cg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); cg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  cg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); cg.setAttribute('normal', new THREE.Float32BufferAttribute(nrmA, 3)); cg.setIndex(ind);
+  const mat = new THREE.MeshStandardMaterial({ alphaMap: alpha, vertexColors: true, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.62 });
+  const m = new THREE.Mesh(cg, mat); m.name = 'gen-hair'; m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
 export function hideAboveSeam(mat: THREE.Material, seam: { p: THREE.Vector3; n: THREE.Vector3 }) {
   const prev = mat.onBeforeCompile.bind(mat), prevKey = mat.customProgramCacheKey.bind(mat);
   const f = (x: number) => x.toFixed(5);

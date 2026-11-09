@@ -7,7 +7,7 @@ import type { GolferProfile } from './profile';
 import { buildVisor } from './headwear';
 import { applyFabric } from './fabric';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { buildGenHead, hideAboveSeam, loadGenHead, type GenHeadData, type FaceController } from './genhead';
+import { buildGenHead, buildHairCards, hideAboveSeam, loadGenHead, type GenHeadData, type FaceController } from './genhead';
 import crestUrl from '../assets/brand/toronto-hunt-crest.png?url';
 import malbonUrl from '../assets/brand/malbon-m.svg?url';
 
@@ -195,8 +195,11 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   applyFabric(skinMat, 'skin', data.skinSmile && !genOn ? { ...fu, smile: { map: tex(data.skinSmile), amount: smileAmt } } : fu);
   const skin = add('skin', skinMat)!;
   const eyeL = M.eyeballs.l.c, eyeR = M.eyeballs.r.c;
-  const gen = genOn ? buildGenHead(data.head!, M.bones, skeleton, root, new THREE.Vector3(...(M.eye as [number, number, number])), Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1], eyeL[2] - eyeR[2]), M.visor.center[1] - 0.012, p.look.eyes) : null;
+  const gen = genOn ? buildGenHead(data.head!, M.bones, skeleton, root, new THREE.Vector3(...(M.eye as [number, number, number])), Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1], eyeL[2] - eyeR[2]), M.visor.center[1] - 0.022, p.look.eyes) : null;
   if (gen) { hideAboveSeam(skinMat, gen.seam); skinMat.color.copy(gen.tint); meshes.push(gen.mesh); }
+  // strand-level hair on the generated head (cards rooted on its scalp, flattened under the visor band)
+  const genHair = gen ? buildHairCards(gen, { color: p.look.hair, eye: new THREE.Vector3(...(M.eye as [number, number, number])), band: O.headwear ? { y: gen.visor.center[1] } : undefined }) : null;
+  if (genHair) { const hb = M.bones.indexOf('head'); genHair.geometry.translate(-J[hb].x, -J[hb].y, -J[hb].z); bones[hb].add(genHair); meshes.push(genHair); }
   const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
     // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
