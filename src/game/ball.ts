@@ -34,6 +34,13 @@ export const TEST = { surface: 'fairway' as Surface };
 
 const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _n = new THREE.Vector3(), _w = new THREE.Vector3();
 
+/** Wind (m/s, world space, measured at 10 m). Only real flights on the range feel it: the planning
+ *  simulations (Ball(null)) fly in still air, so the player has to allow for the wind themselves. */
+export const WIND = new THREE.Vector3();
+const _air = new THREE.Vector3();
+/** wind grows with height over the turf (log profile, z0 ≈ 3 cm); about 55% of the 10 m value at 1 m */
+const windAt = (h: number) => Math.min(1.25, Math.max(0, Math.log(Math.max(h, 0.05) / 0.03) / Math.log(10 / 0.03)));
+
 export class Ball {
   readonly pos = new THREE.Vector3();
   readonly vel = new THREE.Vector3();
@@ -104,15 +111,18 @@ export class Ball {
     const p = this.pos, v = this.vel;
     if (this.phase === 'flight' || this.phase === 'bounce') {
       if (this.phase === 'flight') this.applyAftertouch(dt);
-      const speed = v.length();
+      // the air moves: drag and lift act on the ball's velocity relative to the wind at its height
+      const air = _air.copy(v);
+      if (this.range && WIND.lengthSq() > 1e-6) air.addScaledVector(WIND, -windAt(p.y - this.ground(p.x, p.z)));
+      const speed = air.length();
       const w = this.spin.length();
       const S = speed > 0.1 ? (BALL.r * w) / speed : 0;
       const cd = 0.22 + 0.2 * Math.min(0.4, S);
       const cl = speed > 0.1 ? 0.46 * Math.pow(Math.min(0.5, S), 0.4) : 0;
       _f.set(0, -G * BALL.m, 0);
-      _f.addScaledVector(v, -0.5 * RHO * AREA * cd * speed);
+      _f.addScaledVector(air, -0.5 * RHO * AREA * cd * speed);
       if (w > 1 && speed > 0.5) {
-        _n.crossVectors(this.spin, v).normalize();
+        _n.crossVectors(this.spin, air).normalize();
         _f.addScaledVector(_n, 0.5 * RHO * AREA * cl * speed * speed);
       }
       v.addScaledVector(_f, dt / BALL.m);
