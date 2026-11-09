@@ -197,7 +197,7 @@ export class Golfer {
         this.addressKeys(pos); this.rig.apply(pos);
         const sh = this.rig.P[BONE.upperL];
         // shoulder a touch outside the hands (toward the ball) — a plumb line from it hangs just inside the toes
-        if (sh.z < (wristAddr.z + this.gripAddr.z) / 2 + 0.015) lo = z; else hi = z;   // over the hands (between wrist and grip)
+        if (sh.z < wristAddr.z - 0.045 * k) lo = z; else hi = z;   // shoulder a little behind the hands (traced: the hands hang just ahead of it)
       }
       // arm length to the actual wrist on the grip (real hands), else to the grip less a hand
       return this.extras ? this.rig.P[BONE.upperL].distanceTo(wristAddr) : this.rig.P[BONE.upperL].distanceTo(this.gripAddr) - 0.072 * k;

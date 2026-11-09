@@ -1,10 +1,11 @@
 // Aiming. Two pieces:
 //  1. An always-on aim guide in the swing camera: a dashed gold arrow on the ground from the ball toward
 //     the target, fading with distance, and a small landing marker where it ends.
-//  2. An AIM view (button on the right edge, or 'A' on a keyboard): the camera rises to a steep overhead
-//     view down the range. Drag anywhere to move the landing ring (direction + distance, clamped to the
-//     club's range), drag the round handle on the curved path to bend the shot (draw / fade intent),
-//     pinch or +/- to zoom, Done to return to the swing camera.
+//  2. An AIM view: tap anywhere on the course (not a button, not the swing stick) or press 'A'. The camera
+//     flies up to a steep overhead view down the range. One finger: drag the landing ring (direction +
+//     distance, clamped to the club's range) or the round handle on the curved path (draw / fade intent).
+//     Two fingers: pinch to zoom, drag to pan. The X at the top or 'Back to swing' at the bottom returns.
+//     High / low is set on the strike-point ball, not here (aim.loft stays 0).
 // The result lives in `aim` (exported, also on window.__game.aim): dir (radians, + = right of the
 // straight-down-the-range line), distanceYds, curve (-1..1, + = the ball bends right).
 import * as THREE from 'three';
@@ -103,36 +104,23 @@ function makeHandle() {
 }
 
 const CSS = `
-.aim-rail { position: fixed; z-index: 30; right: max(10px, env(safe-area-inset-right)); top: calc(var(--aim-top, 38%)); display: grid; gap: 8px; justify-items: end; font-family: 'Fredoka', 'Nunito', system-ui, sans-serif; pointer-events: none; transition: opacity .25s, transform .25s; }
-.aim-rail.off { opacity: 0; transform: translateX(16px); }
-.aim-rail.off button { pointer-events: none; }
-.aim-rail button { pointer-events: auto; -webkit-tap-highlight-color: transparent; border: 0; cursor: pointer; font: 600 15px/1 'Fredoka', 'Nunito', system-ui, sans-serif; color: #14284b; background: linear-gradient(#fffaf0, #f3e6c8); border-radius: 999px; box-shadow: 0 3px 0 #c9b385, 0 6px 14px rgba(10,20,40,.28), inset 0 1px 0 #fff; transition: transform .08s; }
-.aim-rail button:active { transform: translateY(2px) scale(.97); box-shadow: 0 1px 0 #c9b385, 0 3px 8px rgba(10,20,40,.25), inset 0 1px 0 #fff; }
+.aim-rail { position: fixed; inset: 0; z-index: 30; pointer-events: none; font-family: 'Fredoka', 'Nunito', system-ui, sans-serif; }
+.aim-rail button { position: absolute; pointer-events: auto; -webkit-tap-highlight-color: transparent; border: 0; cursor: pointer; color: #14284b; background: linear-gradient(#fffaf0, #f3e6c8); border-radius: 999px; box-shadow: 0 3px 0 #c9b385, 0 6px 14px rgba(10,20,40,.28), inset 0 1px 0 #fff; transition: transform .12s cubic-bezier(.3,1.6,.5,1), opacity .25s; }
+.aim-rail button:active { transform: translateY(2px) scale(.96); }
 .aim-rail button:focus-visible { outline: 3px solid #f2c21b; outline-offset: 2px; }
-.aim-rail .aim-go { display: flex; align-items: center; gap: 7px; padding: 9px 13px 9px 10px; }
-.aim-rail .aim-go svg { width: 22px; height: 22px; }
-.aim-rail .zoom { width: 44px; height: 44px; font-size: 24px; display: grid; place-items: center; }
-.aim-rail .done { padding: 11px 16px; background: linear-gradient(#ffe066, #f2c21b); box-shadow: 0 3px 0 #b48a12, 0 6px 14px rgba(10,20,40,.28), inset 0 1px 0 #fff6c2; }
-.aim-rail .inaim { display: none; }
-body.aiming .aim-rail .inaim { display: grid; }
-body.aiming .aim-rail .aim-go { display: none; }
-body.aiming .hud .bc, body.aiming .hud .bl, body.aiming .hud .tr { opacity: 0 !important; pointer-events: none !important; transition: opacity .25s; }
-body.aiming .hud .br { opacity: .92; }
-.aim-loft { position: fixed; z-index: 30; left: max(10px, env(safe-area-inset-left)); top: calc(var(--aim-top, 38%) + 40px); display: none; gap: 6px; justify-items: center; font-family: 'Fredoka', 'Nunito', system-ui, sans-serif; }
-body.aiming .aim-loft { display: grid; }
-.aim-loft button { -webkit-tap-highlight-color: transparent; border: 0; cursor: pointer; width: 40px; height: 40px; border-radius: 999px; font: 600 22px/1 'Fredoka', system-ui, sans-serif; color: #14284b; background: linear-gradient(#fffaf0, #f3e6c8); box-shadow: 0 3px 0 #c9b385, 0 6px 14px rgba(10,20,40,.28), inset 0 1px 0 #fff; }
-.aim-loft button:active { transform: translateY(2px) scale(.97); }
-.aim-loft button:focus-visible { outline: 3px solid #f2c21b; outline-offset: 2px; }
-.aim-loft .arc { display: grid; justify-items: center; background: rgba(255,246,226,.92); border-radius: 14px; padding: 6px 6px 4px; box-shadow: 0 4px 10px rgba(10,20,40,.25); }
-.aim-loft .arc svg { width: 56px; height: 35px; }
-.aim-loft .lv { font: 600 11px/1 'Fredoka', system-ui, sans-serif; color: #14284b; letter-spacing: .02em; }
+.aim-rail .aim-x { right: max(12px, env(safe-area-inset-right)); top: calc(max(12px, env(safe-area-inset-top)) + 78px); width: 48px; height: 48px; display: grid; place-items: center; }
+.aim-rail .aim-x svg { width: 22px; height: 22px; }
+.aim-rail .aim-back { left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 18px); transform: translateX(-50%); padding: 14px 26px 15px; font: 600 18px/1 'Fredoka', 'Nunito', system-ui, sans-serif; background: linear-gradient(#ffe066, #f2c21b); box-shadow: 0 4px 0 #b48a12, 0 8px 18px rgba(10,20,40,.3), inset 0 1px 0 #fff6c2; }
+.aim-rail .aim-back:active { transform: translateX(-50%) translateY(2px) scale(.96); }
+body:not(.aiming) .aim-rail button { opacity: 0; pointer-events: none; }
+body.aiming .hud .bc, body.aiming .hud .bl, body.aiming .hud .tr, body.aiming .hud .br { opacity: 0 !important; pointer-events: none !important; transition: opacity .25s; }
 .aim-label { position: fixed; z-index: 29; left: 0; top: 0; pointer-events: none; transform: translate(-50%, -100%); font: 600 14px/1.1 'Fredoka', 'Nunito', system-ui, sans-serif; color: #14284b; background: #fff6e2; border-radius: 999px; padding: 6px 11px; box-shadow: 0 2px 0 #c9b385, 0 4px 10px rgba(10,20,40,.3); white-space: nowrap; transition: opacity .2s; }
 .aim-label b { color: #b8860b; font-weight: 700; }
 .aim-label.off { opacity: 0; }
-.aim-tip { position: fixed; z-index: 29; left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 8px); transform: translateX(-50%); font: 500 13px/1.25 'Nunito', system-ui, sans-serif; color: #fff; background: rgba(20,40,75,.82); padding: 9px 14px; border-radius: 14px; text-align: center; pointer-events: none; max-width: calc(100vw - 32px); box-shadow: 0 4px 14px rgba(0,0,0,.25); transition: opacity .25s; }
+.aim-tip { position: fixed; z-index: 29; left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); transform: translateX(-50%); font: 500 13px/1.25 'Nunito', system-ui, sans-serif; color: #fff; background: rgba(20,40,75,.82); padding: 9px 14px; border-radius: 14px; text-align: center; pointer-events: none; max-width: calc(100vw - 32px); box-shadow: 0 4px 14px rgba(0,0,0,.25); transition: opacity .25s; }
 .aim-tip b { color: #f2c21b; }
 .aim-tip.off { opacity: 0; }
-@media (prefers-reduced-motion: reduce) { .aim-rail, .aim-label, .aim-tip { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .aim-rail button, .aim-label, .aim-tip { transition: none; } }
 `;
 
 export interface AimOptions {
@@ -157,43 +145,30 @@ export class AimController {
   private pathLine = new Ribbon(96, CYAN, { opacity: 0.95, edge: new THREE.Color('#0b3a52') });
   private ring = makeRing();
   private handle = makeHandle();
-  private rail: HTMLDivElement; private loftRail: HTMLDivElement; private label: HTMLDivElement; private tip: HTMLDivElement;
+  private rail: HTMLDivElement; private label: HTMLDivElement; private tip: HTMLDivElement;
+  private tap: { id: number; x: number; y: number; t: number } | null = null;
+  private pan = new THREE.Vector3(); private pan0 = new THREE.Vector3(); private panAt: THREE.Vector3 | null = null;
   private ray = new THREE.Raycaster();
   private drag: 'ring' | 'bend' | null = null;
   private pts = new Map<number, { x: number; y: number }>();
   private pinch0 = 0; private zoom0 = 1;
   private t = 0;
-  private loftShown = NaN;
 
   constructor(private o: AimOptions) {
     o.scene.add(this.guide.mesh, this.marker.group, this.aimLine.mesh, this.pathLine.mesh, this.ring.group, this.handle);
     const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
     this.rail = document.createElement('div'); this.rail.className = 'aim-rail off';
     this.rail.innerHTML = `
-      <button type="button" class="aim-go" aria-label="Aim the shot"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="#14284b" stroke-width="2.4"/><circle cx="12" cy="12" r="4.2" fill="#f2c21b" stroke="#14284b" stroke-width="1.6"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="#14284b" stroke-width="2.4" stroke-linecap="round"/></svg>Aim</button>
-      <div class="inaim" style="gap:8px;justify-items:end">
-        <button type="button" class="zoom" data-z="out" aria-label="Zoom out">−</button>
-        <button type="button" class="zoom" data-z="reset" aria-label="Reset aim to straight"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="#14284b" stroke-width="2.4" stroke-linecap="round"/><path d="M17.5 3.5v4.2h-4.2" fill="none" stroke="#14284b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.6" fill="#f2c21b"/></svg></button>
-        <button type="button" class="zoom" data-z="in" aria-label="Zoom in">+</button>
-        <button type="button" class="done">Done</button>
-      </div>`;
+      <button type="button" class="aim-x" aria-label="Close aim, back to the swing"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="#14284b" stroke-width="3" stroke-linecap="round"/></svg></button>
+      <button type="button" class="aim-back">Back to swing</button>`;
     document.body.appendChild(this.rail);
-    // loft control on the left: + / arc gauge / −
-    this.loftRail = document.createElement('div'); this.loftRail.className = 'aim-loft';
-    this.loftRail.innerHTML = `<button type="button" data-l="1" aria-label="Higher launch">+</button><div class="arc" aria-hidden="true"><svg viewBox="0 0 64 40"><path d="M6 34 Q32 -6 58 34" fill="none" stroke="rgba(20,40,75,.25)" stroke-width="5" stroke-linecap="round"/><path class="arcp" d="M6 34 Q32 -6 58 34" fill="none" stroke="#f2c21b" stroke-width="5" stroke-linecap="round"/><circle class="dot" cx="32" cy="14" r="5" fill="#fff6e2" stroke="#14284b" stroke-width="2"/></svg><span class="lv">Normal</span></div><button type="button" data-l="-1" aria-label="Lower launch">−</button>`;
-    document.body.appendChild(this.loftRail);
-    this.loftRail.querySelectorAll<HTMLButtonElement>('button').forEach(b => b.addEventListener('click', () => { aim.loft = clamp(Math.round((aim.loft + +b.dataset.l! * 0.5) * 2) / 2, -1, 1); this.changed(); }));
+    aim.loft = 0;
     this.label = document.createElement('div'); this.label.className = 'aim-label off'; document.body.appendChild(this.label);
     this.tip = document.createElement('div'); this.tip.className = 'aim-tip off';
-    this.tip.innerHTML = '<b>Drag</b> to move the target · drag the <b>blue dot</b> to curve it';
+    this.tip.innerHTML = '<b>Drag</b> the target · drag the <b>blue dot</b> to curve · <b>pinch</b> to zoom';
     document.body.appendChild(this.tip);
-    this.rail.querySelector('.aim-go')!.addEventListener('click', () => this.open());
-    this.rail.querySelector('.done')!.addEventListener('click', () => this.close());
-    this.rail.querySelectorAll<HTMLButtonElement>('.zoom').forEach(b => b.addEventListener('click', () => {
-      if (b.dataset.z === 'in') this.zoom = clamp(this.zoom * 0.78, 0.35, 1.8);
-      else if (b.dataset.z === 'out') this.zoom = clamp(this.zoom * 1.28, 0.35, 1.8);
-      else { aim.dir = 0; aim.curve = 0; aim.distanceYds = o.carry().full; this.changed(); }
-    }));
+    this.rail.querySelector('.aim-x')!.addEventListener('click', () => this.close());
+    this.rail.querySelector('.aim-back')!.addEventListener('click', () => this.close());
     addEventListener('keydown', e => {
       if (!this.enabled || (e.target as HTMLElement)?.tagName === 'INPUT') return;
       if (e.key === 'a' || e.key === 'A') this.active ? this.close() : this.open();
@@ -214,7 +189,7 @@ export class AimController {
     this.enabled = on; this.rail.classList.toggle('off', !on);
     if (!on && this.active) this.close();
   }
-  open() { if (!this.enabled) return; this.active = true; this.zoom = 1; document.body.classList.add('aiming'); this.tip.classList.remove('off'); setTimeout(() => this.tip.classList.add('off'), 3800); }
+  open() { if (!this.enabled || this.active) return; this.active = true; this.zoom = 1; this.pan.set(0, 0, 0); document.body.classList.add('aiming'); this.tip.classList.remove('off'); setTimeout(() => this.tip.classList.add('off'), 3800); }
   close() { this.active = false; this.drag = null; this.pts.clear(); document.body.classList.remove('aiming'); this.tip.classList.add('off'); }
   /** club or mode changed: keep the direction, reset distance to the new club's full carry */
   clubChanged() { const c = this.o.carry(); aim.distanceYds = c.full; aim.distanceYds = clamp(aim.distanceYds, c.min, c.max); this.changed(); }
@@ -250,6 +225,7 @@ export class AimController {
     const B = (lo + hi) / 2, pitch = Math.max(0.2, solve(B).p);
     pos.copy(b).addScaledVector(d, -B); pos.y = b.y + H;
     look.copy(pos).addScaledVector(d, H / Math.tan(pitch)); look.y = b.y;
+    pos.add(this.pan); look.add(this.pan);   // two-finger pan
   }
 
   private worldAt(cx: number, cy: number): THREE.Vector3 | null {
@@ -266,10 +242,10 @@ export class AimController {
   }
 
   private down(e: PointerEvent) {
-    if (!this.active) return;
+    if (!this.active) { if (this.enabled && e.isPrimary) this.tap = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() }; return; }
     this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { this.o.canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    if (this.pts.size === 2) { const [a, b] = [...this.pts.values()]; this.pinch0 = Math.hypot(a.x - b.x, a.y - b.y); this.zoom0 = this.zoom; this.drag = null; return; }
+    if (this.pts.size === 2) { const [a, b] = [...this.pts.values()]; this.pinch0 = Math.hypot(a.x - b.x, a.y - b.y); this.zoom0 = this.zoom; this.drag = null; this.pan0.copy(this.pan); this.panAt = this.worldAt((a.x + b.x) / 2, (a.y + b.y) / 2); return; }
     const h = this.screenOf(this.handle.position);
     this.drag = Math.hypot(h.x - e.clientX, h.y - e.clientY) < 34 ? 'bend' : 'ring';
     this.tip.classList.add('off');
@@ -282,6 +258,8 @@ export class AimController {
     if (this.pts.size >= 2) {
       const [a, b] = [...this.pts.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (this.pinch0 > 0) this.zoom = clamp(this.zoom0 * this.pinch0 / Math.max(10, d), 0.35, 1.8);
+      // pan: keep the world point that was under the fingers' midpoint under it
+      if (this.panAt) { const w = this.worldAt((a.x + b.x) / 2, (a.y + b.y) / 2); if (w) { this.pan.x += this.panAt.x - w.x; this.pan.z += this.panAt.z - w.z; const L = Math.max(30, aim.distanceYds * YD); this.pan.x = clamp(this.pan.x, -L, L); this.pan.z = clamp(this.pan.z, -L, L * 0.5); } }
       return;
     }
     const w = this.worldAt(e.clientX, e.clientY); if (!w) return;
@@ -302,7 +280,10 @@ export class AimController {
       this.changed();
     }
   }
-  private up(e: PointerEvent) { this.pts.delete(e.pointerId); if (this.pts.size < 2) this.pinch0 = 0; if (this.pts.size === 0) this.drag = null; }
+  private up(e: PointerEvent) {
+    // a quick tap on the course (not a drag) opens the aim view
+    if (!this.active && this.tap && this.tap.id === e.pointerId) { const q = this.tap; this.tap = null; if (performance.now() - q.t < 320 && Math.hypot(e.clientX - q.x, e.clientY - q.y) < 12) this.open(); return; }
+    this.pts.delete(e.pointerId); if (this.pts.size < 2) this.pinch0 = 0; if (this.pts.size === 0) this.drag = null; }
 
   shapeName() {
     const c = aim.curve; if (Math.abs(c) < 0.08) return 'Straight';
@@ -347,13 +328,6 @@ export class AimController {
       this.label.style.transform = `translate(${s.x}px, ${s.y - 10}px) translate(-50%, -100%)`;
       this.label.innerHTML = `${Math.round(aim.distanceYds)} yds · <b>${this.shapeName()}</b>`;
     } else this.label.classList.add('off');
-    if (this.loftShown !== aim.loft) {
-      this.loftShown = aim.loft;
-      const cy = 14 - aim.loft * 9; // peak of the arc rises with loft
-      this.loftRail.querySelectorAll('path').forEach(p => p.setAttribute('d', `M6 34 Q32 ${(-6 - aim.loft * 16).toFixed(1)} 58 34`));
-      this.loftRail.querySelector('.dot')!.setAttribute('cy', cy.toFixed(1));
-      this.loftRail.querySelector('.lv')!.textContent = aim.loft > 0.25 ? (aim.loft > 0.75 ? 'Max high' : 'High') : aim.loft < -0.25 ? (aim.loft < -0.75 ? 'Max low' : 'Low') : 'Normal';
-    }
     void D;
   }
 }

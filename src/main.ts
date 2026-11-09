@@ -317,7 +317,15 @@ function startShotCam() {
   camMode = 'cine';
 }
 /** tap during the flight: run the ball on to just before it lands and show the landing */
-function skipToLanding() {
+// swing view ⇄ aim view camera flight
+const CAM_FLY_S = 0.75;
+const camFly = { aim: false, t0: -1e9, pos: new THREE.Vector3(), look: new THREE.Vector3() };
+let camFlying = false;
+/** tap during the flight: fast-forward (sim and cameras together) to just before the ball lands — a quick flight, not a jump */
+const skip = { on: false };
+function skipToLanding() { if (state === 'flight' && ball.phase === 'flight') skip.on = true; }
+/** instant version (debug / tests) */
+function skipToLandingNow() {
   if (ball.phase !== 'flight') return;
   for (let i = 0; i < 120 * 20 && ball.phase === 'flight'; i++) {
     const g = range?.heightAt(ball.pos.x, ball.pos.z) ?? 0;
@@ -349,6 +357,10 @@ function updateCamera(dt: number, now: number) {
     wantLook.set(head.x * 0.85, 1.22, head.z);
   } else if (camMode === 'address') {
     if (aimCtl.active) aimCtl.cameraWant(want, wantLook); else addressCam(want, wantLook);
+    // swing view ⇄ aim view: a timed camera flight through the world (ease in-out), not an exponential snap
+    if (aimCtl.active !== camFly.aim) { camFly.aim = aimCtl.active; camFly.t0 = now; camFly.pos.copy(camPos); camFly.look.copy(camLook); }
+    const fk = (now - camFly.t0) / 1000 / CAM_FLY_S;
+    if (fk < 1) { const e = fk * fk * (3 - 2 * fk); want.lerpVectors(camFly.pos, want, e); wantLook.lerpVectors(camFly.look, wantLook, e); camFlying = true; }
   } else if (camMode === 'chase' || camMode === 'landing' || camMode === 'rest') {
     const b = ball.pos;
     const vh = new THREE.Vector3(ball.vel.x, 0, ball.vel.z);
@@ -387,7 +399,8 @@ function updateCamera(dt: number, now: number) {
   }
   const wantShift = portrait() && !aimCtl.active && (camMode === 'address' || camMode === 'intro' || (camMode === 'chase' && (now - chaseT0) < 550)) ? (camMode === 'intro' ? 0.0 : addressShift()) : 0;
   if (Math.abs(wantShift - lensShift) > 0.002) { lensShift += (wantShift - lensShift) * (1 - Math.pow(0.02, dt)); fitCamera(); }
-  const kk = camMode === 'landing' || camMode === 'rest' ? 1 - Math.pow(0.02, dt) : k;
+  const kk = camFlying ? 1 : camMode === 'landing' || camMode === 'rest' ? 1 - Math.pow(0.02, dt) : k;
+  camFlying = false;
   camPos.lerp(want, camMode === 'chase' ? 1 - Math.pow(0.04, dt) : kk);
   camLook.lerp(wantLook, camMode === 'landing' ? 1 - Math.pow(0.0005, dt) : kk);
   camera.position.copy(camPos);
@@ -430,7 +443,8 @@ function frame(now: number) {
   frameTimes.push(dt); if (frameTimes.length > 90) frameTimes.shift();
   if (hitStop > 0) { hitStop -= dt; dt *= 0.18; }
   // fast forward: hold the 3D view while the ball is flying/rolling → the ball and cameras run at up to 3×
-  ff.scale += ((ff.held && state === 'flight' ? 3 : 1) - ff.scale) * Math.min(1, dt / 0.15);
+  if (skip.on) { const g = range?.heightAt(ball.pos.x, ball.pos.z) ?? 0; if (state !== 'flight' || ball.phase !== 'flight' || (ball.vel.y < 0 && (ball.pos.y - g) / Math.max(1, -ball.vel.y) < 0.7)) skip.on = false; }
+  ff.scale += ((skip.on ? 6 : ff.held && state === 'flight' ? 3 : 1) - ff.scale) * Math.min(1, dt / (skip.on ? 0.25 : 0.15));
   ff.pill.hidden = !(ff.held && state === 'flight');
   const simDt = dt * ff.scale;   // the ball sub-steps internally (≤ 4 ms), so 3× stays stable
 
@@ -528,7 +542,7 @@ renderer.domElement.addEventListener('pointerup', () => { if (state === 'flight'
 for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) renderer.domElement.addEventListener(ev, () => { ff.held = false; });
 requestAnimationFrame(t => { last = t; frame(t); });
 (window as any).__game = {
-  golfer, ball, hud, aim, aimCtl, shotcam, get state() { return state; }, skipToLanding,
+  golfer, ball, hud, aim, aimCtl, shotcam, get state() { return state; }, skipToLanding, skipToLandingNow,
   /** debug (storyboards): stop the RAF loop and step the game by hand: manual(true); tick(ms) */
   manual(on: boolean) { manualClock = on; if (!on) requestAnimationFrame(t => { last = t; frame(t); }); },
   tick(ms: number) { frame(last + ms); },
