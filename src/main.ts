@@ -77,10 +77,10 @@ ballGlow.visible = false; ballGlow.renderOrder = 4; scene.add(ballGlow);
 // so the ball's bottom sits in the cup at y = +0.022); most of the shank is pushed into the turf by teeUp()
 // impact divots (src/world/divots.ts): turf strip, scar and clippings on iron shots; cleared with the next ball
 const divots = createDivots(scene, (x, z) => range?.heightAt(x, z) ?? 0);
-// Neil's Jones Rover stand bag on the tee, to his trail side and a little ahead: in the swing cam and the intro,
+// Neil's Jones Rover stand bag on the tee, a few metres beyond him and to the side: a background detail in the swing cam, seen in the intro,
 // clear of the ball and the line; the front pocket turned toward the swing camera
 const standBag = createStandBag();
-{ const bx = golfer.lefty ? 1.75 : -1.75, bz = -2.6; standBag.position.set(bx, range?.heightAt(bx, bz) ?? 0, bz);
+{ const bx = golfer.lefty ? 2.15 : -2.15, bz = -3.3; standBag.position.set(bx, range?.heightAt(bx, bz) ?? 0, bz);
   standBag.rotation.y = Math.atan2(-((golfer.lefty ? 0.7 : -0.7) - bx), -(3.6 - bz)) + (golfer.lefty ? 0.4 : -0.4); scene.add(standBag); }
 const tee = new THREE.Mesh(new THREE.LatheGeometry([
   [0.0002, -0.031], [0.0013, -0.027], [0.002, -0.017], [0.0022, 0.006], [0.0027, 0.012], [0.0046, 0.018], [0.0066, 0.0214],
