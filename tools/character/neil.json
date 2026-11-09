@@ -335,6 +335,8 @@
   "hangMax": 0.016,
   "hemFlare": 0.25,
   "footHide": 0.012,
+  "armpitEase": 0.006,
+  "shirtWeightSmooth": 14,
   "hangFrom": 0.1,
   "sleeveEase": 0.009,
   "pantsGap": 0.006,

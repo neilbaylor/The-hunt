@@ -463,7 +463,9 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     if (t > 0.74) { const k = (t - 0.74) / 0.26; return Math.pow(Math.max(0, 1 - Math.pow(k, 2.3)), 1 / 2.3) * (1 - 0.18 * k); }  // long rounded toe
     return widthK(t);
   };
-  const hRel = smooth([[0, 0.066], [0.1, 0.065], [0.27, 0.054], [0.42, 0.064], [0.5, 0.076], [0.6, 0.068], [0.7, 0.055], [0.8, 0.042], [0.88, 0.034], [0.94, 0.025], [0.98, 0.015], [1, 0.005]]);
+  const hRel = smooth([[0, 0.058], [0.1, 0.057], [0.27, 0.047], [0.42, 0.06], [0.5, 0.074], [0.6, 0.064], [0.7, 0.049], [0.8, 0.036], [0.88, 0.028], [0.94, 0.02], [0.98, 0.012], [1, 0.004]]);
+  // cross-section fullness: square-shouldered round the heel and quarters, a rounder, lower crown down the vamp to the toe
+  const crown = (t: number) => { const k = Math.min(1, Math.max(0, (t - 0.55) / 0.3)); return 0.8 + 0.5 * k * k * (3 - 2 * k); };
   const spring = (t: number) => (t > 0.68 ? ((t - 0.68) / 0.32) ** 2 * 0.022 : 0);
   const SOLE_TOP = 0.016;
   const heelLift = smooth([[0.22, 0.008], [0.42, 0.0]]);            // a low stacked heel
@@ -484,7 +486,9 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const shoeTex = canvasTex(1024, 2048, g => {
     const W = 1024, H = 2048, X = (u: number) => u * W, Yv = (v: number) => (1 - v) * H;
     g.fillStyle = '#eeede8'; g.fillRect(0, 0, W, H);
-    // smooth calf leather: a faint, fine grain and a soft sheen variation
+    // pebbled leather: small soft grains, each a light top and a darker edge (also drives the bump map)
+    for (let i = 0; i < 90000; i++) { const x = rand() * W, y = rand() * H, r = 2 + rand() * 2.5; g.fillStyle = 'rgba(0,0,0,.055)'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.5)'; g.beginPath(); g.arc(x - r * 0.25, y - r * 0.25, r * 0.6, 0, 7); g.fill(); }
+    // and a faint, fine grain and a soft sheen variation
     for (let i = 0; i < 60000; i++) { const x = rand() * W, y = rand() * H; g.fillStyle = rand() < 0.5 ? 'rgba(0,0,0,.018)' : 'rgba(255,255,255,.35)'; g.fillRect(x, y, 1 + rand() * 2, 1 + rand() * 1.5); }
     for (let i = 0; i < 400; i++) { const x = rand() * W, y = rand() * H, r = 20 + rand() * 60; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(0,0,0,.012)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); }
     const curve = (pts: [number, number][], n = 120) => {                // Catmull-Rom through (u, v) points → canvas points
@@ -521,12 +525,12 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       // toe cap: from the top centre it swings forward and out, then down the side to the wing tip
       seam([[0.5, 0.715], [U(0.42), 0.745], [U(0.33), 0.77], [U(0.24), 0.765], [U(0.17), 0.73], [U(0.12), 0.69]], m, true, true);
       // the long wing: from the wing tip right back along the side, low, to the heel
-      seam([[U(0.12), 0.69], [U(0.11), 0.6], [U(0.115), 0.45], [U(0.125), 0.28], [U(0.14), 0.12], [U(0.15), 0.0]], -m, true, true);
+      seam([[U(0.12), 0.69], [U(0.1), 0.6], [U(0.095), 0.48], [U(0.11), 0.35], [U(0.16), 0.2], [U(0.22), 0.08], [U(0.26), 0.0]], -m, true, true);   // low across the midfoot, sweeping up to the heel
       // upper edge of the wing: from the wing tip up and back, then along under the collar to the heel
-      seam([[U(0.12), 0.69], [U(0.18), 0.63], [U(0.24), 0.55], [U(0.26), 0.42], [U(0.27), 0.26], [U(0.27), 0.1], [U(0.27), 0.0]], m, true, false);
+      seam([[U(0.12), 0.69], [U(0.2), 0.64], [U(0.27), 0.57], [U(0.3), 0.48], [U(0.31), 0.36], [U(0.33), 0.22], [U(0.36), 0.1], [U(0.38), 0.0]], m, true, true);
       // lace panel (eyestay): its outline round the throat, and five eyelets
-      seam([[U(0.33), 0.47], [U(0.36), 0.56], [U(0.4), 0.64], [U(0.45), 0.685], [0.5, 0.69]], -m, true, false);
-      for (let i = 0; i < 5; i++) { const v = 0.515 + i * 0.037, u = U(0.435 - i * 0.004); g.fillStyle = 'rgba(40,36,32,.9)'; g.beginPath(); g.arc(X(u), Yv(v), 5, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 2; g.beginPath(); g.arc(X(u), Yv(v), 8, 0, 7); g.stroke(); }
+      seam([[U(0.37), 0.47], [U(0.385), 0.56], [U(0.42), 0.635], [U(0.465), 0.68], [0.5, 0.692]], -m, true, false);   // a slim, curved lace panel
+      for (let i = 0; i < 5; i++) { const v = 0.515 + i * 0.037, u = U(0.455 - i * 0.003); g.fillStyle = 'rgba(40,36,32,.9)'; g.beginPath(); g.arc(X(u), Yv(v), 5, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 2; g.beginPath(); g.arc(X(u), Yv(v), 8, 0, 7); g.stroke(); }
       // stitching along the collar (topline)
       const tl: [number, number][] = [];
       for (let k = 0; k <= 40; k++) { const t = T0 + (T1 - T0) * (k / 40), Wt = plan(t) * d0.hw, xo = xOpen(t, Wt); const a = xo > 0 ? Math.acos(Math.min(1, xo / Wt)) : Math.PI / 2; tl.push([U(a / Math.PI - 0.022), t]); }
@@ -573,8 +577,8 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
         for (let j = 0; j <= HJ; j++) {
           const a = outer ? (j / HJ) * hs.aEnd : Math.PI - (j / HJ) * (Math.PI - hs.aEnd);
           const c = Math.cos(a), sn = Math.max(0, Math.sin(a));
-          const bulge = 1 + 0.06 * Math.sin(Math.min(1, sn * 1.6) * Math.PI);   // the leather swells a little above the welt
-          pos.push(xc(t) + so * W * c * bulge, base(t) + hs.top * Math.pow(sn, 0.8), zAt(t));
+          const bulge = 1 + 0.035 * Math.sin(Math.min(1, sn * 1.6) * Math.PI);   // the leather swells a little above the welt
+          pos.push(xc(t) + so * W * c * bulge, base(t) + hs.top * Math.pow(sn, crown(t)), zAt(t));
           uv.push(a / Math.PI, t);
         }
         (outer ? edgeL : edgeR).push(pos.length / 3 - 1);
@@ -623,10 +627,10 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     // laces: five white cross laces arched over the lace panel, from eyelet to eyelet
     for (let i = 0; i < 5; i++) {
       const t = 0.515 + i * 0.037, W = wOut(t), hs = half(t, W, true), pts: THREE.Vector3[] = [];
-      const ua = 0.435 - i * 0.004;
+      const ua = 0.455 - i * 0.003;
       for (let k = 0; k <= 8; k++) {
         const a = Math.PI * (ua + (1 - 2 * ua) * (k / 8)), c = Math.cos(a), sn = Math.sin(a);
-        pts.push(new THREE.Vector3(xc(t) + so * W * c * 1.0, base(t) + hs.top * Math.pow(sn, 0.8) + 0.0025, zAt(t) + (k / 8 - 0.5) * 0.006 * (i % 2 ? 1 : -1)));
+        pts.push(new THREE.Vector3(xc(t) + so * W * c * 1.0, base(t) + hs.top * Math.pow(sn, crown(t)) + 0.0025, zAt(t) + (k / 8 - 0.5) * 0.006 * (i % 2 ? 1 : -1)));
       }
       grp.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.0018, 6), laceMat));
     }

@@ -24,6 +24,7 @@ export interface SwingState {
 
 export const BALL_R = 0.02135;
 const IN = 0.0254;
+const GRIP_R = 0.0115; // grip radius under the hands (it tapers 9.8 → 12.8 mm in club.ts)
 
 // Body keyframes. Turns and forward bend traced from tour swing sequences (MediaPipe pose landmarks, three
 // down-the-line sequences, outliers dropped); side bend and pelvis shift, which a down-the-line camera can't
@@ -200,15 +201,27 @@ export class Golfer {
     const towardL = shL.sub(this.gripAddr).normalize();
     const towardR = shR.sub(this.clubAt.clone().add(this.club.gripTrail)).normalize();
     if (this.extras) {
-      // real hands: a hand frame per hand in club space, the wrist set back from the grip
-      const gl = this.club.gripLead, gr = this.club.gripTrail;
-      const frame = (toward: THREE.Vector3, palmToward: THREE.Vector3, grip: THREE.Vector3) => {
-        const dir = toward.clone().negate();
-        const palm = palmToward.clone().addScaledVector(dir, -palmToward.dot(dir)).normalize();
-        const wrist = grip.clone().addScaledVector(dir, -0.072 * k).addScaledVector(palm, -0.024 * k);
+      // real hands, an overlap (Vardon) grip, neutral to slightly strong. Built in club space:
+      // - each palm faces the shaft and sits on the grip (palm normal = from the hand toward the shaft axis);
+      // - the hand's long axis crosses the shaft diagonally (the grip runs from the base of the pinky to the middle
+      //   of the index finger), the fingers heading round the underside of the grip; the trail hand holds it more
+      //   in the fingers (steeper across);
+      // - lead hand turned ~28° toward the golfer (V toward the trail shoulder, 2-3 knuckles showing), trail hand
+      //   ~14° under. The fingers are then wrapped onto the grip surface in poseHands.
+      const gl = this.club.gripLead, gr = this.club.gripTrail, sd = this.club.shaftDir.clone().normalize();
+      void towardL; void towardR;
+      const frame = (side: 'L' | 'R', grip: THREE.Vector3) => {
+        const beta = side === 'L' ? 0.5 : 0.25, alpha = side === 'L' ? 1.0 : 1.2;
+        const palm = (side === 'L' ? new THREE.Vector3(-Math.cos(beta), 0, Math.sin(beta)) : new THREE.Vector3(Math.cos(beta), 0, -Math.sin(beta)));
+        palm.addScaledVector(sd, -palm.dot(sd)).normalize();
+        const under = new THREE.Vector3().crossVectors(palm, sd).normalize();
+        if (under.z < 0) under.negate();                                    // toward the underside (ball side) of the grip
+        const dir = sd.clone().multiplyScalar(-Math.cos(alpha)).addScaledVector(under, Math.sin(alpha)).normalize();
+        const rGrip = GRIP_R;
+        const wrist = grip.clone().addScaledVector(palm, -(rGrip + 0.02 * k)).addScaledVector(dir, -0.065 * k);
         return { dir, palm, wrist };
       };
-      const fL = frame(towardL, new THREE.Vector3(-1, 0, 0), gl), fR = frame(towardR, new THREE.Vector3(1, 0, 0), gr);
+      const fL = frame('L', gl), fR = frame('R', gr);
       this.handFrame = { L: fL, R: fR };
       this.hands = { group: new THREE.Group(), wristLead: fL.wrist, wristTrail: fR.wrist };
     } else {
@@ -438,15 +451,36 @@ export class Golfer {
       basis(dir, palm, m1); basis(E.handDir[s], E.palm[s], m2);
       const qh = new THREE.Quaternion().setFromRotationMatrix(m1.multiply(m2.transpose()));
       local(E.hand[s], Q[fore], qh);
-      // fingers: curl round the grip; the thumb lies along it
-      const curls = [[0.25, 0.35, 0.3], [0.95, 1.15, 0.7], [1.05, 1.2, 0.75], [1.1, 1.2, 0.75], [1.15, 1.15, 0.7]];
+      // fingers wrap the grip: each segment bends just enough to lie on the grip surface (grip radius + half a
+      // finger), so there are no gaps and nothing passes through it, whatever the club or pose. The thumb lies
+      // along the grip with a gentle fixed curl.
+      const g = this.club.group, axisP = this.club.butt.clone().applyQuaternion(qc).add(g.position), axisD = this.club.shaftDir.clone().applyQuaternion(qc).normalize();
+      const fromAxis = (pt: THREE.Vector3) => { const d = pt.clone().sub(axisP); return d.addScaledVector(axisD, -d.dot(axisD)).length(); };
+      const handP = this.rig.wristPos[s];
+      const gripPt = (s === 'L' ? this.club.gripLead : this.club.gripTrail);
+      const rFinger = GRIP_R + 0.0085 * this.k; void gripPt;
       E.fingers[s].forEach((chain, fi) => {
         let parentQ = qh, acc = 0;
+        if (fi === 0) {
+          const axis = E.curlAxis[s].clone().lerp(E.handDir[s], 0.6).normalize();
+          [0.25, 0.3, 0.25].forEach((c, si) => { acc += c; const q = qh.clone().multiply(new THREE.Quaternion().setFromAxisAngle(axis, acc)); local(chain[si], parentQ, q); parentQ = q; });
+          return;
+        }
+        const offs = chain.map(b => bones[b].position.clone());
+        const segs = [offs[1], offs[2], offs[2].clone().multiplyScalar(0.85)];       // the last one: to the fingertip
+        let P = handP.clone().add(offs[0].clone().applyQuaternion(qh));
+        const axis = E.curlAxis[s], qr = new THREE.Quaternion();
         chain.forEach((b, si) => {
-          acc += curls[fi][si];
-          const axis = fi === 0 ? E.curlAxis[s].clone().lerp(E.handDir[s], 0.6).normalize() : E.curlAxis[s];
+          let best = 0, bestErr = Infinity;
+          for (let d = -0.1; d <= 1.8; d += 0.03) {
+            const q = qh.clone().multiply(qr.setFromAxisAngle(axis, acc + d));
+            const err = Math.abs(fromAxis(P.clone().add(segs[si].clone().applyQuaternion(q))) - rFinger);
+            if (err < bestErr - 1e-5) { bestErr = err; best = d; }
+          }
+          acc += best;
           const q = qh.clone().multiply(new THREE.Quaternion().setFromAxisAngle(axis, acc));
           local(b, parentQ, q); parentQ = q;
+          P.add(segs[si].clone().applyQuaternion(q));
         });
       });
     }

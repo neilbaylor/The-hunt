@@ -438,6 +438,32 @@ if C.get('untucked'):
         if ln < 0.3: continue
         pn /= ln; gap = float(np.dot(sp - Pp[j], pn))      # pushed out sideways only, never down
         if gap < C.get('overPants', 0.008): Vshirt[vi] = Vshirt[vi] + pn * (C.get('overPants', 0.008) - gap)
+# armpit ease: a little extra stand-off where the sleeve joins the body, so the arm doesn't drag the fabric through
+for vi in np.nonzero(shirt)[0]:
+    aw = wsum(vi, ['upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r'])
+    if 0.05 < aw < 0.95: Vshirt[vi] = Vshirt[vi] + N[vi] * C.get('armpitEase', 0.006) * 4 * aw * (1 - aw)
+
+# smoothed skin weights for the shirt: the body's weights change sharply at the shoulder and armpit, which
+# tears a loose shell into shards in big poses (top of the backswing). Diffuse them over the shirt surface.
+shirt_sw = {}
+if C.get('shirtWeightSmooth', 0):
+    _ids = np.nonzero(shirt)[0]
+    _bu = sorted({b for vi in _ids for b in vw[vi]}); _bx = {b: i for i, b in enumerate(_bu)}
+    Wm = np.zeros((NV, len(_bu)))
+    for vi in _ids:
+        for b, w in vw[vi].items(): Wm[vi, _bx[b]] = w
+        Wm[vi] /= max(Wm[vi].sum(), 1e-9)
+    _nbs = {vi: [n for n in NB[vi] if shirt[n]] for vi in _ids}
+    for _ in range(C['shirtWeightSmooth']):
+        W2 = Wm.copy()
+        for vi in _ids:
+            ns = _nbs[vi]
+            if ns: W2[vi] = 0.5 * Wm[vi] + 0.5 * Wm[ns].mean(0)
+        Wm = W2
+    for vi in _ids:
+        o = np.argsort(-Wm[vi])[:4]; ws = Wm[vi][o]; ws = ws / max(ws.sum(), 1e-9)
+        shirt_sw[vi] = [(_bu[o[k]], float(ws[k])) for k in range(4)]
+
 meshes = {}
 # the feet are hidden inside the shoes: drop them from the skin so they never poke through
 feet_hidden = np.zeros(NV, bool)
@@ -1053,7 +1079,7 @@ def put(arr, dtype):
     off = len(blobs); blobs += a.tobytes()
     return {'offset': off, 'count': int(a.size), 'type': np.dtype(dtype).name}
 for name, m in meshes.items():
-    sw = [top4(vi) for vi in m['src']]
+    sw = [(shirt_sw.get(vi) if name == 'shirt' else None) or top4(vi) for vi in m['src']]
     d = {'position': put(m['pos'], np.float32), 'uv': put(m['uv'], np.float32), 'index': put(m['tris'].ravel(), np.uint32),
          'skinIndex': put([[b for b, _ in s] for s in sw], np.uint16), 'skinWeight': put([[w for _, w in s] for s in sw], np.float32)}
     if name == 'skin':
