@@ -8,11 +8,12 @@
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 
-export type StyleId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+export type StyleId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 export interface StyleInfo { id: StyleId; name: string; desc: string; hides: string }
 
 export const STYLES: StyleInfo[] = [
   { id: 0, name: 'Realistic (current)', desc: 'The game as it renders today: tone-mapped and graded, no illustration.', hides: 'Nothing. Every texture and modelling flaw shows.' },
+  { id: 9, name: 'Coloured Pencil', desc: 'Realistic proportions and soft light, drawn in coloured pencil on white paper: grain that fills in with the tone, directional hatching in the darks, a light brown contour.', hides: 'Skin and fabric texture flaws and blotchy shading; strokes carry the form like a hand-drawn portrait.' },
   { id: 7, name: 'Graphic Realism · Light', desc: 'The realistic render with a light hand-drawn finish: fine ink contours with weight variation, a touch of hatching in the deepest shadows, faint paper grain.', hides: 'Blotchy fabric shading and texture noise; edges read cleaner. Faces stay photographic.' },
   { id: 8, name: 'Graphic Realism · Medium', desc: 'Same, pushed further: stronger contours and interior lines, cross-hatching in shadows, crisper highlights, visible paper.', hides: 'Most fabric and turf texture flaws and some modelling softness; the face reads as a drawn portrait.' },
   { id: 1, name: 'Ink & Wash', desc: 'Real lighting with a soft watercolour wash, warm brown ink lines that thicken up close, and paper grain.', hides: 'Fine skin and fabric texture, small seams and tiling. The ink defines the face and body shapes.' },
@@ -255,6 +256,54 @@ void main() {
 }`,
   7: /* glsl */`void main() { gl_FragColor = vec4(graphicRealism(vUv, 0.35, 0.0), 1.0); }`,
   8: /* glsl */`void main() { gl_FragColor = vec4(graphicRealism(vUv, 0.75, 1.0), 1.0); }`,
+  // ── 9. Coloured Pencil: pencil grain on white paper, hatching in the darks, soft contour ──
+  9: /* glsl */`
+// streaky pencil texture along a stroke direction: 0..1, high = pigment caught on the paper tooth
+float pencil(vec2 p, vec2 dir, float scale) {
+  vec2 q = vec2(dot(p, dir), dot(p, vec2(-dir.y, dir.x)));
+  float streak = vnoise(q * vec2(0.14, 2.4) / scale) * 0.55 + vnoise(q * vec2(0.05, 0.9) / scale) * 0.45;
+  float tooth = hash(floor(p * 0.9)) * 0.35 + vnoise(p * 0.7) * 0.65;
+  return clamp(streak * 0.7 + tooth * 0.3, 0.0, 1.0);
+}
+void main() {
+  vec2 uv = vUv; vec2 p = uv * res / px;
+  float z = viewZ(uv), near = smoothstep(14.0, 3.0, z), far = smoothstep(80.0, 700.0, z);
+  // pigment colour: the realistic render, smoothed on the subject (no blotches), warm and a bit desaturated
+  vec3 c0 = texture2D(tColor, uv).rgb;
+  vec3 c = mix(c0, kuwa(uv, 1.0 * px), 0.4 + 0.4 * near);
+  c = sat(c, 0.8);
+  c *= vec3(1.03, 1.0, 0.94);
+  float L = luma(c);
+  vec3 paperC = vec3(0.985, 0.975, 0.955);
+  // pencil coverage: dark tones fill the paper, light tones let it show through the grain
+  vec2 dir = normalize(vec2(0.82, -0.57));
+  float g = pencil(p, dir, 1.0);
+  float pig = clamp((1.0 - L) * 1.35, 0.0, 1.0);
+  float cover = smoothstep(g - 0.55, g + 0.05, pig + 0.3);
+  cover = mix(cover, 1.0, 0.35 * near);           // the subject is drawn more densely than the background
+  cover *= 1.0 - 0.55 * far;                       // distance fades toward the paper, like a sketched background
+  vec3 outc = mix(paperC, c * (0.95 + 0.1 * g), cover);
+  // directional hatching in the darker tones (relative shadows), cross-hatching in the deepest
+  float shade = luma(blur5(uv, 1.5 * px)) / max(localL(uv, 16.0 * px), 0.03);
+  float dark = max(1.0 - smoothstep(0.62, 0.9, shade), 1.0 - smoothstep(0.18, 0.38, L));
+  float wob = 0.35 * vnoise(p * 0.04);
+  float h1 = 1.0 - smoothstep(0.1, 0.35, abs(fract(dot(p, normalize(vec2(0.6, -0.8))) / 2.8 + wob) - 0.5) * 2.0);
+  float h2 = 1.0 - smoothstep(0.1, 0.35, abs(fract(dot(p, normalize(vec2(0.8, 0.6))) / 3.1 + wob) - 0.5) * 2.0);
+  float hatchv = max(h1 * dark, h2 * (1.0 - smoothstep(0.08, 0.2, L))) * (0.55 + 0.45 * g) * (1.0 - far);
+  outc = mix(outc, outc * 0.62, hatchv * 0.6);
+  // soft contour: silhouettes and creases, broken by the grain, warm graphite brown
+  float w = (0.8 + 0.6 * near) * px;
+  float de = silhouette(uv, w);
+  vec2 o = w / res; float cz = viewZ(uv);
+  float crease = abs(viewZ(uv + vec2(o.x, 0.0)) + viewZ(uv - vec2(o.x, 0.0)) + viewZ(uv + vec2(0.0, o.y)) + viewZ(uv - vec2(0.0, o.y)) - 4.0 * cz) / max(cz, 0.3);
+  float cr = smoothstep(0.012, 0.04, crease) * near;
+  float le = smoothstep(0.28, 0.6, lumaEdge(uv, px)) * near * 0.5;
+  float line = clamp(max(max(de, cr * 0.6), le), 0.0, 1.0) * (0.55 + 0.45 * g);
+  outc = mix(outc, vec3(0.28, 0.2, 0.16), line * 0.55);
+  // paper tooth over everything
+  outc *= 0.97 + 0.03 * vnoise(p * 1.3);
+  gl_FragColor = vec4(outc, 1.0);
+}`,
   // ── 6. Cover Art: clean illustrated likeness — flat colour, black contours, rim light ──
   6: /* glsl */`
 void main() {

@@ -6,6 +6,7 @@ src = sys.argv[1]
 here = os.path.dirname(os.path.abspath(__file__))
 STYLES = [  # (id, name, description, what it hides, simplification 0-5), in board order: the picks first
   (0, 'Realistic (today)', 'The game as it renders now: tone-mapped and graded, no illustration.', 'Nothing. Every texture and modelling flaw shows.', 0),
+  (9, 'Coloured Pencil', 'Realistic proportions and soft light, drawn in coloured pencil on white paper: grain that fills in with the tone, directional hatching in the darks, a light brown contour.', 'Skin and fabric texture flaws and blotchy shading; strokes carry the form like a hand-drawn portrait.', 3),
   (7, 'Graphic Realism · Light', 'The realistic render with a light hand-drawn finish: fine ink contours that swell and taper, a little hatching in the deepest shadows, faint paper grain.', 'Blotchy fabric shading and texture noise; edges read cleaner. The face stays photographic.', 2),
   (8, 'Graphic Realism · Medium', 'Pushed further: stronger contours and interior lines, cross-hatching in shadows, crisper highlights, visible paper.', 'Most fabric and turf texture flaws and some modelling softness. The face reads as a drawn portrait.', 3),
   (5, 'Graphic Novel', 'High-contrast colour, heavy cross-hatching in shadows and thick ink contours.', 'Shadow noise and flat cloth; hatching adds form. Strongest drawn look of the realistic family.', 3),
