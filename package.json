@@ -1,0 +1,22 @@
+{
+  "name": "the-hunt",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "build:single": "tsc --noEmit && vite build --mode single",
+    "typecheck": "tsc --noEmit",
+    "build:artifact": "npm run build:single && python3 scripts/artifact.py"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vite-plugin-singlefile": "2.3.4"
+  }
+}

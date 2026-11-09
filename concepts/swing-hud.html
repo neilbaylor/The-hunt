@@ -1,0 +1,807 @@
+<title>Golf Swing &amp; HUD Concepts</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@0,600;0,700;1,700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Russo+One&display=swap">
+<style>
+/* Layout: one column. A live 16:9 driving range up top (the HUD is real and playable), then three
+   HUD looks side by side, then the rules as tables. Committed dark single theme, like a clubhouse at night. */
+:root {
+  --bg: #0e1613;
+  --surface: #16211c;
+  --line: #2a3a32;
+  --fg: #edf2ec;
+  --muted: #9aaba1;
+  --flag: #f2c94c;
+  --display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --body: 'Barlow', system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px; display: grid; gap: 18px; }
+.wrap + .wrap { padding-top: 8px; }
+.kicker { font-family: var(--display); font-weight: 700; font-size: 13px; letter-spacing: .16em; text-transform: uppercase; color: var(--flag); }
+h1 { margin: 0; font-family: var(--display); font-weight: 700; font-size: clamp(40px, 7vw, 76px); line-height: .92; text-transform: uppercase; text-wrap: balance; letter-spacing: .01em; }
+h2 { margin: 0; font-family: var(--display); font-weight: 700; font-size: clamp(26px, 4vw, 36px); text-transform: uppercase; letter-spacing: .02em; text-wrap: balance; }
+.lede { margin: 0; max-width: 66ch; color: var(--muted); }
+p { margin: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.seg button { font: 600 15px/1 var(--body); color: var(--muted); background: none; border: 0; padding: 10px 14px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.seg button:focus-visible, .ghost:focus-visible { outline: 2px solid var(--flag); outline-offset: 2px; }
+.ghost { font: 600 14px/1 var(--body); color: var(--fg); background: none; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; cursor: pointer; }
+.how { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.how div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; color: var(--muted); font-size: 15px; }
+.how b { display: block; color: var(--fg); font-family: var(--display); font-size: 18px; text-transform: uppercase; letter-spacing: .03em; }
+.note { color: var(--muted); font-size: 14px; }
+
+/* ── stage ── */
+.stage-wrap { position: relative; width: 100%; max-width: 100%; overflow: hidden; border-radius: 12px; background: #000; border: 1px solid var(--line); }
+.stage-wrap:fullscreen { border-radius: 0; border: 0; display: grid; place-items: center; }
+.stage { position: absolute; left: 0; top: 0; width: 960px; height: 540px; transform-origin: 0 0; overflow: hidden; user-select: none; -webkit-user-select: none; }
+.stage-wrap:fullscreen .stage { position: relative; }
+.stage canvas.scene { position: absolute; inset: 0; width: 960px; height: 540px; display: block; }
+.hud { position: absolute; inset: 0; }
+.slot-club { position: absolute; left: 16px; top: 16px; }
+.slot-mode { position: absolute; left: 182px; top: 16px; }
+.slot-lie { position: absolute; right: 16px; top: 16px; }
+.slot-card { position: absolute; left: 16px; bottom: 16px; }
+.slot-pad { position: absolute; right: 14px; bottom: 14px; width: 210px; height: 210px; touch-action: none; }
+.slot-spin { position: absolute; left: 50%; bottom: 10px; width: 170px; margin-left: -85px; display: grid; justify-items: center; gap: 2px; transition: opacity .25s, transform .25s; }
+.slot-spin.off { opacity: 0; transform: translateY(20px); pointer-events: none; }
+.slot-spin canvas { width: 136px; height: 136px; touch-action: none; cursor: grab; }
+.toast { position: absolute; left: 0; right: 0; top: 118px; text-align: center; pointer-events: none; opacity: 0; transform: scale(.85); transition: opacity .2s, transform .25s cubic-bezier(.2,1.6,.4,1); }
+.toast.on { opacity: 1; transform: scale(1); }
+.pop { position: absolute; z-index: 5; }
+#clubPop { left: 16px; top: 112px; }
+#modePop { left: 182px; top: 112px; }
+
+/* ── shared HUD component structure (skins below only change the look) ── */
+.hud-panel { color: var(--h-ink); font-family: var(--h-body); text-align: left; position: relative; }
+button.hud-panel { cursor: pointer; border: 0; font: inherit; color: var(--h-ink); }
+button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-offset: 3px; }
+.eyebrow-h { font-family: var(--h-label); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--h-dim); }
+.club-btn { width: 154px; height: 86px; padding: 10px 14px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto 1fr auto; column-gap: 10px; align-items: end; }
+.club-btn .eyebrow-h { grid-column: 1 / -1; }
+.club-btn .big { font-family: var(--h-display); font-size: 40px; line-height: .9; color: var(--h-ink); text-transform: none !important; }
+.club-btn .yds { font-family: var(--h-display); font-size: 22px; line-height: 1; color: var(--h-accent); justify-self: end; }
+.club-btn .yds small { font-size: 12px; color: var(--h-dim); margin-left: 2px; }
+.club-btn .cap { grid-column: 1 / -1; font-size: 11px; color: var(--h-dim); margin-top: 4px; white-space: nowrap; }
+.mode-btn { width: 132px; height: 86px; padding: 10px 14px; display: grid; grid-template-rows: auto 1fr; align-items: end; }
+.mode-btn .big { font-family: var(--h-display); font-size: 28px; line-height: 1; text-transform: uppercase; }
+.mode-btn svg { position: absolute; right: 10px; bottom: 10px; width: 46px; height: 46px; }
+.lie-card { width: 248px; padding: 10px 14px 12px; display: grid; gap: 8px; }
+.lie-top { display: flex; gap: 12px; align-items: center; }
+.lie-top svg { width: 46px; height: 46px; flex: none; }
+.lie-top .big { font-family: var(--h-display); font-size: 22px; line-height: 1.05; }
+.lie-top .sub { font-size: 12px; color: var(--h-dim); }
+.slope { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--h-rule); padding-top: 8px; }
+.slope svg { width: 72px; height: 40px; flex: none; }
+.slope .deg { font-family: var(--h-display); font-size: 26px; line-height: 1; color: var(--h-accent); font-variant-numeric: tabular-nums; }
+.slope .sub { font-size: 12px; color: var(--h-dim); line-height: 1.25; }
+.card { width: 262px; padding: 12px 14px; display: grid; gap: 8px; }
+.card ol { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; color: var(--h-ink); }
+.tempo-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--h-dim); text-transform: uppercase; letter-spacing: .12em; font-family: var(--h-label); }
+.tempo-head b { font-family: var(--h-display); font-size: 20px; letter-spacing: .02em; }
+.good { color: var(--h-good); } .warn { color: var(--h-warn); } .bad { color: var(--h-bad); }
+.tempo-track { position: relative; height: 10px; border-radius: 5px; background: var(--h-track); margin-top: 4px; }
+.tempo-track .win { position: absolute; top: 0; bottom: 0; background: var(--h-good); opacity: .55; border-radius: 5px; }
+.tempo-track .mark { position: absolute; top: -4px; width: 4px; height: 18px; margin-left: -2px; background: var(--h-ink); border-radius: 2px; box-shadow: 0 0 0 2px rgba(0,0,0,.35); }
+.tempo-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--h-dim); margin-top: 3px; text-transform: uppercase; letter-spacing: .1em; }
+.stats { margin: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 10px; }
+.stats div { min-width: 0; }
+.stats dt { font-size: 10px; color: var(--h-dim); text-transform: uppercase; letter-spacing: .12em; font-family: var(--h-label); }
+.stats dd { margin: 0; font-family: var(--h-display); font-size: 17px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.toast .word { display: inline-block; font-family: var(--h-display); font-size: 56px; line-height: 1; padding: 6px 26px 10px; text-transform: uppercase; }
+.toast .why { display: block; font-family: var(--h-body); font-size: 14px; margin-top: 4px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+.spin-label { font-family: var(--h-label); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); white-space: nowrap; }
+.list { padding: 8px; display: grid; gap: 4px; }
+.list.clubs { grid-template-columns: repeat(4, 64px); }
+.list button { all: unset; box-sizing: border-box; cursor: pointer; border-radius: var(--h-chip-r); padding: 7px 8px; display: grid; gap: 1px; background: var(--h-chip); color: var(--h-ink); }
+.list button:focus-visible { outline: 2px solid var(--h-accent); }
+.list button b { font-family: var(--h-display); font-size: 20px; line-height: 1; font-weight: inherit; }
+.list button span { font-size: 11px; color: var(--h-dim); }
+.list button[aria-pressed="true"] { background: var(--h-accent); color: var(--h-on-accent); }
+.list button[aria-pressed="true"] span { color: var(--h-on-accent); opacity: .8; }
+.list button:disabled { opacity: .32; cursor: not-allowed; }
+.list.modes { width: 236px; }
+.list.modes button { grid-template-columns: 36px 1fr; column-gap: 10px; align-items: center; }
+.list.modes button svg { grid-row: span 2; width: 36px; height: 36px; }
+.list.modes button b { font-size: 19px; text-transform: uppercase; }
+.pad-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.pad-svg .top-ring { opacity: 0; transition: opacity .12s; }
+.pad-svg.at-top .top-ring { opacity: 1; }
+.pad-svg text { font-family: var(--h-label); }
+
+/* ── Skin A: Sunday Broadcast — TV graphics. Navy glass, white type, gold, cut corners. ── */
+.skin-a {
+  --h-ink: #ffffff; --h-dim: #a9b8d3; --h-accent: #ffc72c; --h-on-accent: #0a1630; --h-good: #3ddc84; --h-warn: #ffb020; --h-bad: #ff5a5a;
+  --h-track: rgba(255,255,255,.14); --h-rule: rgba(255,255,255,.16); --h-chip: rgba(255,255,255,.07); --h-chip-r: 2px;
+  --h-display: 'Barlow Condensed', 'Arial Narrow', sans-serif; --h-label: 'Barlow Condensed', 'Arial Narrow', sans-serif; --h-body: 'Barlow', system-ui, sans-serif;
+}
+.skin-a .hud-panel { background: linear-gradient(180deg, rgba(16,32,68,.9), rgba(8,18,42,.88)); clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); box-shadow: inset 0 3px 0 var(--h-accent); }
+.skin-a .big, .skin-a .yds, .skin-a .deg, .skin-a .stats dd, .skin-a .tempo-head b, .skin-a .list button b { font-weight: 700; text-transform: uppercase; }
+.skin-a .toast .word { font-weight: 700; font-style: italic; background: #0a1630; color: var(--h-accent); clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%); }
+
+/* ── Skin B: Clubhouse — green enamel, cream, brass hairlines, serif numerals. ── */
+.skin-b {
+  --h-ink: #f4ecd8; --h-dim: #c2b896; --h-accent: #d4ad57; --h-on-accent: #10301f; --h-good: #9fd38a; --h-warn: #e8b85c; --h-bad: #e8836b;
+  --h-track: rgba(244,236,216,.16); --h-rule: rgba(212,173,87,.35); --h-chip: rgba(244,236,216,.07); --h-chip-r: 999px;
+  --h-display: 'Fraunces', Georgia, serif; --h-label: 'Barlow', system-ui, sans-serif; --h-body: 'Barlow', system-ui, sans-serif;
+}
+.skin-b .hud-panel { background: radial-gradient(120% 140% at 0 0, rgba(28,78,52,.95), rgba(13,44,29,.94)); border: 1px solid rgba(212,173,87,.7); border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.35), inset 0 0 0 3px rgba(13,44,29,.95), inset 0 0 0 4px rgba(212,173,87,.35); }
+.skin-b .big, .skin-b .yds, .skin-b .deg, .skin-b .stats dd, .skin-b .tempo-head b, .skin-b .list button b { font-weight: 600; font-variant-numeric: lining-nums; }
+.skin-b .mode-btn .big { text-transform: none; font-style: italic; }
+.skin-b .list button { padding: 7px 12px; }
+.skin-b .list.modes button b { text-transform: none; font-style: italic; }
+.skin-b .toast .word { font-weight: 600; font-style: italic; text-transform: none; background: rgba(13,44,29,.94); color: var(--h-accent); border: 1px solid var(--h-accent); border-radius: 999px; font-size: 46px; }
+
+/* ── Skin C: Y2K Pro Tour — late-90s console sports. Chrome bevels, electric blue, sunburst yellow. ── */
+.skin-c {
+  --h-ink: #ffffff; --h-dim: #bcd0ff; --h-accent: #ffe234; --h-on-accent: #0b1a7a; --h-good: #5cff8a; --h-warn: #ffbe2e; --h-bad: #ff4f6d;
+  --h-track: rgba(0,0,40,.45); --h-rule: rgba(255,255,255,.25); --h-chip: rgba(0,0,40,.35); --h-chip-r: 8px;
+  --h-display: 'Russo One', 'Arial Black', sans-serif; --h-label: 'Russo One', 'Arial Black', sans-serif; --h-body: 'Barlow', system-ui, sans-serif;
+}
+.skin-c .hud-panel { background: linear-gradient(180deg, #3f6bff 0%, #1b3fd9 48%, #0c2394 52%, #10259c 100%); border-radius: 12px; border: 3px solid #d9e1f2; box-shadow: inset 0 0 0 1px #7d8aa6, 0 0 0 1px #4d5870, 0 6px 0 #0a1450, 0 10px 18px rgba(0,0,0,.4); }
+.skin-c .hud-panel::after { content: ""; position: absolute; left: 6px; right: 6px; top: 4px; height: 38%; border-radius: 8px 8px 30px 30px; background: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0)); pointer-events: none; }
+.skin-c .big, .skin-c .yds, .skin-c .deg, .skin-c .toast .word { transform: skewX(-8deg); display: inline-block; }
+.skin-c .club-btn .big, .skin-c .club-btn .yds { display: block; }
+.skin-c .big, .skin-c .yds, .skin-c .deg { text-shadow: 0 2px 0 #0a1450; }
+.skin-c .club-btn .big { font-size: 36px; }
+.skin-c .mode-btn .big { font-size: 24px; }
+.skin-c .lie-top .big { font-size: 18px; }
+.skin-c .stats dd { font-size: 15px; }
+.skin-c .eyebrow-h { font-size: 10px; letter-spacing: .1em; color: var(--h-accent); }
+.skin-c .toast .word { background: linear-gradient(180deg, #fff27a, #ffd400 50%, #ff9d00 51%, #ffc400); color: #0b1a7a; border: 3px solid #fff; border-radius: 10px; box-shadow: 0 6px 0 #0a1450; font-size: 50px; }
+
+/* ── look sheets ── */
+.sheets { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 18px; }
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; min-width: 0; }
+.sheet header { padding: 16px 16px 12px; display: grid; gap: 6px; }
+.sheet h3 { margin: 0; font-family: var(--display); font-size: 26px; text-transform: uppercase; letter-spacing: .02em; line-height: 1; }
+.sheet h3 small { font-size: 15px; color: var(--muted); letter-spacing: .08em; margin-left: 6px; }
+.sheet p { color: var(--muted); font-size: 14px; }
+.swatches { display: flex; gap: 6px; }
+.swatches i { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(255,255,255,.2); }
+.board { position: relative; padding: 16px; display: grid; gap: 14px; justify-items: start; background: linear-gradient(180deg, #8fb9d9 0, #cfe3ea 26%, #3f7a2e 27%, #5c9a40 60%, #6aae47 100%); overflow: hidden; }
+.board .pair { display: flex; gap: 12px; flex-wrap: wrap; }
+.board .pad-demo { width: 190px; height: 190px; }
+.board .spin-demo { display: grid; justify-items: center; gap: 2px; }
+.board .spin-demo canvas { width: 120px; height: 120px; }
+.board .bottom { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; width: 100%; justify-content: space-between; }
+
+/* ── tables ── */
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 15px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--display); font-size: 14px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 700; background: var(--surface); }
+tr:last-child td { border-bottom: 0; }
+td b { font-family: var(--display); font-size: 18px; text-transform: uppercase; letter-spacing: .03em; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .toast, .slot-spin { transition: none; } }
+</style>
+
+<header class="wrap">
+  <div class="kicker">Golf · concept round 1 · art &amp; swing</div>
+  <h1>Swing &amp; HUD concepts</h1>
+  <p class="lede">A playable range with the pull-back, push-through swing pad, the club, lie and swing-mode buttons, and the spin ball you swipe while the ball is in the air. Switch between three looks for the HUD. The range is a quick 2D stand-in for the real 3D scene.</p>
+</header>
+
+<section class="wrap" aria-labelledby="try">
+  <div class="row">
+    <h2 id="try">Hit some balls</h2>
+    <div class="row" style="justify-content:flex-start">
+      <div class="seg" role="group" aria-label="HUD look">
+        <button type="button" id="skin-a" data-skin="a" aria-pressed="true">A · Broadcast</button>
+        <button type="button" id="skin-b" data-skin="b" aria-pressed="false">B · Clubhouse</button>
+        <button type="button" id="skin-c" data-skin="c" aria-pressed="false">C · Y2K Pro Tour</button>
+      </div>
+      <button type="button" class="ghost" id="fsBtn">Full screen</button>
+    </div>
+  </div>
+  <div class="stage-wrap" id="stageWrap">
+    <div class="stage skin-a" id="stage">
+      <canvas class="scene" id="scene" width="1920" height="1080" aria-label="Driving range seen from behind the golfer"></canvas>
+      <div class="hud">
+        <div class="slot-club" id="clubSlot"></div>
+        <div class="slot-mode" id="modeSlot"></div>
+        <div class="slot-lie" id="lieSlot"></div>
+        <div class="slot-card" id="cardSlot"></div>
+        <div class="slot-pad" id="padSlot" aria-label="Swing pad: press, pull down, then push up"></div>
+        <div class="slot-spin off" id="spinSlot"><canvas id="spinCv" width="272" height="272" aria-label="Spin ball: swipe to add spin"></canvas><div class="spin-label" id="spinLabel">Swipe the ball to add spin</div></div>
+        <div class="toast" id="toast"></div>
+        <div class="pop hud-panel" id="clubPop" hidden></div>
+        <div class="pop hud-panel" id="modePop" hidden></div>
+      </div>
+    </div>
+  </div>
+  <div class="how">
+    <div><b>1 · Pull back</b>Press the ball on the swing pad and pull straight down. The further you pull, the longer the shot. Drifting sideways costs accuracy.</div>
+    <div><b>2 · Feel the top</b>The golfer turns at their own pace. The pad ring flashes when they reach the top. Start pushing up right then.</div>
+    <div><b>3 · Push through</b>Push straight up, quickly. Angle it left for a draw (more is a hook), right for a fade or slice.</div>
+    <div><b>4 · Add spin</b>While the ball flies, swipe the spin ball. Down is backspin, up is topspin, sideways bends it.</div>
+  </div>
+  <p class="note">Tap the club, swing or lie panels to change them. Tapping the lie card cycles through sample lies so you can see the slope arrow move the ball. Best in landscape on a phone, or use full screen.</p>
+</section>
+
+<section class="wrap" aria-labelledby="looks">
+  <h2 id="looks">Three looks</h2>
+  <p class="lede">Same parts in each: club button, swing mode, lie card with the slope arrow, the swing pad, and the spin ball. Pick one, or mix them (say, the Clubhouse pad with Broadcast panels).</p>
+  <div class="sheets" id="sheets"></div>
+</section>
+
+<section class="wrap" aria-labelledby="modes">
+  <h2 id="modes">Swing modes</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Mode</th><th>Clubs</th><th>Max carry</th><th>Flight</th><th>Swing animation</th></tr></thead>
+    <tbody>
+      <tr><td><b>Full</b></td><td>All</td><td class="num">Club's full yardage</td><td>Normal height, normal roll</td><td>Full turn, club past parallel, high finish</td></tr>
+      <tr><td><b>Punch</b></td><td>3W to 60° (no driver)</td><td class="num">About 78% of full</td><td>Low, under the wind, runs out</td><td>Three-quarter backswing, hands-ahead, held low finish</td></tr>
+      <tr><td><b>Pitch</b></td><td>PW, 50°, 56°, 60°</td><td class="num">65 yds (PW) down to 47 (60°)</td><td>Medium height, a hop and stop</td><td>Half to three-quarter, quiet lower body, chest-high finish</td></tr>
+      <tr><td><b>Flop</b></td><td>56° or 60° only</td><td class="num">30 yds (56°), 26 (60°)</td><td>Very high, lands soft</td><td>Open stance and face, long slow swing, full finish</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="wrap" aria-labelledby="scoring">
+  <h2 id="scoring">How a swing is judged</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>What you do</th><th>Measured as</th><th>Good</th><th>What a miss does</th></tr></thead>
+    <tbody>
+      <tr><td><b>Pull back</b></td><td>How far down the pad you pull</td><td class="num">Full pull = 100%</td><td>Shorter pull, shorter shot. This is how you hit a three-quarter 7 iron.</td></tr>
+      <tr><td><b>Takeaway line</b></td><td>Average sideways drift while pulling</td><td class="num">Under 6% of the pad</td><td>Small random push or pull off line</td></tr>
+      <tr><td><b>Transition</b></td><td>When you start pushing vs. when the golfer reaches the top</td><td class="num">70 ms early to 160 ms late</td><td>Quick or late: the ball goes a bit left or right, a bit high or low, and a bit short. Random each time, bigger the further out you are.</td></tr>
+      <tr><td><b>Push speed</b></td><td>Time from the top to the strike line</td><td class="num">Under 0.28 s</td><td>Slow push decelerates: up to 12% shorter</td></tr>
+      <tr><td><b>Push angle</b></td><td>Direction of the push from straight up</td><td class="num">Within 3°</td><td>Left: draw, then hook past 12°. Right: fade, then slice.</td></tr>
+      <tr><td><b>Lie</b></td><td>Lie quality and slope from the course</td><td class="num">100%, flat</td><td>Lie % caps distance. Slope starts the ball left or right (about 0.6% of carry per degree).</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Each golfer will later get their own tempo (how fast they reach the top), so a quick swinger and a slow swinger feel different on the same pad. That is where your friends' swing styles plug in.</p>
+</section>
+
+<script>
+(() => {
+'use strict';
+// ───────────────────────── data ─────────────────────────
+const CLUBS = [
+  { id: '1W', name: 'Driver', full: 265, apex: 31, roll: .13, curve: 1.35 },
+  { id: '3W', name: '3 wood', full: 235, apex: 30, roll: .10, curve: 1.25 },
+  { id: '5W', name: '5 wood', full: 218, apex: 31, roll: .08, curve: 1.15 },
+  { id: '4H', name: '4 hybrid', full: 204, apex: 31, roll: .07, curve: 1.05 },
+  { id: '5i', name: '5 iron', full: 190, apex: 30, roll: .06, curve: 1 },
+  { id: '6i', name: '6 iron', full: 178, apex: 30, roll: .05, curve: .95 },
+  { id: '7i', name: '7 iron', full: 165, apex: 30, roll: .045, curve: .9 },
+  { id: '8i', name: '8 iron', full: 152, apex: 30, roll: .04, curve: .85 },
+  { id: '9i', name: '9 iron', full: 140, apex: 29, roll: .035, curve: .8 },
+  { id: 'PW', name: 'Pitching wedge', full: 128, apex: 28, roll: .03, curve: .75, pitch: 1 },
+  { id: '50°', name: '50° wedge', full: 113, apex: 27, roll: .025, curve: .7, pitch: .9 },
+  { id: '56°', name: '56° wedge', full: 96, apex: 26, roll: .02, curve: .65, pitch: .8, flop: 1 },
+  { id: '60°', name: '60° wedge', full: 80, apex: 25, roll: .015, curve: .6, pitch: .72, flop: .87 },
+];
+// top / finish: golfer arm angle (radians) at the top and the finish. tTop: seconds to reach a full top.
+const MODES = {
+  full:  { label: 'Full',  rule: 'Any club',              ok: c => true,         max: c => c.full,                     top: 4.25, finish: -4.1, tTop: .92 },
+  punch: { label: 'Punch', rule: 'No driver · flies low', ok: c => c.id !== '1W', max: c => Math.round(c.full * .78),   top: 2.6,  finish: -1.9, tTop: .78 },
+  pitch: { label: 'Pitch', rule: 'PW to 60° · max 65',    ok: c => !!c.pitch,    max: c => Math.round(65 * c.pitch),   top: 2.2,  finish: -2.5, tTop: .8 },
+  flop:  { label: 'Flop',  rule: '56° or 60° · max 30',   ok: c => !!c.flop,     max: c => Math.round(30 * c.flop),    top: 3.7,  finish: -3.9, tTop: 1.08 },
+};
+const LIES = [
+  { name: 'Tee box', pct: 100, slope: 0, side: 0, txt: 'Flat lie' },
+  { name: 'Fairway', pct: 100, slope: 3, side: -1, txt: 'Ball above feet · starts left' },
+  { name: 'First cut', pct: 92, slope: 2, side: 1, txt: 'Ball below feet · starts right' },
+  { name: 'Rough', pct: 78, slope: 5, side: -1, txt: 'Ball above feet · starts left' },
+  { name: 'Fairway bunker', pct: 85, slope: 1, side: 1, txt: 'Ball below feet · starts right' },
+];
+const S = { skin: 'a', club: 6, mode: 'full', lie: 0, last: null };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rnd = () => Math.random() * 2 - 1;
+const gauss = () => { let u = 0; for (let i = 0; i < 4; i++) u += Math.random(); return (u - 2) / .58; };
+let uid = 0;
+
+// ───────────────────────── HUD markup ─────────────────────────
+const modeGlyph = (m, w = 3) => {
+  const M = MODES[m], r = 16, cx = 23, cy = 22;
+  const pt = a => [cx + r * Math.sin(a) * -1, cy + r * Math.cos(a)]; // a=0: bottom (address); + = backswing to the left
+  const arc = (a0, a1) => { let d = ''; const n = 24; for (let i = 0; i <= n; i++) { const p = pt(a0 + (a1 - a0) * i / n); d += (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); } return d; };
+  const b = Math.min(M.top, 4.2) * .62, f = Math.max(M.finish, -4.2) * .62;
+  const tp = pt(b), fp = pt(f);
+  return `<svg viewBox="0 0 46 46" aria-hidden="true"><path d="${arc(0, b)}" fill="none" stroke="var(--h-accent)" stroke-width="${w}" stroke-linecap="round"/><path d="${arc(0, f)}" fill="none" stroke="var(--h-dim)" stroke-width="${w - 1}" stroke-linecap="round" stroke-dasharray="2 3"/><circle cx="${tp[0]}" cy="${tp[1]}" r="3" fill="var(--h-accent)"/><circle cx="${cx}" cy="${cy + r}" r="3.4" fill="#fff"/><circle cx="${fp[0]}" cy="${fp[1]}" r="2.2" fill="var(--h-dim)"/></svg>`;
+};
+const clubBtn = (ci, mode) => {
+  const c = CLUBS[ci], M = MODES[mode];
+  return `<button type="button" class="hud-panel club-btn" data-act="club" aria-label="Club: ${c.name}, ${M.max(c)} yards. Change club"><span class="eyebrow-h">Club</span><span class="big">${c.id}</span><span class="yds">${M.max(c)}<small>yds</small></span><span class="cap">${c.name} · ${M.label.toLowerCase()} max</span></button>`;
+};
+const modeBtn = mode => `<button type="button" class="hud-panel mode-btn" data-act="mode" aria-label="Swing mode: ${MODES[mode].label}. Change swing mode"><span class="eyebrow-h">Swing</span><span class="big">${MODES[mode].label}</span>${modeGlyph(mode)}</button>`;
+const lieRing = pct => {
+  const r = 19, C = 2 * Math.PI * r, col = pct >= 95 ? 'var(--h-good)' : pct >= 85 ? 'var(--h-warn)' : 'var(--h-bad)';
+  return `<svg viewBox="0 0 46 46" aria-hidden="true"><circle cx="23" cy="23" r="${r}" fill="none" stroke="var(--h-track)" stroke-width="5"/><circle cx="23" cy="23" r="${r}" fill="none" stroke="${col}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${C * pct / 100} ${C}" transform="rotate(-90 23 23)"/><text x="23" y="27.5" text-anchor="middle" font-size="12" font-weight="700" fill="var(--h-ink)" style="font-family:var(--h-display)">${pct}</text></svg>`;
+};
+const slopeIcon = (slope, side) => {
+  const tilt = -side * Math.min(18, slope * 4); // ground tilts: ball above feet (side -1) = ground rises toward the golfer
+  const arrow = side ? `<g transform="translate(36 9)"><path d="M${side * 14} 0 L${-side * 10} 0" stroke="var(--h-accent)" stroke-width="3" stroke-linecap="round"/><path d="M${side * 18} 0 L${side * 9} -6 L${side * 9} 6 Z" fill="var(--h-accent)"/></g>` : `<text x="36" y="13" text-anchor="middle" font-size="10" fill="var(--h-dim)">LEVEL</text>`;
+  return `<svg viewBox="0 0 72 40" aria-hidden="true">${arrow}<g transform="rotate(${tilt} 36 30)"><rect x="6" y="30" width="60" height="7" rx="2" fill="var(--h-good)" opacity=".85"/><circle cx="36" cy="26" r="4" fill="#fff"/></g></svg>`;
+};
+const lieCard = li => {
+  const L = LIES[li];
+  return `<button type="button" class="hud-panel lie-card" data-act="lie" aria-label="Lie: ${L.name}, ${L.pct} percent, slope ${L.slope} degrees. Tap for another sample lie"><span class="eyebrow-h">Lie</span>
+  <span class="lie-top">${lieRing(L.pct)}<span><span class="big" style="display:block">${L.name}</span><span class="sub">${L.pct}% distance</span></span></span>
+  <span class="slope">${slopeIcon(L.slope, L.side)}<span class="deg">${L.slope}°</span><span class="sub">${L.txt}</span></span></button>`;
+};
+const howCard = () => `<div class="hud-panel card"><span class="eyebrow-h">How to swing</span><ol><li>Press the ball on the pad</li><li>Pull straight down. Further is longer</li><li>When the ring flashes, push straight up</li><li>Swipe the spin ball in the air</li></ol></div>`;
+const resultCard = r => {
+  if (!r) return howCard();
+  const lo = -400, hi = 700, pos = v => ((clamp(v, lo, hi) - lo) / (hi - lo) * 100).toFixed(1);
+  const fmtSide = v => Math.abs(v) < .5 ? 'Online' : `${Math.abs(v).toFixed(0)} ${v < 0 ? 'L' : 'R'}`;
+  return `<div class="hud-panel card"><span class="eyebrow-h">Last swing</span>
+  <div><div class="tempo-head"><span>Tempo</span><b class="${r.tempoCls}">${r.tempoWord}</b></div>
+  <div class="tempo-track"><span class="win" style="left:${pos(-70)}%;width:${(+pos(160) - +pos(-70)).toFixed(1)}%"></span><span class="mark" style="left:${pos(r.off)}%"></span></div>
+  <div class="tempo-scale"><span>Quick</span><span>${r.off > 0 ? '+' : ''}${Math.round(r.off)} ms</span><span>Late</span></div></div>
+  <dl class="stats">
+    <div><dt>Power</dt><dd>${Math.round(r.power * 100)}%</dd></div>
+    <div><dt>Takeaway</dt><dd class="${r.driftCls}">${r.driftWord}</dd></div>
+    <div><dt>Shape</dt><dd>${r.shape}</dd></div>
+    <div><dt>Carry</dt><dd>${r.done ? r.carryOut.toFixed(0) : '…'}</dd></div>
+    <div><dt>Total</dt><dd>${r.done ? r.total.toFixed(0) : '…'}</dd></div>
+    <div><dt>Offline</dt><dd>${r.done ? fmtSide(r.offline) : '…'}</dd></div>
+  </dl></div>`;
+};
+const clubList = (ci, mode) => `<div class="list clubs" role="group" aria-label="Clubs">${CLUBS.map((c, i) => `<button type="button" data-club="${i}" aria-pressed="${i === ci}" ${MODES[mode].ok(c) ? '' : 'disabled'}><b>${c.id}</b><span>${MODES[mode].ok(c) ? MODES[mode].max(c) + ' yds' : '—'}</span></button>`).join('')}</div>`;
+const modeList = (ci, mode) => `<div class="list modes" role="group" aria-label="Swing modes">${Object.keys(MODES).map(k => `<button type="button" data-mode="${k}" aria-pressed="${k === mode}" ${MODES[k].ok(CLUBS[ci]) ? '' : 'disabled'}>${modeGlyph(k)}<b>${MODES[k].label}</b><span>${MODES[k].rule}</span></button>`).join('')}</div>`;
+
+// Swing pad. viewBox centred on the puck's rest point. Pull down to y=+80 for 100%.
+const padSVG = (skin, trail) => {
+  const id = 'p' + (++uid);
+  const ticks = [20, 40, 60, 80].map((y, i) => `<line x1="-9" x2="9" y1="${y}" y2="${y}" class="tick"/><text x="14" y="${y + 3.5}" font-size="9" class="tlab">${(i + 1) * 25}</text>`).join('');
+  const T = trail || { b: '', d: '', puck: [0, 0] };
+  const common = (lane, tick, tlab, trailB, trailD, ring) => `
+    <style>#${id} .tick{stroke:${tick};stroke-width:1.5} #${id} .tlab{fill:${tlab}}</style>
+    <line x1="0" x2="0" y1="-78" y2="84" stroke="${lane}" stroke-width="2" stroke-dasharray="3 5" stroke-linecap="round"/>
+    <path d="M-7 -40 L0 -50 L7 -40" fill="none" stroke="${lane}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M-7 40 L0 50 L7 40" fill="none" stroke="${lane}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity=".6"/>
+    ${ticks}
+    <circle r="95" fill="none" stroke="${ring}" stroke-width="5" class="top-ring"/>
+    <path class="trail-b" d="${T.b}" fill="none" stroke="${trailB}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
+    <path class="trail-d" d="${T.d}" fill="none" stroke="${trailD}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>`;
+  if (skin === 'a') return `<svg class="pad-svg" id="${id}" viewBox="-100 -100 200 200" aria-hidden="true">
+    <circle r="92" fill="rgba(8,18,42,.62)"/>
+    <circle r="92" fill="none" stroke="#fff" stroke-width="2"/>
+    ${Array.from({ length: 36 }, (_, i) => { const a = i * Math.PI / 18; const r0 = i % 9 === 0 ? 80 : 85; return `<line x1="${(Math.cos(a) * r0).toFixed(1)}" y1="${(Math.sin(a) * r0).toFixed(1)}" x2="${(Math.cos(a) * 90).toFixed(1)}" y2="${(Math.sin(a) * 90).toFixed(1)}" stroke="rgba(255,255,255,.4)" stroke-width="${i % 9 === 0 ? 2 : 1}"/>`; }).join('')}
+    ${common('rgba(255,255,255,.45)', 'rgba(255,255,255,.55)', '#a9b8d3', '#ffc72c', '#2fd3ff', '#ffc72c')}
+    <g class="puck" transform="translate(${T.puck})"><circle r="22" fill="#fff"/><circle r="15" fill="none" stroke="#ffc72c" stroke-width="3"/><circle r="5" fill="#0a1630"/></g></svg>`;
+  if (skin === 'b') return `<svg class="pad-svg" id="${id}" viewBox="-100 -100 200 200" aria-hidden="true">
+    <defs><radialGradient id="${id}f" cx="40%" cy="35%"><stop offset="0" stop-color="#f7f0dc"/><stop offset="1" stop-color="#ddcfa8"/></radialGradient>
+    <linearGradient id="${id}b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f1d68f"/><stop offset=".5" stop-color="#a97f2c"/><stop offset="1" stop-color="#e8c777"/></linearGradient>
+    <radialGradient id="${id}p" cx="38%" cy="32%"><stop offset="0" stop-color="#2f7a52"/><stop offset="1" stop-color="#0f3a25"/></radialGradient></defs>
+    <circle r="92" fill="url(#${id}f)" opacity=".94"/>
+    <circle r="88" fill="none" stroke="url(#${id}b)" stroke-width="8"/>
+    <circle r="80" fill="none" stroke="rgba(16,48,31,.25)" stroke-width="1"/>
+    ${common('rgba(16,48,31,.55)', 'rgba(16,48,31,.6)', '#5b5236', '#9b7425', '#10301f', '#d4ad57')}
+    <text y="-62" text-anchor="middle" font-size="10" fill="#5b5236" style="font-family:Fraunces,serif;font-style:italic">through</text>
+    <text y="96" text-anchor="middle" font-size="0">.</text>
+    <g class="puck" transform="translate(${T.puck})"><circle r="23" fill="url(#${id}b)"/><circle r="19" fill="url(#${id}p)"/><path d="M-4 -8 h8 l-2.5 5 v10 h-3 v-10 z" fill="#f4ecd8"/></g></svg>`;
+  return `<svg class="pad-svg" id="${id}" viewBox="-100 -100 200 200" aria-hidden="true">
+    <defs><radialGradient id="${id}f" cx="50%" cy="30%"><stop offset="0" stop-color="#4f7bff"/><stop offset="1" stop-color="#0b1f8a"/></radialGradient>
+    <linearGradient id="${id}c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#9aa6bf"/><stop offset=".55" stop-color="#5b6680"/><stop offset="1" stop-color="#e6ebf5"/></linearGradient>
+    <radialGradient id="${id}p" cx="40%" cy="30%"><stop offset="0" stop-color="#fffbb0"/><stop offset=".55" stop-color="#ffd400"/><stop offset="1" stop-color="#ff8a00"/></radialGradient></defs>
+    <circle r="92" fill="url(#${id}f)" opacity=".92"/>
+    <circle r="88" fill="none" stroke="url(#${id}c)" stroke-width="10"/>
+    <path d="M-70 -50 A86 86 0 0 1 70 -50" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="3" stroke-linecap="round"/>
+    ${common('#ffe234', 'rgba(255,255,255,.75)', '#bcd0ff', '#ffe234', '#5cff8a', '#5cff8a')}
+    <g class="puck" transform="translate(${T.puck})"><circle r="23" fill="#0a1450"/><circle r="21" fill="url(#${id}p)" stroke="#fff" stroke-width="2"/><path d="M0 -10 L2.9 -3.6 L9.5 -3.1 L4.5 1.3 L5.9 8 L0 4.6 L-5.9 8 L-4.5 1.3 L-9.5 -3.1 L-2.9 -3.6 Z" fill="#0b1a7a"/></g></svg>`;
+};
+
+// ───────────────────────── spin ball ─────────────────────────
+const DIMPLES = (() => { const n = 180, out = [], g = Math.PI * (3 - Math.sqrt(5)); for (let i = 0; i < n; i++) { const y = 1 - (i + .5) / n * 2, r = Math.sqrt(1 - y * y), t = g * i; out.push([Math.cos(t) * r, y, Math.sin(t) * r]); } return out; })();
+const SKIN_COL = {
+  a: { ring: 'rgba(255,255,255,.25)', acc: '#ffc72c', acc2: '#2fd3ff', back: 'rgba(8,18,42,.75)' },
+  b: { ring: 'rgba(244,236,216,.3)', acc: '#d4ad57', acc2: '#9fd38a', back: 'rgba(13,44,29,.85)' },
+  c: { ring: 'rgba(255,255,255,.4)', acc: '#ffe234', acc2: '#5cff8a', back: 'rgba(11,31,138,.85)' },
+};
+function rotPts(pts, ax, ay) { // rotate about x then y
+  const cx = Math.cos(ax), sx = Math.sin(ax), cy = Math.cos(ay), sy = Math.sin(ay);
+  for (const p of pts) { let [x, y, z] = p; let y2 = y * cx - z * sx, z2 = y * sx + z * cx; y = y2; z = z2; let x2 = x * cy + z * sy; z2 = -x * sy + z * cy; p[0] = x2; p[1] = y; p[2] = z2; }
+}
+function drawSpinBall(cv, pts, spin, skin, active) {
+  const ctx = cv.getContext('2d'), W = cv.width, k = W / 136, c = SKIN_COL[skin];
+  ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, 136, 136);
+  const cx = 68, cy = 68, R = 44;
+  // track ring: how much of the spin budget is used
+  ctx.beginPath(); ctx.arc(cx, cy, 62, 0, Math.PI * 2); ctx.fillStyle = c.back; ctx.fill();
+  ctx.lineWidth = 5; ctx.strokeStyle = c.ring; ctx.beginPath(); ctx.arc(cx, cy, 56, 0, Math.PI * 2); ctx.stroke();
+  const mag = Math.hypot(spin.x, spin.y);
+  if (mag > .01) { ctx.strokeStyle = c.acc; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, cy, 56, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * mag); ctx.stroke(); }
+  // ball
+  const g = ctx.createRadialGradient(cx - 14, cy - 16, 4, cx, cy, R); g.addColorStop(0, '#ffffff'); g.addColorStop(.7, '#e9edf0'); g.addColorStop(1, '#b5bec6');
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+  for (const p of pts) { if (p[2] <= .05) continue; const r = 3.1 * (.35 + .65 * p[2]); ctx.beginPath(); ctx.ellipse(cx + p[0] * (R - 3), cy + p[1] * (R - 3), r, r * (.45 + .55 * p[2]), Math.atan2(p[1], p[0]), 0, Math.PI * 2); ctx.fillStyle = `rgba(120,132,142,${.18 + .35 * p[2]})`; ctx.fill(); }
+  // stripe line on the ball so the roll reads
+  ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip();
+  ctx.restore();
+  // spin arrow
+  if (mag > .03) {
+    const ang = Math.atan2(-spin.y, spin.x), L = 18 + 22 * mag;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang); ctx.strokeStyle = c.acc; ctx.fillStyle = c.acc; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 4;
+    ctx.beginPath(); ctx.moveTo(-L * .4, 0); ctx.lineTo(L, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(L + 9, 0); ctx.lineTo(L - 3, -8); ctx.lineTo(L - 3, 8); ctx.closePath(); ctx.fill(); ctx.restore();
+  } else if (active) {
+    ctx.strokeStyle = c.acc2; ctx.lineWidth = 2; ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.arc(cx, cy, R + 4, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+const spinWords = s => {
+  const parts = [];
+  if (Math.abs(s.y) > .05) parts.push(`${s.y < 0 ? 'Backspin' : 'Topspin'} ${Math.round(Math.abs(s.y) * 100)}`);
+  if (Math.abs(s.x) > .05) parts.push(`${s.x < 0 ? 'Left' : 'Right'} ${Math.round(Math.abs(s.x) * 100)}`);
+  return parts.join(' · ');
+};
+
+// ───────────────────────── scene ─────────────────────────
+const stage = document.getElementById('stage'), wrap = document.getElementById('stageWrap');
+const cv = document.getElementById('scene'), ctx = cv.getContext('2d');
+const W = 960, H = 540, HOR = 196, F = 640;
+const cam = { x: -.35, y: 1.7, z: -5.5 };
+const proj = (X, Y, Z) => { const dz = Z - cam.z; if (dz < .35) return null; const s = F / dz; return { x: W / 2 + (X - cam.x) * s, y: HOR + (cam.y - Y) * s, s }; };
+const fwX = z => 4 * Math.sin(z / 110), fwHW = z => 23 + 6 * Math.sin(z / 70 + 1);
+let seed = 7; const srnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const TREES = []; for (let i = 0; i < 120; i++) { const side = i % 2 ? 1 : -1, z = 15 + srnd() * 560; TREES.push({ x: side * (fwHW(z) + 12 + srnd() * 45) + fwX(z), z, h: 8 + srnd() * 8, w: 4 + srnd() * 3, t: srnd() }); }
+TREES.sort((a, b) => b.z - a.z);
+const RIDGE = Array.from({ length: 49 }, (_, i) => 18 + 14 * Math.sin(i * .7) + 8 * Math.sin(i * 1.9 + 1) + srnd() * 6);
+const TARGETS = [ { z: 50, x: -9, r: 7, c: '#e5383b' }, { z: 100, x: 11, r: 9, c: '#ffd23f' }, { z: 150, x: -6, r: 10, c: '#ffffff' }, { z: 200, x: 13, r: 12, c: '#3a86ff' }, { z: 250, x: -10, r: 13, c: '#e5383b' }, { z: 300, x: 6, r: 15, c: '#ffd23f' } ];
+
+function poly(pts, fill) { if (pts.some(p => !p)) return; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); }
+function ground(z0, z1, xL0, xR0, xL1, xR1, fill) { poly([proj(xL0, 0, z0), proj(xR0, 0, z0), proj(xR1, 0, z1), proj(xL1, 0, z1)], fill); }
+
+function drawScene(golferPhi, showGolfer) {
+  ctx.setTransform(2, 0, 0, 2, 0, 0);
+  // sky
+  const sky = ctx.createLinearGradient(0, 0, 0, HOR); sky.addColorStop(0, '#3f7fc4'); sky.addColorStop(.6, '#8fc0e4'); sky.addColorStop(1, '#dcecf0');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, HOR + 1);
+  // soft clouds
+  ctx.fillStyle = 'rgba(255,255,255,.55)';
+  [[150, 70, 70], [210, 62, 50], [640, 48, 80], [720, 60, 54], [880, 92, 40]].forEach(([x, y, r]) => { ctx.beginPath(); ctx.ellipse(x - cam.x * .4, y, r, r * .28, 0, 0, Math.PI * 2); ctx.fill(); });
+  // ridges
+  const ridge = (off, amp, col) => { ctx.beginPath(); ctx.moveTo(0, HOR); RIDGE.forEach((h, i) => ctx.lineTo(i * 20 - (cam.x * off) % 20, HOR - h * amp)); ctx.lineTo(W, HOR); ctx.closePath(); ctx.fillStyle = col; ctx.fill(); };
+  ridge(.3, 1.1, '#9db4c2'); ridge(.6, .55, '#6f8f86');
+  // tree line on the horizon
+  ctx.fillStyle = '#35522f'; ctx.beginPath(); ctx.moveTo(0, HOR + 1); for (let x = 0; x <= W; x += 8) ctx.lineTo(x, HOR - 6 - 4 * Math.abs(Math.sin(x * .13 + 2) * Math.sin(x * .031))); ctx.lineTo(W, HOR + 1); ctx.closePath(); ctx.fill();
+  // rough
+  const gr = ctx.createLinearGradient(0, HOR, 0, H); gr.addColorStop(0, '#4f7a3c'); gr.addColorStop(.25, '#3f7530'); gr.addColorStop(1, '#3a7a2b');
+  ctx.fillStyle = gr; ctx.fillRect(0, HOR, W, H - HOR);
+  // fairway stripes
+  const zN = cam.z + .6, zF = cam.z + 650;
+  for (let z = Math.floor(zN / 10) * 10; z < zF; z += 10) {
+    const a = Math.max(z, zN), b = z + 10; if (b <= a) continue;
+    const col = (Math.round(z / 10) % 2 === 0) ? '#5f9f3b' : '#6aad43';
+    ground(a, b, fwX(a) - fwHW(a), fwX(a) + fwHW(a), fwX(b) - fwHW(b), fwX(b) + fwHW(b), col);
+  }
+  // tee box
+  ground(Math.max(-7, zN), 5, -6, 6, -6, 6, '#78c452');
+  // targets
+  for (let i = TARGETS.length - 1; i >= 0; i--) {
+    const t = TARGETS[i]; if (t.z < zN + 1) continue;
+    const pts = []; for (let k = 0; k < 28; k++) { const a = k / 28 * Math.PI * 2; pts.push(proj(t.x + Math.cos(a) * t.r, 0, t.z + Math.sin(a) * t.r)); }
+    poly(pts, '#8fd16a');
+    const pb = proj(t.x, 0, t.z), pt = proj(t.x, 2.6, t.z); if (!pb || !pt) continue;
+    ctx.strokeStyle = '#f4f4f4'; ctx.lineWidth = Math.max(1, pb.s * .06); ctx.beginPath(); ctx.moveTo(pb.x, pb.y); ctx.lineTo(pt.x, pt.y); ctx.stroke();
+    ctx.fillStyle = t.c; ctx.beginPath(); ctx.moveTo(pt.x, pt.y); ctx.lineTo(pt.x + pb.s * .9, pt.y + pb.s * .3); ctx.lineTo(pt.x, pt.y + pb.s * .6); ctx.fill();
+    if (pb.s > 2.2) { const fs = clamp(pb.s * 2.2, 10, 30); ctx.font = `700 ${fs}px 'Barlow Condensed', sans-serif`; ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.textAlign = 'center'; ctx.fillText(t.z, pt.x, pt.y - fs * .3); }
+  }
+  // trees, far to near
+  for (const t of TREES) {
+    if (t.z < zN + 2) continue;
+    const b = proj(t.x, 0, t.z); if (!b || b.x < -80 || b.x > W + 80) continue;
+    const w = t.w * b.s, h = t.h * b.s;
+    ctx.fillStyle = 'rgba(20,40,15,.25)'; ctx.beginPath(); ctx.ellipse(b.x, b.y, w * .9, w * .2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4a3523'; ctx.fillRect(b.x - w * .08, b.y - h * .35, w * .16, h * .35);
+    ctx.fillStyle = t.t > .5 ? '#2d5a2a' : '#335f2b'; ctx.beginPath(); ctx.ellipse(b.x, b.y - h * .62, w * .62, h * .42, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(160,200,120,.18)'; ctx.beginPath(); ctx.ellipse(b.x - w * .18, b.y - h * .75, w * .32, h * .2, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // haze over the far ground
+  const hz = ctx.createLinearGradient(0, HOR - 10, 0, HOR + 40); hz.addColorStop(0, 'rgba(220,236,240,.75)'); hz.addColorStop(1, 'rgba(220,236,240,0)');
+  ctx.fillStyle = hz; ctx.fillRect(0, HOR - 10, W, 50);
+  // ball trail, shadow, ball
+  if (B.trail.length > 1) {
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let i = 1; i < B.trail.length; i++) { const a = proj(...B.trail[i - 1]), b = proj(...B.trail[i]); if (!a || !b) continue; ctx.strokeStyle = `rgba(255,255,255,${.25 + .6 * i / B.trail.length})`; ctx.lineWidth = Math.max(1.2, Math.min(4, b.s * .05)); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+  }
+  const sh = proj(B.x, 0, B.z), bp = proj(B.x, B.y + .05, B.z);
+  if (sh) { ctx.fillStyle = 'rgba(0,30,0,.35)'; ctx.beginPath(); ctx.ellipse(sh.x, sh.y, Math.max(1.5, sh.s * .06), Math.max(.8, sh.s * .025), 0, 0, Math.PI * 2); ctx.fill(); }
+  if (showGolfer) drawGolfer(golferPhi);
+  if (bp) { const r = Math.max(2, bp.s * .045); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(bp.x, bp.y - r * .5, r, 0, Math.PI * 2); ctx.fill(); if (B.phase === 'flight' || B.phase === 'roll') { ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(bp.x, bp.y - r * .5, r + 5 + Math.sin(performance.now() / 120) * 2, 0, Math.PI * 2); ctx.stroke(); } }
+}
+
+// Golfer: a right-hander left of the ball, facing it, seen from behind the ball. Simple 3D stick figure.
+const V = (x, y, z) => [x, y, z], add = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+function drawGolfer(phi) {
+  const ball = V(0, .03, 0), C = V(-.74, 1.42, .02);
+  let u = [ball[0] - C[0], ball[1] - C[1], ball[2] - C[2]]; const Rc = Math.hypot(...u); u = u.map(v => v / Rc);
+  const v = V(0, 0, -1);
+  const plane = a => add(add([0, 0, 0], u, Math.cos(a)), v, Math.sin(a));
+  const head = proj(-.62, 1.7, .02), hips = proj(-.92, .98, 0);
+  const turn = clamp(phi * .32, -1.5, 1.3);
+  const sh = s => proj(C[0] + Math.sin(turn) * .05 * s, C[1] - .02, C[2] - s * .22 * Math.cos(turn));
+  const shL = sh(-1), shR = sh(1);
+  const ph = phi > 0 ? phi * .8 : phi * .82; // hands lag the club a little
+  const hands3 = add(C, plane(ph), .62), club3 = add(C, plane(phi), Rc);
+  const hands = proj(...hands3), clubH = proj(...club3);
+  const kneeL = proj(-.9, .5, .24), kneeR = proj(-.9, .5, -.24), footL = proj(-.85, 0, .26), footR = proj(-.85, 0, -.26);
+  if (!head || !hips || !shL || !shR || !hands || !clubH || !kneeL || !footL) return;
+  const s = hips.s;
+  const seg = (a, b, w, col) => { ctx.strokeStyle = col; ctx.lineWidth = w * s; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
+  ctx.fillStyle = 'rgba(0,30,0,.28)'; ctx.beginPath(); ctx.ellipse(footL.x - s * .1, footL.y + 2, s * .55, s * .09, 0, 0, Math.PI * 2); ctx.fill();
+  const pants = '#2b3445', shirt = '#f4f6f8', skin = '#c99a76';
+  const behindClub = phi > 1.6 && phi < 4.6; // club behind the body near the top
+  if (behindClub) seg(hands, clubH, .035, '#1d1d1d');
+  seg(hips, kneeR, .17, pants); seg(kneeR, footR, .14, pants);
+  seg(hips, kneeL, .17, pants); seg(kneeL, footL, .14, pants);
+  [footL, footR].forEach(f => { ctx.fillStyle = '#fafafa'; ctx.beginPath(); ctx.ellipse(f.x + s * .05, f.y, s * .1, s * .05, 0, 0, Math.PI * 2); ctx.fill(); });
+  const shC = { x: (shL.x + shR.x) / 2, y: (shL.y + shR.y) / 2 };
+  seg(hips, shC, .34, shirt); seg(shL, shR, .2, shirt);
+  ctx.fillStyle = 'rgba(0,0,0,.08)'; ctx.beginPath(); ctx.moveTo(hips.x, hips.y); ctx.lineTo(shC.x, shC.y); ctx.lineTo(shR.x, shR.y); ctx.fill();
+  seg(shR, hands, .1, shirt); seg(shL, hands, .1, shirt);
+  ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(hands.x, hands.y, .06 * s, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(head.x, head.y, .12 * s, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1f2a44'; ctx.beginPath(); ctx.arc(head.x, head.y - .03 * s, .125 * s, Math.PI * 1.05, Math.PI * 2.05); ctx.fill();
+  ctx.fillRect(head.x - .02 * s, head.y - .05 * s, .2 * s, .04 * s);
+  if (!behindClub) seg(hands, clubH, .035, '#1d1d1d');
+  ctx.fillStyle = '#444'; ctx.beginPath(); ctx.ellipse(clubH.x, clubH.y, .07 * clubH.s, .035 * clubH.s, 0, 0, Math.PI * 2); ctx.fill();
+}
+
+// ───────────────────────── swing + flight state ─────────────────────────
+const B = { phase: 'idle', x: 0, y: 0, z: 0, trail: [], r: null, u: 0, spin: { x: 0, y: 0 }, spinV: 0, spinX: 0, roll: null };
+const G = { phi: 0, target: 0, arrived: null, mode: 'rest', from: 0, t0: 0 };
+const SW = { active: false, press: null, pts: [], depth: 0, deep: [0, 0], tTrans: 0, off: 0, el: null };
+const spinPts = DIMPLES.map(p => p.slice());
+
+function resetBall() {
+  Object.assign(B, { phase: 'idle', x: 0, y: 0, z: 0, trail: [], u: 0, ft: 0, spin: { x: 0, y: 0 }, spinV: 0, spinX: 0, roll: null });
+  Object.assign(G, { phi: 0, target: 0, arrived: null, mode: 'rest' });
+  Object.assign(cam, { x: -.35, y: 1.7, z: -5.5 });
+  document.getElementById('spinSlot').classList.add('off');
+  document.getElementById('spinLabel').textContent = 'Swipe the ball to add spin';
+}
+
+const padEl = document.getElementById('padSlot');
+const padLocal = e => { const r = padEl.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * 200 - 100, (e.clientY - r.top) / r.height * 200 - 100]; };
+const pathD = pts => pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('');
+function setPad(pt) {
+  const svg = padEl.querySelector('svg'); if (!svg) return;
+  svg.querySelector('.puck').setAttribute('transform', `translate(${clamp(pt[0], -80, 80)} ${clamp(pt[1], -95, 95)})`);
+  svg.querySelector('.trail-b').setAttribute('d', pathD(SW.pts.filter(p => p[2] === 'b')));
+  svg.querySelector('.trail-d').setAttribute('d', pathD(SW.pts.filter(p => p[2] === 'd')));
+  svg.classList.toggle('at-top', SW.active && SW.phase === 'back' && G.arrived !== null && SW.depth > 12);
+}
+function closePops() { document.getElementById('clubPop').hidden = true; document.getElementById('modePop').hidden = true; }
+
+padEl.addEventListener('pointerdown', e => {
+  if (SW.active || B.phase === 'flight' || B.phase === 'roll' || B.phase === 'swing') return;
+  closePops(); resetBall();
+  padEl.setPointerCapture(e.pointerId);
+  const p = padLocal(e);
+  Object.assign(SW, { active: true, phase: 'back', press: p, pts: [[0, 0, 'b']], depth: 0, deep: [0, 0], t0: performance.now(), driftSum: 0, driftN: 0 });
+  G.mode = 'back'; G.phi = 0; G.target = 0; G.arrived = null;
+  e.preventDefault();
+});
+padEl.addEventListener('pointermove', e => {
+  if (!SW.active) return;
+  const q = padLocal(e), p = [q[0] - SW.press[0], q[1] - SW.press[1]], now = performance.now();
+  const M = MODES[S.mode];
+  if (SW.phase === 'back') {
+    SW.pts.push([p[0], p[1], 'b']);
+    if (p[1] > 0) { SW.driftSum += Math.abs(p[0]); SW.driftN++; }
+    if (p[1] > SW.depth) { SW.depth = p[1]; SW.deep = p; }
+    G.target = M.top * clamp(SW.depth / 80, 0, 1);
+    if (SW.depth > 12 && p[1] < SW.depth - 10) { // started forward
+      SW.phase = 'down'; SW.tTrans = now;
+      const speed = M.top / M.tTop;
+      SW.off = G.arrived === null ? -((G.target - G.phi) / speed) * 1000 : now - G.arrived;
+      SW.topPhi = G.phi; G.mode = 'down'; SW.pts.push([p[0], p[1], 'd']);
+    }
+  } else if (SW.phase === 'down') {
+    SW.pts.push([p[0], p[1], 'd']);
+    G.phi = SW.topPhi * clamp((p[1] + 45) / (SW.deep[1] + 45), 0, 1);
+    if (p[1] < -45) strike(now, p);
+  }
+  setPad(p);
+});
+const endPointer = e => {
+  if (!SW.active) return;
+  const q = padLocal(e), p = [q[0] - SW.press[0], q[1] - SW.press[1]];
+  if (SW.phase === 'down') strike(performance.now(), p, true);
+  else { SW.active = false; G.mode = 'rest'; G.phi = 0; G.target = 0; if (SW.depth > 12) toast('Push up', 'Push up through the ball to swing', 'warn'); setPad([0, 0]); }
+};
+padEl.addEventListener('pointerup', endPointer);
+padEl.addEventListener('pointercancel', endPointer);
+
+function strike(now, p, released) {
+  SW.active = false;
+  const c = CLUBS[S.club], M = MODES[S.mode], L = LIES[S.lie];
+  const power = clamp(SW.depth / 80, .05, 1);
+  const pushMs = now - SW.tTrans;
+  const ang = clamp(Math.atan2(p[0] - SW.deep[0], SW.deep[1] - p[1]) * 180 / Math.PI, -35, 35);
+  const drift = SW.driftN ? SW.driftSum / SW.driftN / 80 : 0;
+  const off = SW.off;
+  const eT = off < -70 ? clamp((-off - 70) / 300, 0, 1) : off > 160 ? clamp((off - 160) / 600, 0, 1) : 0;
+  const eP = clamp((pushMs - 280) / 500, 0, 1) + (released ? .3 : 0);
+  const eB = clamp((drift - .06) / .25, 0, 1);
+  const e = clamp(eT + .6 * eB, 0, 1);
+  let carry = M.max(c) * power * L.pct / 100 * (1 - .12 * clamp(eP, 0, 1));
+  carry *= 1 - Math.random() * .09 * e;
+  let apex = S.mode === 'full' ? c.apex * (.75 + .25 * power) : S.mode === 'punch' ? c.apex * .42 : S.mode === 'pitch' ? 5 + carry * .12 : 8 + carry * .3;
+  apex *= 1 + rnd() * .28 * e;
+  const curve = carry * (ang / 35) * .22 * c.curve;
+  const start = -.4 * curve + gauss() * carry * .04 * e + gauss() * carry * .03 * eB + L.side * L.slope * carry * .006;
+  const rollF = S.mode === 'full' ? c.roll : S.mode === 'punch' ? c.roll * 2.2 + .04 : S.mode === 'pitch' ? .12 : .04;
+  const T = S.mode === 'full' ? 2.4 + carry / 110 : S.mode === 'punch' ? 1.8 + carry / 140 : S.mode === 'pitch' ? 1.8 + carry / 90 : 2.3;
+  const shape = Math.abs(ang) < 3 ? 'Straight' : ang < 0 ? (ang > -12 ? 'Draw' : 'Hook') : (ang < 12 ? 'Fade' : 'Slice');
+  const tempoWord = eT === 0 && eP < .2 ? 'Smooth' : off < -70 ? 'Quick' : off > 160 ? 'Late' : 'Slow push';
+  const tempoCls = tempoWord === 'Smooth' ? 'good' : (eT > .5 || eP > .5) ? 'bad' : 'warn';
+  const why = tempoWord === 'Smooth' ? `${shape}${Math.abs(ang) >= 3 ? ` · pushed ${Math.abs(ang).toFixed(0)}° ${ang < 0 ? 'left' : 'right'}` : ''}` : tempoWord === 'Quick' ? `Pushed ${Math.round(-off)} ms before the top` : tempoWord === 'Late' ? `Hung at the top for ${Math.round(off)} ms` : `Push took ${Math.round(pushMs)} ms. Snap it up quicker`;
+  S.last = { power, off, ang, shape, tempoWord, tempoCls, driftWord: eB === 0 ? 'Straight' : eB < .5 ? 'Wobbly' : 'Off line', driftCls: eB === 0 ? 'good' : eB < .5 ? 'warn' : 'bad', done: false };
+  B.r = { carry, apex, curve, start, rollF, T, c, wedge: !!c.pitch };
+  B.phase = 'swing'; G.mode = 'follow'; G.from = 0; G.t0 = now; G.phi = 0;
+  toast(tempoWord, why, tempoCls);
+  renderCard();
+  setPad([0, 0]);
+  setTimeout(() => { SW.pts = []; setPad([0, 0]); }, 900);
+  setTimeout(() => { B.phase = 'flight'; B.u = 0; document.getElementById('spinSlot').classList.remove('off'); }, 60);
+}
+
+let toastT = 0;
+function toast(word, why, cls) {
+  const t = document.getElementById('toast');
+  t.innerHTML = `<span class="word ${cls}">${word}</span><span class="why">${why}</span>`;
+  t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 1800);
+}
+
+// spin input
+const spinCv = document.getElementById('spinCv'); let spinDrag = null;
+spinCv.addEventListener('pointerdown', e => { if (B.phase !== 'flight') return; spinCv.setPointerCapture(e.pointerId); spinDrag = [e.clientX, e.clientY]; e.preventDefault(); });
+spinCv.addEventListener('pointermove', e => {
+  if (!spinDrag || B.phase !== 'flight') return;
+  const r = spinCv.getBoundingClientRect(), k = 136 / r.width;
+  const dx = (e.clientX - spinDrag[0]) * k, dy = (e.clientY - spinDrag[1]) * k; spinDrag = [e.clientX, e.clientY];
+  let sx = B.spin.x + dx / 150, sy = B.spin.y - dy / 150; const m = Math.hypot(sx, sy); if (m > 1) { sx /= m; sy /= m; }
+  B.spin = { x: sx, y: sy };
+  document.getElementById('spinLabel').textContent = spinWords(B.spin) || 'Swipe the ball to add spin';
+});
+spinCv.addEventListener('pointerup', () => spinDrag = null);
+spinCv.addEventListener('pointercancel', () => spinDrag = null);
+
+// ───────────────────────── loop ─────────────────────────
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const M = MODES[S.mode];
+  // golfer
+  if (G.mode === 'back') {
+    const speed = M.top / M.tTop;
+    if (G.phi < G.target) G.phi = Math.min(G.target, G.phi + speed * dt);
+    if (G.target - G.phi > .04) G.arrived = null; else if (G.arrived === null && SW.depth > 12) G.arrived = now;
+    if (SW.active) setPad(SW.pts.length ? SW.pts[SW.pts.length - 1] : [0, 0]);
+  } else if (G.mode === 'follow') {
+    const k = clamp((now - G.t0) / 520, 0, 1), e = 1 - Math.pow(1 - k, 3);
+    G.phi = M.finish * e * (B.r ? clamp(.55 + .45 * B.r.carry / Math.max(1, M.max(B.r.c)), .55, 1) : 1);
+  }
+  // ball
+  if (B.phase === 'flight') {
+    const r = B.r; B.u += dt / r.T; B.ft = (B.ft || 0) + dt; const u = Math.min(1, B.u);
+    const A = .16 * r.carry / (r.T * r.T);
+    B.spinV += B.spin.x * A * dt; B.spinX += B.spinV * dt;
+    B.z = r.carry * (u * (1.35 - .35 * u));
+    B.y = r.apex * Math.sin(Math.PI * Math.pow(u, 1.2)) * (1 - .1 * Math.max(0, B.spin.y));
+    B.x = r.start * u + r.curve * u * u + B.spinX;
+    B.trail.push([B.x, B.y, B.z]); if (B.trail.length > 240) B.trail.shift();
+    if (B.u >= 1) {
+      B.y = 0; B.phase = 'roll';
+      const hx = r.start + 2 * r.curve + B.spinV * r.T, hz = r.carry * .65, hl = Math.hypot(hx, hz);
+      const sy = B.spin.y; let dist = r.carry * r.rollF * (sy >= 0 ? 1 + 1.5 * sy : 1 + 2.4 * sy);
+      if (!r.wedge) dist = Math.max(0, dist); else dist = Math.max(-.05 * r.carry, dist);
+      B.roll = { x0: B.x, z0: B.z, dx: hx / hl, dz: hz / hl, dist, t: 0, T: .7 + Math.abs(dist) / 22, hop: Math.min(1.2, r.apex * .04) };
+      S.last.carryOut = Math.hypot(B.x, B.z);
+      const sw = spinWords(B.spin); document.getElementById('spinLabel').textContent = sw ? 'Spin: ' + sw : 'No spin added';
+    }
+  } else if (B.phase === 'roll') {
+    const R = B.roll; R.t += dt; const k = clamp(R.t / R.T, 0, 1), e = 1 - Math.pow(1 - k, 2.4);
+    B.x = R.x0 + R.dx * R.dist * e; B.z = R.z0 + R.dz * R.dist * e;
+    B.y = k < .35 ? R.hop * Math.abs(Math.sin(k / .35 * Math.PI)) * (1 - k / .35) : 0;
+    B.trail.push([B.x, B.y, B.z]); if (B.trail.length > 240) B.trail.shift();
+    if (k >= 1) {
+      B.phase = 'done'; G.mode = 'rest-finish';
+      Object.assign(S.last, { done: true, total: Math.hypot(B.x, B.z), offline: B.x });
+      renderCard();
+      setTimeout(() => { if (B.phase === 'done') document.getElementById('spinSlot').classList.add('off'); }, 1600);
+    }
+  }
+  // camera follows the ball once it is away
+  if ((B.phase === 'flight' || B.phase === 'roll' || B.phase === 'done') && B.z > 6 && B.ft > .5) {
+    const tz = B.z - 62, ty = 3.2 + B.y * .55, tx = B.x * .7 - .35, k = 1 - Math.pow(.025, dt);
+    cam.z += (tz - cam.z) * k; cam.y += (ty - cam.y) * k; cam.x += (tx - cam.x) * k;
+  }
+  drawScene(G.phi, cam.z < -1);
+  // spin ball
+  if (!document.getElementById('spinSlot').classList.contains('off')) {
+    const spinRate = B.phase === 'flight' ? 1 : .15;
+    rotPts(spinPts, (-1.2 - B.spin.y * 4) * dt * spinRate * 3, B.spin.x * 4 * dt * spinRate * 3);
+    drawSpinBall(spinCv, spinPts, B.spin, S.skin, B.phase === 'flight');
+  }
+  requestAnimationFrame(tick);
+}
+
+// ───────────────────────── HUD rendering + controls ─────────────────────────
+function renderCard() { document.getElementById('cardSlot').innerHTML = resultCard(S.last); }
+function renderHUD() {
+  document.getElementById('clubSlot').innerHTML = clubBtn(S.club, S.mode);
+  document.getElementById('modeSlot').innerHTML = modeBtn(S.mode);
+  document.getElementById('lieSlot').innerHTML = lieCard(S.lie);
+  renderCard();
+  const cp = document.getElementById('clubPop'), mp = document.getElementById('modePop');
+  if (!cp.hidden) cp.innerHTML = clubList(S.club, S.mode);
+  if (!mp.hidden) mp.innerHTML = modeList(S.club, S.mode);
+}
+function setSkin(k) {
+  S.skin = k; stage.className = 'stage skin-' + k;
+  document.querySelectorAll('[data-skin]').forEach(b => b.setAttribute('aria-pressed', b.dataset.skin === k));
+  padEl.innerHTML = padSVG(k);
+  renderHUD();
+  drawSpinBall(spinCv, spinPts, B.spin, k, B.phase === 'flight');
+  try { localStorage.setItem('golf-skin', k); } catch (_) {}
+}
+stage.addEventListener('click', e => {
+  const a = e.target.closest('[data-act]'), cb = e.target.closest('[data-club]'), mb = e.target.closest('[data-mode]');
+  const cp = document.getElementById('clubPop'), mp = document.getElementById('modePop');
+  if (cb && !cb.disabled) { S.club = +cb.dataset.club; cp.hidden = true; renderHUD(); return; }
+  if (mb && !mb.disabled) { S.mode = mb.dataset.mode; mp.hidden = true; renderHUD(); return; }
+  if (!a) { if (!e.target.closest('.pop')) closePops(); return; }
+  if (a.dataset.act === 'club') { mp.hidden = true; cp.hidden = !cp.hidden; cp.innerHTML = clubList(S.club, S.mode); }
+  if (a.dataset.act === 'mode') { cp.hidden = true; mp.hidden = !mp.hidden; mp.innerHTML = modeList(S.club, S.mode); }
+  if (a.dataset.act === 'lie') { closePops(); S.lie = (S.lie + 1) % LIES.length; renderHUD(); }
+});
+document.querySelectorAll('[data-skin]').forEach(b => b.addEventListener('click', () => setSkin(b.dataset.skin)));
+
+// scale the 960×540 stage to fit
+function fit() {
+  const fs = document.fullscreenElement === wrap;
+  const w = fs ? window.innerWidth : wrap.clientWidth, h = fs ? window.innerHeight : Infinity;
+  const k = Math.min(w / W, h / H);
+  stage.style.transform = `scale(${k})`;
+  wrap.style.height = fs ? '' : (H * k) + 'px';
+  stage.style.transformOrigin = fs ? 'center' : '0 0';
+}
+new ResizeObserver(fit).observe(wrap.parentElement);
+window.addEventListener('resize', fit);
+document.addEventListener('fullscreenchange', fit);
+document.getElementById('fsBtn').addEventListener('click', async () => {
+  try { if (document.fullscreenElement) await document.exitFullscreen(); else { await wrap.requestFullscreen(); try { await screen.orientation.lock('landscape'); } catch (_) {} } }
+  catch (_) { document.getElementById('fsBtn').textContent = 'Full screen not available here'; }
+});
+
+// ───────────────────────── look sheets ─────────────────────────
+const SHEETS = [
+  { k: 'a', name: 'Sunday Broadcast', tag: 'A', blurb: 'Reads like a TV golf graphic. Navy glass, white condensed type, a gold top edge and clipped corners. Most realistic and most readable over grass and sky.', sw: ['#0a1630', '#ffffff', '#ffc72c', '#2fd3ff'], club: 3, mode: 'full', lie: 1, spin: { x: -.35, y: -.5 }, trail: { b: 'M0 0 L1 20 L2 45 L2 70 L1 78', d: 'M1 78 L-2 40 L-6 0 L-10 -40 L-13 -60', puck: [-13, -60] } },
+  { k: 'b', name: 'Clubhouse', tag: 'B', blurb: 'Heritage country-club feel. Green enamel, cream and brass, serif numerals, a pad like a watch face. Calm and premium; slightly less punchy on a bright screen.', sw: ['#10301f', '#f4ecd8', '#d4ad57', '#9fd38a'], club: 11, mode: 'pitch', lie: 3, spin: { x: 0, y: -.8 }, trail: { b: 'M0 0 L-2 18 L-4 35 L-3 52', d: 'M-3 52 L-2 20 L0 -15 L1 -55', puck: [1, -55] } },
+  { k: 'c', name: 'Y2K Pro Tour', tag: 'C', blurb: 'A nod to turn-of-the-century console golf. Chrome bevels, electric blue, sunburst yellow and italic heavy type. Loud and fun, very arcade.', sw: ['#1b3fd9', '#d9e1f2', '#ffe234', '#ff8a00'], club: 12, mode: 'flop', lie: 2, spin: { x: .5, y: .3 }, trail: { b: 'M0 0 L4 25 L10 55 L15 76 L16 80', d: 'M16 80 L18 40 L22 0 L28 -40 L32 -58', puck: [32, -58] } },
+];
+document.getElementById('sheets').innerHTML = SHEETS.map(s => `
+  <article class="sheet">
+    <header><h3>${s.name}<small>Look ${s.tag}</small></h3><p>${s.blurb}</p><div class="swatches">${s.sw.map(c => `<i style="background:${c}"></i>`).join('')}</div></header>
+    <div class="board skin-${s.k}">
+      <div class="pair">${clubBtn(s.club, s.mode)}${modeBtn(s.mode)}</div>
+      ${lieCard(s.lie)}
+      <div class="hud-panel">${modeList(s.club, s.mode)}</div>
+      <div class="bottom"><div class="pad-demo">${padSVG(s.k, s.trail)}</div>
+      <div class="spin-demo"><canvas width="240" height="240" data-spin="${s.k}" aria-label="Spin ball in look ${s.tag}"></canvas><div class="spin-label">${spinWords(s.spin)}</div></div></div>
+    </div>
+  </article>`).join('');
+document.querySelectorAll('canvas[data-spin]').forEach(c => { const s = SHEETS.find(x => x.k === c.dataset.spin); const pts = DIMPLES.map(p => p.slice()); rotPts(pts, .6, .4); drawSpinBall(c, pts, s.spin, s.k, true); });
+// the sheets are static pictures: make their buttons inert
+document.querySelectorAll('.sheet button').forEach(b => { b.tabIndex = -1; b.style.pointerEvents = 'none'; });
+
+let start = 'a'; try { start = localStorage.getItem('golf-skin') || 'a'; } catch (_) {}
+setSkin(['a', 'b', 'c'].includes(start) ? start : 'a');
+fit();
+requestAnimationFrame(t => { last = t; tick(t); });
+})();
+</script>
