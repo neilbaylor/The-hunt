@@ -53,27 +53,46 @@ const LIE_WORD: Record<string, [string, 'good' | 'ok' | 'meh' | 'bad', 'tee' | '
   'Rough': ['Heavy', 'bad', 'rough'], 'Fairway bunker': ['Sandy', 'meh', 'sand'],
 };
 /** a tiny illustrated scene: ball sitting on a tilted strip of turf, an arrow for where it will start */
+/** a crisp little Pro V1x for the lie tile (front face, slight tilt), cached */
+let lieBallCache = '';
+const lieBallURL = () => { if (!lieBallCache) { const m = mat3Identity(); mat3Rotate(m, 0.25, 0.35); lieBallCache = shadeBall(72, m).toDataURL(); } return lieBallCache; };
+/** deterministic jitter so the turf looks the same every render */
+const rnd = (i: number) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+/** the lie tile: layered turf that tilts with the slope, a real ball sitting in it (on a tee, nestled in rough, in sand) */
 const lieScene = (slope: number, side: number, kind: string) => {
-  const tilt = (-side * Math.min(20, slope * 4.5)).toFixed(1);
-  const turf = kind === 'sand' ? ['#f3dfae', '#d9bd7c'] : kind === 'rough' ? ['#4f9a3a', '#2f6d27'] : kind === 'tee' ? ['#8fd468', '#5aa83e'] : ['#7cc95a', '#4c9a35'];
-  let tufts = '';
-  const n = kind === 'rough' ? 14 : kind === 'sand' ? 0 : 9;
-  for (let i = 0; i < n; i++) { const x = -6 + i * (84 / n) + (i % 2) * 2, h = kind === 'rough' ? 5 + (i % 3) * 2 : 3 + (i % 2); tufts += `<path d="M${x} 34 l1.5 -${h} l1.2 ${h}" fill="${turf[1]}"/>`; }
-  const ripples = kind === 'sand' ? '<path d="M6 40 q6 -2 12 0 t12 0 M30 46 q6 -2 12 0 t12 0" stroke="#c9a862" stroke-width="1.2" fill="none"/>' : '';
-  const arrow = side ? `<g class="lie-arrow" style="--dir:${side}"><path d="M36 ${13} q${side * 13} -5 ${side * 22} 2" fill="none" stroke="#c8102e" stroke-width="3.2" stroke-linecap="round"/><path d="M${36 + side * 26} 16 l${-side * 8} -6 l${-side * 1} 8 z" fill="#c8102e"/></g>`
-    : `<g class="lie-level"><rect x="23" y="7" width="26" height="9" rx="4.5" fill="#fff" stroke="#13294b" stroke-width="1.6"/><circle cx="36" cy="11.5" r="2.6" fill="#17a558"/></g>`;
+  const tilt = (-side * Math.min(18, slope * 4)).toFixed(1), gy = 36, uid = 'ls' + kind;
+  const look = {
+    tee:     { sky: ['#a8d5f5', '#e2f2fc'], soil: ['#6fbf4a', '#3f8a2c'], back: '#4f9a35', front: '#7fd055', hi: '#c6f08c', h: [2.5, 4], n: 34, stripe: .14 },
+    fairway: { sky: ['#a8d5f5', '#e2f2fc'], soil: ['#69b847', '#3a7f2a'], back: '#468f31', front: '#73c64e', hi: '#b9ea83', h: [3.5, 5.5], n: 30, stripe: .2 },
+    cut:     { sky: ['#a8d5f5', '#e2f2fc'], soil: ['#5aa63e', '#356f26'], back: '#3e8129', front: '#66b745', hi: '#a9dd78', h: [5, 8], n: 30, stripe: .1 },
+    rough:   { sky: ['#a9cfee', '#dfeef8'], soil: ['#3f7f2b', '#24521a'], back: '#2b5e1e', front: '#4a8f30', hi: '#8ec462', h: [9, 16], n: 46, stripe: 0 },
+    sand:    { sky: ['#b2dbf7', '#f3f1e6'], soil: ['#f1dca8', '#d6b779'], back: '', front: '', hi: '', h: [0, 0], n: 0, stripe: 0 },
+  }[kind as 'tee'] ?? null;
+  const L = look!;
+  // blades: a back layer (darker), the ball, then a front layer (lighter, with a highlight edge) that can hide part of it
+  const blade = (i: number, col: string, hiCol: string, scale: number) => {
+    const x = -16 + rnd(i) * 104, h = (L.h[0] + rnd(i + 7) * (L.h[1] - L.h[0])) * scale, lean = (rnd(i + 3) - 0.5) * h * 0.7, w = 1.2 + rnd(i + 5) * 1.3;
+    return `<path d="M${(x - w).toFixed(1)} ${gy + 0.6} Q${(x + lean * 0.4).toFixed(1)} ${(gy - h * 0.55).toFixed(1)} ${(x + lean).toFixed(1)} ${(gy - h).toFixed(1)} Q${(x + lean * 0.3 + w * 0.3).toFixed(1)} ${(gy - h * 0.5).toFixed(1)} ${(x + w).toFixed(1)} ${gy + 0.6} Z" fill="${col}"/>` + (hiCol ? `<path d="M${(x + lean * 0.4).toFixed(1)} ${(gy - h * 0.5).toFixed(1)} Q${(x + lean * 0.7).toFixed(1)} ${(gy - h * 0.8).toFixed(1)} ${(x + lean).toFixed(1)} ${(gy - h).toFixed(1)}" stroke="${hiCol}" stroke-width=".6" fill="none" opacity=".8"/>` : '');
+  };
+  let back = '', front = '';
+  for (let i = 0; i < L.n; i++) back += blade(i, L.back, '', 1.05);
+  for (let i = 0; i < L.n; i++) front += blade(i + 101, L.front, L.hi, kind === 'rough' ? 0.95 : 0.8);
+  const stripes = L.stripe ? Array.from({ length: 6 }, (_, i) => `<path d="M${-30 + i * 22} ${gy} l14 0 l-10 30 l-14 0 Z" fill="#fff" opacity="${i % 2 ? 0 : L.stripe}"/>`).join('') : '';
+  const sand = kind === 'sand' ? Array.from({ length: 5 }, (_, i) => `<path d="M-14 ${gy + 3 + i * 3.4} q9 -1.6 18 0 t18 0 t18 0 t18 0 t18 0" stroke="#c9a663" stroke-width=".9" fill="none" opacity=".75"/>`).join('') + `<path d="M-14 ${gy + 0.4} q50 -2.2 100 0" stroke="#fff6dc" stroke-width="1" fill="none" opacity=".8"/>` : '';
+  // the ball: ~33% of the tile height; on a tee, sitting down in rough, a touch down in sand
+  const r = 8.6, cx = 36;
+  const cy = kind === 'tee' ? gy - r - 5.5 : kind === 'rough' ? gy - r + 4.5 : kind === 'cut' ? gy - r + 1.5 : kind === 'sand' ? gy - r + 2 : gy - r + 0.6;
+  const tee = kind === 'tee' ? `<path d="M${cx - 3.6} ${gy - 5.6} h7.2 l-1.6 2.2 h-1.1 l-.5 9 h-1 l-.5 -9 h-1.1 Z" fill="#fffdf6" stroke="#cfc6b0" stroke-width=".5"/>` : '';
+  const shadow = `<ellipse cx="${cx + 1}" cy="${(kind === 'tee' ? gy : Math.min(gy + 0.5, cy + r)).toFixed(1)}" rx="${r * 0.95}" ry="2.1" fill="rgba(0,0,0,.28)"/>`;
+  const ballImg = `<image href="${lieBallURL()}" x="${cx - r}" y="${(cy - r).toFixed(1)}" width="${2 * r}" height="${2 * r}"/>`;
   return `<svg class="lie-scene" viewBox="0 0 72 52" aria-hidden="true">
-    <defs><linearGradient id="lsky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9f0ff"/><stop offset="1" stop-color="#fff6e0"/></linearGradient>
-    <linearGradient id="lturf${kind}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${turf[0]}"/><stop offset="1" stop-color="${turf[1]}"/></linearGradient>
-    <radialGradient id="lball" cx="38%" cy="32%"><stop offset="0" stop-color="#fff"/><stop offset=".7" stop-color="#eef1f4"/><stop offset="1" stop-color="#c3cbd4"/></radialGradient></defs>
-    <rect width="72" height="52" rx="12" fill="url(#lsky)"/>
+    <defs><linearGradient id="${uid}sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${L.sky[0]}"/><stop offset="1" stop-color="${L.sky[1]}"/></linearGradient>
+    <linearGradient id="${uid}soil" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${L.soil[0]}"/><stop offset="1" stop-color="${L.soil[1]}"/></linearGradient></defs>
+    <rect width="72" height="52" fill="url(#${uid}sky)"/>
     <g class="lie-tilt" style="--tilt:${tilt}deg">
-      <rect x="-14" y="31" width="100" height="32" fill="url(#lturf${kind})"/>${ripples}${tufts}
-      <ellipse cx="36" cy="33.5" rx="7" ry="1.6" fill="rgba(0,0,0,.25)"/>
-      <circle cx="36" cy="27" r="6.6" fill="url(#lball)"/>
-      <circle cx="34" cy="25" r=".8" fill="#b9c2cc"/><circle cx="37.5" cy="24.4" r=".8" fill="#b9c2cc"/><circle cx="38.6" cy="28" r=".8" fill="#b9c2cc"/><circle cx="34.6" cy="28.8" r=".8" fill="#b9c2cc"/>
+      <rect x="-20" y="${gy}" width="112" height="40" fill="url(#${uid}soil)"/>${stripes}${sand}
+      ${back}${tee}${shadow}${ballImg}${front}
     </g>
-    ${arrow}
   </svg>`;
 };
 const slopeIcon = (slope: number, side: number) => {
@@ -344,12 +363,12 @@ export class Hud {
     this.q('#modeSlot').innerHTML = '';
     const L = LIES[this.lie];
     const [word, q, kind] = LIE_WORD[L.name] ?? ['Okay', 'ok', 'fairway'];
-    const where = L.side ? (L.side < 0 ? 'starts left' : 'starts right') : 'flat';
+    const where = L.side ? (L.side < 0 ? 'ball above feet, starts left' : 'ball below feet, starts right') : 'flat';
     this.q('#lieSlot').innerHTML = this.skin === 'f'
       ? `<button type="button" class="hud-panel lie-card lie-w" data-act="lie" aria-label="Lie: ${L.name}, ${word}, ${L.pct} percent distance, ${L.slope} degree slope, ball ${where}. Tap for another sample lie">
         ${lieScene(L.slope, L.side, kind)}
         <span class="lie-txt"><span class="lie-name${L.name.length > 10 ? ' long' : ''}">${L.name}</span><span class="lie-q ${q}">${word} · ${L.pct}%</span>
-        <span class="lie-slope"><b>${L.slope}°</b><small>${where}</small></span></span></button>`
+        <span class="lie-slope ${L.slope === 0 ? 'flat' : L.slope <= 3 ? 'mid' : 'steep'}"><b>${L.slope}°</b><small>${L.slope === 0 ? 'flat' : `${L.side < 0 ? '▲ above feet' : '▼ below feet'}`}</small></span></span></button>`
       : `<button type="button" class="hud-panel lie-card" data-act="lie" aria-label="Lie: ${L.name}, ${L.pct} percent, slope ${L.slope} degrees. Tap for another sample lie"><span class="eyebrow-h">Lie</span>
       <span class="lie-top">${lieRing(L.pct)}<span><span class="big" style="display:block">${L.name}</span><span class="sub">${L.pct}% distance</span></span></span>
       <span class="slope">${slopeIcon(L.slope, L.side)}<span class="deg">${L.slope}°</span><span class="sub">${L.txt}</span></span></button>`;

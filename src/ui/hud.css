@@ -494,3 +494,10 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 .hud .pop .seg button { all: unset; flex: 1; text-align: center; cursor: pointer; padding: 8px 6px; border-radius: 999px; font: 600 14px/1 var(--h-display); color: var(--navy); background: rgba(19,41,75,.07); }
 .hud .pop .seg button[aria-pressed="true"] { background: var(--navy); color: #fff6e3; box-shadow: 0 0 0 2px var(--flag); }
 .hud .pop .seg button:focus-visible { outline: 2px solid var(--h-accent); }
+
+/* lie tile: neutral ink when flat, amber / coral only when the slope matters */
+.lie-w .lie-slope.flat b { color: var(--navy); }
+.lie-w .lie-slope.mid b { color: #d98a00; }
+.lie-w .lie-slope.steep b { color: #e2553f; }
+.lie-w .lie-slope small { letter-spacing: .01em; }
+.lie-w .lie-scene { background: #cfeaff; }
