@@ -44,6 +44,17 @@ const BODY: Record<FabricKind, string> = {
     col *= 1.0 - 0.06 * band;
     col *= 1.0 - 0.03 * sg; stitch += 0.0; hemStitch += 0.0;
     col *= 0.94 + 0.12 * fbm3(vB * 60.0); // melange
+    // sleeve bands: two thin contrast stripes just above the hem (sleeves only: away from the torso hem)
+    float sleeve = step(uBeltY + 0.25, vB.y) * step(0.16, abs(vB.x));
+    float tip1 = 1.0 - smoothstep(0.0012, 0.0024, abs(hem - 0.022));
+    float tip2 = 1.0 - smoothstep(0.0008, 0.0018, abs(hem - 0.029));
+    col = mix(col, uTip, sleeve * max(tip1, tip2 * 0.85));
+    // embroidered crest on the chest (planar projection from the front)
+    vec2 cuv = vec2((vB.x - uCrestC.x) / uCrestS + 0.5, (vB.y - uCrestC.y) / abs(uCrestS) * 1.2 + 0.5);
+    float inC = step(uCrestC.z - 0.03, vB.z) * step(0.0, cuv.x) * step(cuv.x, 1.0) * step(0.0, cuv.y) * step(cuv.y, 1.0);
+    vec4 cr = texture2D(uCrest, clamp(cuv, 0.0, 1.0));   // sampled outside any branch so mip selection is well-defined
+    col = mix(col, cr.rgb * 0.95, cr.a * inC);
+    h += 0.0005 * cr.a * inC; // raised embroidery
   `,
   chino: /* glsl */ `
     float hem = vC.x, seam = vC.y, crease = vC.z;
@@ -92,17 +103,21 @@ const BODY: Record<FabricKind, string> = {
   `,
 };
 
-export interface FabricUniforms { kneeY: number; ankleY: number; beltY: number; backZ: number }
+export interface FabricUniforms { kneeY: number; ankleY: number; beltY: number; backZ: number;
+  /** chest crest: texture, centre (bind space), size (m), mirror for left-handers */ crest?: { tex: THREE.Texture; c: THREE.Vector3; size: number; flip: boolean };
+  tipping?: THREE.Color }
 
 export function applyFabric(mat: THREE.MeshPhysicalMaterial | THREE.MeshStandardMaterial, kind: FabricKind, u: FabricUniforms, bumpScale = 1) {
   mat.onBeforeCompile = sh => {
     sh.uniforms.uKneeY = { value: u.kneeY }; sh.uniforms.uAnkleY = { value: u.ankleY };
     sh.uniforms.uBeltY = { value: u.beltY }; sh.uniforms.uBackZ = { value: u.backZ };
+    sh.uniforms.uCrest = { value: u.crest?.tex ?? null }; sh.uniforms.uCrestC = { value: u.crest?.c ?? new THREE.Vector3(0, -9, 0) };
+    sh.uniforms.uCrestS = { value: u.crest ? u.crest.size * (u.crest.flip ? -1 : 1) : 1 }; sh.uniforms.uTip = { value: u.tipping ?? new THREE.Color('#ffffff') };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 cloth;\nvarying vec3 vB;\nvarying vec4 vC;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvB = position; vC = cloth;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vB;\nvarying vec4 vC;\nuniform float uKneeY, uAnkleY, uBeltY, uBackZ;\n${NOISE}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vB;\nvarying vec4 vC;\nuniform float uKneeY, uAnkleY, uBeltY, uBackZ;\nuniform sampler2D uCrest; uniform vec3 uCrestC; uniform float uCrestS; uniform vec3 uTip;\n${NOISE}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         float h = 0.0; vec3 col = diffuseColor.rgb;
         ${BODY[kind]}

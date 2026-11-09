@@ -6,6 +6,7 @@ import type { Body, Skeleton as SkelInfo } from './body';
 import type { GolferProfile } from './profile';
 import { buildVisor } from './headwear';
 import { applyFabric } from './fabric';
+import crestUrl from '../assets/brand/toronto-hunt-crest.png?url';
 
 export interface HumanData {
   meta: {
@@ -123,7 +124,14 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   applyFabric(skinMat, 'skin', fu);
   const skin = add('skin', skinMat)!;
   const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.4, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-  applyFabric(shirtMat, 'polo', fu);
+  {
+    // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
+    const crest = new THREE.TextureLoader().load(crestUrl); crest.colorSpace = THREE.SRGBColorSpace; crest.anisotropy = 8;
+    const chest = J[M.bones.indexOf('spine_02')];
+    const side = p.handed === 'left' ? -1 : 1;
+    const cz = M.collar.reduce((a, c) => Math.max(a, c[2]), -9) - 0.01;
+    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
+  }
   add('shirt', shirtMat);
   const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.82, sheen: 0.3, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.6), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   applyFabric(pantsMat, 'chino', fu);

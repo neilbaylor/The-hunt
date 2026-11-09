@@ -79,7 +79,7 @@ export const NEIL: GolferProfile = {
     top: 'polo',
     shirt: '#1f2f4f',
     topColor: '#d6d3cc',
-    topTrim: '#c9c5bd',
+    topTrim: '#f2c21b',
     emblem: '#b3262e',
     pants: '#c9bfa6',
     shoes: '#f3f2ee',

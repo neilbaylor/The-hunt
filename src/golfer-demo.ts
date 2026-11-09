@@ -101,4 +101,4 @@ if (view === 'probe') {
     return out;
   };
 }
-(window as any).__ready = true;
+setTimeout(() => { renderer.render(scene, cam); (window as any).__ready = true; }, 700);
