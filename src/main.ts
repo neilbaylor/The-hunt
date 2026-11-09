@@ -655,7 +655,7 @@ function frame(now: number) {
   // the hand-drawn finish keeps his face clean: it needs the head's screen position each frame
   if (post.finish === 'hand' && golfer.body.bones[5]) post.setFace(golfer.body.bones[5].getWorldPosition(_faceHead), 0.15);
   post.render(dt);
-  faceBadge.draw(state !== 'intro' && !aimCtl.active && !document.hidden);
+  faceBadge.draw((state !== 'intro' || QS.has('badge')) && (!aimCtl.active || QS.has('badge')) && !document.hidden);   // ?badge: draw it everywhere (badge checks)
   (window as any).__frameMs = performance.now() - r0;
   if (!manualClock) requestAnimationFrame(frame);
 }
