@@ -30,32 +30,33 @@ const IN = 0.0254;
 // see, from published 3D tour averages. Angles in radians as the rig reads them: chest = Rz(side)·Rx(tilt)·Ry(turn),
 // pelvis = Ry(turn)·Rz(side)·Rx(tilt); + turn opens toward the target, + side tilts the spine away from it.
 // hinge: wrist cock as a fraction of a full set (− = re-hinged in the follow-through); beta: hands carried round
-// the body (radians about the vertical); pro: trail shoulder reaching toward the ball.
-interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: number; chestTilt: number; chestSide: number; shift: number; drop: number; heel: number; shrug: number; pro: number; hinge: number; beta: number }
+// the body (radians about the vertical); pro: trail shoulder reaching toward the ball; reach: the hands' swing radius
+// as a multiple of the address one (a full top is a wide, high arc).
+interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: number; chestTilt: number; chestSide: number; shift: number; drop: number; heel: number; shrug: number; pro: number; hinge: number; beta: number; reach: number }
 const K = (o: Partial<Keys>, base: Keys): Keys => ({ ...base, ...o });
 // address: spine bent toward the ball and tilted away from the target (trail shoulder low, lead hip high)
-const A: Keys = { hipTurn: 0.04, hipTilt: 0.22, hipSide: 0.07, chestTurn: 0.04, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15, hinge: 0, beta: 0 };
+const A: Keys = { reach: 1, hipTurn: 0.04, hipTilt: 0.28, hipSide: 0.07, chestTurn: 0.04, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15, hinge: 0, beta: 0 };
 const TAKE = K({ hipTurn: -0.12, hipSide: 0.05, chestTurn: -0.5, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.18, beta: -0.06 }, A);
-const HALF = K({ hipTurn: -0.36, hipSide: 0.02, chestTurn: -0.98, chestTilt: 0.67, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.1 }, A);
-const B3Q = K({ hipTurn: -0.6, hipTilt: 0.21, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.69, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.18 }, A);
-const T: Keys = { hipTurn: -0.78, hipTilt: 0.2, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.18, pro: 0.1, hinge: 1, beta: -0.2 };
+const HALF = K({ reach: 1.06, hipTurn: -0.36, hipSide: 0.02, chestTurn: -0.98, chestTilt: 0.67, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.1 }, A);
+const B3Q = K({ reach: 1.16, hipTurn: -0.6, hipTilt: 0.26, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.69, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.18 }, A);
+const T: Keys = { reach: 1.22, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.18, pro: 0.1, hinge: 0.88, beta: -0.2 };
 // downswing: the hips lead (they're already unwinding while the chest is still turned), the trail side drops
-const TRANS = K({ hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
-const DOWN = K({ hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.72, beta: -0.16 }, T);
-const LATE = K({ hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.38, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.08, hinge: 0.45, beta: -0.08 }, T);
+const TRANS = K({ reach: 1.2, hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
+const DOWN = K({ reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.66, beta: -0.16 }, T);
+const LATE = K({ reach: 1.01, hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.38, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.08, hinge: 0.45, beta: -0.08 }, T);
 // delivery: lead arm about parallel on the way down, shaft lagging ~45° behind the hands on plane, hips already open,
 // trail elbow tucked in front of the trail hip
-const DELIV = K({ hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.04, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
-const I: Keys = { hipTurn: 0.7, hipTilt: 0.16, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.4, shift: 0.08, drop: -0.012, heel: 0.28, shrug: -0.05, pro: -0.13, hinge: 0, beta: 0 };
+const DELIV = K({ reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.04, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
+const I: Keys = { reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.4, shift: 0.08, drop: -0.012, heel: 0.28, shrug: -0.05, pro: -0.13, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
 const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.5, hinge: -0.08, beta: 0.08, pro: -0.12 }, I);
 const THRU = K({ hipTurn: 1.25, hipTilt: 0.1, hipSide: 0.05, chestTurn: 1.35, chestTilt: 0.14, chestSide: 0.28, shift: 0.13, drop: -0.035, heel: 0.8, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
 const T3Q = K({ hipTurn: 1.5, hipTilt: 0.06, hipSide: 0.02, chestTurn: 1.75, chestTilt: 0.03, chestSide: 0.2, shift: 0.16, drop: -0.04, heel: 0.95, shrug: -0.12, pro: -0.02, hinge: -0.85, beta: 0.42 }, I);
 // full finish: belt buckle and chest past the target, weight on the lead leg, upright with a slight reverse-C
-const F: Keys = { hipTurn: 1.58, hipTilt: 0.04, hipSide: 0.0, chestTurn: 1.9, chestTilt: 0.02, chestSide: 0.18, shift: 0.17, drop: -0.04, heel: 0.98, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.52 };
+const F: Keys = { reach: 1, hipTurn: 1.58, hipTilt: 0.08, hipSide: 0.0, chestTurn: 1.9, chestTilt: 0.02, chestSide: 0.18, shift: 0.17, drop: -0.04, heel: 0.98, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.52 };
 // held finish: fully rotated (buckle and chest a little past the target), all the weight on a straight lead leg,
 // trail foot up on its toe with the knee against the lead knee, upright with a slight reverse-C, hands by the head
-const HOLD: Keys = { hipTurn: 1.72, hipTilt: 0.02, hipSide: -0.02, chestTurn: 2.05, chestTilt: -0.04, chestSide: 0.24, shift: 0.19, drop: -0.045, heel: 1, shrug: -0.12, pro: 0, hinge: -1.0, beta: 0.6 };
+const HOLD: Keys = { reach: 1, hipTurn: 1.72, hipTilt: 0.07, hipSide: -0.02, chestTurn: 2.05, chestTilt: -0.04, chestSide: 0.24, shift: 0.19, drop: -0.045, heel: 1, shrug: -0.12, pro: 0, hinge: -1.0, beta: 0.6 };
 // where each key sits: back/follow by the hands' angle as a fraction of a full top/finish, down by fraction of this top
 const KF_BACK: [number, Keys][] = [[0, A], [0.3, TAKE], [0.55, HALF], [0.8, B3Q], [1, T]];
 const KF_DOWN: [number, Keys][] = [[0, T], [0.15, TRANS], [0.45, DOWN], [0.62, DELIV], [0.8, LATE], [1, I]];
@@ -112,6 +113,8 @@ export class Golfer {
   private leanSign = 1;
   /** extra forward bend from the hips found at set-up (radians), faded out as the golfer stands up in the finish */
   private tiltAdj = 0;
+  /** the trail foot's toes: their flat (on the ground) heel→toe direction, turned with the foot's pivot */
+  private trailToeFlat = new THREE.Vector3(0, 0, 1);
   private pelvisBase = new THREE.Vector3();
   readonly clubHeadWorld = new THREE.Vector3();
   readonly lefty: boolean;
@@ -247,23 +250,29 @@ export class Golfer {
     p.toeR.copy(p.ankleR).add(fR.applyAxisAngle(new THREE.Vector3(0, 1, 0), flareR));
     // trail heel comes up and the trail knee kicks in toward the target in the follow-through
     p.footUpL = undefined; p.footUpR = undefined;
+    this.trailToeFlat.copy(p.toeR).sub(p.ankleR).setY(0).normalize();
     if (heel > 0) {
-      // trail foot pivots on its toe: the heel swings out (laces turn toward the target), then lifts about the
-      // foot's own cross axis until the sole faces back. Never rolled onto its side.
+      // Trail foot after impact, as a tour player's: the heel comes up first and the foot rolls onto its inside edge
+      // and the ball of the foot; by the finish it stands up on the toe, heel turned out, laces to the target and the
+      // sole facing back. It pivots about the ball of the foot (the foot bone's tail, at ground level), which stays
+      // planted; the toes stay flat on the turf (see poseHands).
       const Yv = new THREE.Vector3(0, 1, 0);
-      const toe = p.toeR.clone(); toe.x += 0.03 * heel;
+      const ballJ = p.toeR.clone();
       const v = p.ankleR.clone().sub(p.toeR), up = Yv.clone();
-      const yaw = 1.25 * smooth(0.35, 1, heel);           // + about Y swings the heel toward -X (away from the target); comes after the lift
+      const yaw = 1.2 * smooth(0.4, 1, heel);             // + about Y swings the heel toward -X (away from the target), late
       v.applyAxisAngle(Yv, yaw); up.applyAxisAngle(Yv, yaw);
+      this.trailToeFlat.applyAxisAngle(Yv, yaw);
+      // inside-edge roll early on (the top of the foot tips toward the lead foot), gone by the finish
+      const roll = 0.32 * smooth(0, 0.35, heel) * (1 - smooth(0.55, 0.95, heel));
+      up.applyAxisAngle(this.trailToeFlat, -roll);
       const lat = new THREE.Vector3().crossVectors(Yv, v).normalize();
-      const lift = 1.05 * smooth(0, 0.8, heel);
+      const lift = 1.1 * smooth(0, 0.8, heel);
       const sgn = v.clone().applyAxisAngle(lat, 0.3).y > v.y ? 1 : -1;
       v.applyAxisAngle(lat, sgn * lift); up.applyAxisAngle(lat, sgn * lift);
-      p.ankleR.copy(toe).add(v);
-      p.toeR.copy(toe);
+      p.ankleR.copy(ballJ).add(v);
+      p.toeR.copy(ballJ);
       p.footUpR = up;
     }
-    p.kneePoleL.set(p.ankleL.x + 0.15 + shift, 0.5, fz + 1.0);
     // trail knee: points the way the trail foot points (kicks in toward the lead knee as the foot pivots), so the shin
     // never twists against the shoe
     const toeDir = p.toeR.clone().sub(p.ankleR).setY(0);
@@ -308,8 +317,8 @@ export class Golfer {
 
     // hands on the circle, carried round the body by beta; club rotated in the plane by phi + hinge
     const hands = this.circleC.clone()
-      .addScaledVector(this.e1, -this.rh * Math.cos(phi))
-      .addScaledVector(this.e2, this.rh * Math.sin(phi));
+      .addScaledVector(this.e1, -this.rh * key.reach * Math.cos(phi) + this.rh * (key.reach - 1))
+      .addScaledVector(this.e2, this.rh * key.reach * Math.sin(phi));
     const pivot = this.pelvisBase.clone();
     hands.sub(pivot).applyAxisAngle(new THREE.Vector3(0, 1, 0), beta).add(pivot);
     const psi = phi + hinge;
@@ -353,7 +362,7 @@ export class Golfer {
         const L = (v: number[]) => new THREE.Vector3(v[0], v[1], v[2]).applyQuaternion(qChest);
         const ARC = [   // [f, grip (from the neck, × body scale), shaft butt→head]
           [0.12, [0.06, -0.5, 0.4], [0.45, -0.22, 0.9]],
-          [0.33, [0.12, -0.25, 0.45], [0.15, 0.95, 0.25]],
+          [0.33, [0.12, -0.25, 0.45], [0.05, 0.78, 0.62]],   // shaft up and angled toward the target
           [0.55, [0.15, 0.02, 0.3], [0.12, 0.75, -0.65]],   // shaft up over the lead shoulder, heading behind the head
         ] as [number, number[], number[]][];
         let j = 0; while (j < ARC.length - 2 && f > ARC[j + 1][0]) j++;
@@ -439,8 +448,13 @@ export class Golfer {
         });
       });
     }
-    // toes stay flat on the ground when the heel comes up
-    local(E.ball.L, Q[BONE.footL], new THREE.Quaternion());
-    local(E.ball.R, Q[BONE.footR], new THREE.Quaternion());
+    // toes stay flat on the ground when the heel comes up: the toe bone keeps the foot's bind pitch (as at address)
+    // and only follows its turn about the vertical
+    const S = this.body.skel, flatQ = (fb: number, dir: THREE.Vector3) => {
+      const bind = S.tail[fb].clone().sub(S.joint[fb]).setY(0).normalize();
+      return new THREE.Quaternion().setFromUnitVectors(bind, dir.clone().setY(0).normalize());
+    };
+    local(E.ball.L, Q[BONE.footL], flatQ(BONE.footL, new THREE.Vector3(0, 0, 0).add(S.tail[BONE.footL]).sub(S.joint[BONE.footL]).applyQuaternion(Q[BONE.footL])));
+    local(E.ball.R, Q[BONE.footR], flatQ(BONE.footR, this.trailToeFlat));
   }
 }
