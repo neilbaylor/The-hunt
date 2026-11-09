@@ -339,7 +339,7 @@ export class Hud {
     const style = document.createElement('style'); style.textContent = css; document.head.appendChild(style);
     this.el = document.createElement('div'); this.el.className = 'hud skin-a';
     this.el.innerHTML = `
-      <div class="corner tl"><div class="row"><div id="clubSlot"></div><div id="modeSlot"></div></div><div class="who" id="who"></div><div class="pop hud-panel" id="clubPop" hidden></div><div class="pop hud-panel" id="modePop" hidden></div></div>
+      <div class="corner tl"><div class="ed" id="ed" aria-live="polite"><b class="ed-n">165</b><small class="ed-c">YARDS</small><i class="ed-rule" aria-hidden="true"></i></div><div class="row"><div id="clubSlot"></div><div id="modeSlot"></div></div><div class="who" id="who"></div><div class="pop hud-panel" id="clubPop" hidden></div><div class="pop hud-panel" id="modePop" hidden></div></div>
       <div class="corner tr"><div id="lieSlot"></div><div class="wind-chip" id="wind" role="img" aria-label="No wind"><svg viewBox="-12 -12 24 24" aria-hidden="true"><circle r="11" class="wc-ring"/><g class="wc-arrow"><path d="M0 -8 L5 -1 L1.8 -1 L1.8 7 L-1.8 7 L-1.8 -1 L-5 -1 Z"/></g></svg><b>0</b><small>mph</small></div></div>
       <div class="corner bl"><div id="cardSlot"><div class="card-wrap" id="cardWrap"><button type="button" class="hud-panel card-mini" data-act="card-open" aria-expanded="false"></button><div class="card-body" id="cardBody"></div></div></div></div>
       <div class="corner br"><button type="button" class="strike-btn" data-act="strike" aria-label="Strike point: centre. Choose where to hit the ball"><canvas width="112" height="112" aria-hidden="true"></canvas><i class="dot" aria-hidden="true"></i><span>Strike</span></button><div class="pad" id="pad" aria-label="Swing pad: press, pull down, push up"></div></div>
@@ -681,6 +681,22 @@ export class Hud {
     pop.hidden = !on; this.el.classList.toggle('strike-open', on);
     if (on) (this.q('#spRet') as HTMLButtonElement).focus({ preventScroll: true }); else (this.q('.strike-btn') as HTMLButtonElement).focus({ preventScroll: true });
   }
+
+  // ── the editorial distance: one big Anton number (the target at address, live in the air, the total after) ──
+  private edKey = '';
+  private ed(n: number, cap: string, mode: 'address' | 'live' | 'result') {
+    const key = `${mode}|${n}|${cap}`; if (key === this.edKey) return; this.edKey = key;
+    const el = this.q('#ed'); if (!el) return;
+    el.className = 'ed ' + mode;
+    el.querySelector('.ed-n')!.textContent = String(n);
+    el.querySelector('.ed-c')!.textContent = cap;
+  }
+  /** at address: the distance to the target (follows the aim ring) and the club */
+  edAddress(yds: number) { const id = CLUB_SPECS[this.club].id; this.ed(Math.round(yds), `YARDS · ${clubUI(id)[1].toUpperCase()}${this.mode !== 'full' ? ' · ' + MODES[this.mode].label.toUpperCase() : ''}`, 'address'); }
+  /** in the air: a small live yardage */
+  edLive(yds: number) { this.ed(Math.max(0, Math.round(yds)), 'YARDS · IN THE AIR', 'live'); }
+  /** after the ball stops: the big total with a short caption */
+  edResult(yds: number, cap: string) { this.ed(Math.round(yds), cap, 'result'); const el = this.q('#ed'); el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
 
   /** wind: speed (mph, with the gust) and where it blows toward relative to the aim line (deg, 0 = helping, clockwise) */
   setWind(mph: number, relDeg: number, gust: number) {

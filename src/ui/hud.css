@@ -557,3 +557,25 @@ body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-orig
 .hud.in-shot .tr { opacity: 0; transform: translateY(-36px) scale(var(--s, 1)); pointer-events: none; }
 .hud.in-shot .who { transform: translateY(-74px); }
 @media (prefers-reduced-motion: reduce) { .hud .tl .row, .hud .tr, .hud .who { transition: opacity .2s; } .hud.in-shot .tl .row, .hud.in-shot .tr { transform: none; } }
+
+/* ───────────── the one editorial moment: a huge Anton distance (from the 'Editorial Mono' direction) ───────────── */
+.hud::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 230px; background: linear-gradient(180deg, rgba(0,0,0,.42), rgba(0,0,0,0)); pointer-events: none; }
+.hud .ed { display: grid; justify-items: start; color: #fff; text-shadow: 0 2px 14px rgba(0,0,0,.35); margin-bottom: 6px; transition: transform .45s cubic-bezier(.2,1.3,.4,1), opacity .3s; transform-origin: 0 0; }
+.hud .ed-n { font: 400 104px/0.82 'Anton', 'Barlow Condensed', sans-serif; letter-spacing: -.01em; }
+.hud .ed-c { font: 600 11.5px/1 'Barlow', sans-serif; letter-spacing: .26em; margin-top: 8px; white-space: nowrap; }
+.hud .ed-rule { display: block; width: 36px; height: 4px; background: #e3262e; margin-top: 8px; border-radius: 1px; }
+.hud .ed.live { transform: scale(.55); }
+.hud .ed.live .ed-rule { display: none; }
+.hud .ed.result .ed-n { font-size: 128px; }
+.hud .ed.pop { animation: edPop .6s cubic-bezier(.2,1.5,.4,1) both; }
+@keyframes edPop { from { transform: translateY(-14px) scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
+/* the club chip shrinks to the badge and the name (the big number carries the yards) */
+.hud.skin-f .club-btn .yds { display: none; }
+.hud.skin-f .club-btn { min-width: 0; height: 52px; grid-template-columns: 40px auto; padding: 6px 14px 6px 6px; }
+.hud.skin-f .club-btn .big { width: 40px; height: 40px; font-size: 18px; }
+.hud.skin-f .club-btn .cap { grid-row: 1 / span 2; align-self: center; font: 600 15px/1.1 var(--h-display); color: var(--navy); }
+/* the result: no mid-screen line any more, the number says it */
+.hud .toast .word.line { display: none; }
+/* during the shot the face badge slides up past the hidden club row */
+.hud.in-shot .who { transform: translateY(-60px); }
+@media (prefers-reduced-motion: reduce) { .hud .ed.pop { animation: none; } }

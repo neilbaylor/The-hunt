@@ -536,6 +536,9 @@ function frame(now: number) {
 
   hud.setState(state === 'ready', state === 'flight', !card);
   hud.el.classList.toggle('in-shot', state === 'flight' || state === 'result');   // the top controls step away for the shot
+  // the editorial distance: target at address (live with the aim ring), a ticking carry in the air
+  if (state === 'ready' || state === 'swinging' || state === 'intro') hud.edAddress(aim.distanceYds);
+  else if (state === 'flight') hud.edLive(Math.hypot(ball.pos.x - ball.start.x, ball.pos.z - ball.start.z) / YD);
   aimCtl.setEnabled(state === 'ready');
   aimCtl.update(dt, state === 'ready' || state === 'swinging');
 
@@ -579,6 +582,9 @@ function frame(now: number) {
         : pured ? 'pure' : plan?.tempoCls === 'bad' ? 'bad' : onGreen || plan?.tempoCls === 'good' ? 'good' : 'ok';
       if (outcome === 'pure') faceBadge.setWord('Pured it', 'good'); else if (outcome === 'shank') faceBadge.setWord('Ouch', 'bad');
       faceBadge.react(outcome, `${tot.toFixed(0)} yds${onGreen ? ', on the green' : ''}.`);
+      const pinFt = near && near.t ? near.d / YD * 3 : 999;
+      const how = { pure: 'PURED', good: 'SOLID', ok: 'OKAY', bad: 'ROUGH ONE', shank: 'OUCH', near: 'STIFF', holed: 'HOLED' }[outcome];
+      hud.edResult(tot, `YARDS · ${how}${onGreen ? ` · ${pinFt < 60 ? Math.round(pinFt) + ' FT FROM THE PIN' : 'ON THE GREEN'}` : Math.abs(off) >= 1 ? ` · ${Math.abs(off).toFixed(0)} ${off < 0 ? 'LEFT' : 'RIGHT'}` : ' · ONLINE'}`);
       if (outcome === 'pure' || outcome === 'near' || outcome === 'holed') hud.celebrate(outcome === 'pure' ? 18 : 34);
       void msg;
     }
