@@ -8,6 +8,7 @@ import { buildVisor } from './headwear';
 import { applyFabric } from './fabric';
 import { buildGenHead, hideAboveSeam, loadGenHead, type GenHeadData } from './genhead';
 import crestUrl from '../assets/brand/toronto-hunt-crest.png?url';
+import malbonUrl from '../assets/brand/malbon-m.svg?url';
 
 export interface HumanData {
   meta: {
@@ -140,21 +141,35 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
     // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
-    const crest = O.chestLogo === 'malbon-m' ? canvasTex(512, 512, g => {
-      // white embroidered script 'm': a small entry loop, two rounded arches, a curled tail
-      g.clearRect(0, 0, 512, 512); g.lineCap = 'round'; g.lineJoin = 'round';
-      const path = () => { g.beginPath(); g.moveTo(150, 205); g.bezierCurveTo(95, 170, 70, 230, 120, 250); g.bezierCurveTo(150, 262, 150, 300, 132, 360);
-        g.bezierCurveTo(165, 250, 215, 205, 238, 228); g.bezierCurveTo(258, 250, 232, 320, 226, 362);
-        g.bezierCurveTo(262, 250, 318, 205, 345, 230); g.bezierCurveTo(372, 256, 322, 336, 352, 360); g.bezierCurveTo(372, 376, 410, 352, 430, 318); };
-      g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 30; g.save(); g.translate(3, 4); path(); g.stroke(); g.restore(); // thread shadow
-      g.strokeStyle = '#f4f2ec'; g.lineWidth = 24; path(); g.stroke();
-      g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 6; path(); g.stroke();                          // satin-stitch sheen
-    }, true, 1) : new THREE.TextureLoader().load(crestUrl);
+    // the Malbon script 'm' (vector, traced from the brand artwork) as white embroidery: a soft thread shadow,
+    // the white satin fill and a fine diagonal stitch texture. The crest square maps to size × size/1.2 on
+    // the chest (see fabric.ts), so the art is drawn 1.2× taller here to keep its true proportions.
+    const crest = O.chestLogo === 'malbon-m' ? canvasTex(1024, 1024, g => g.clearRect(0, 0, 1024, 1024), true, 1) : new THREE.TextureLoader().load(crestUrl);
+    if (O.chestLogo === 'malbon-m') {
+      const img = new Image();
+      img.onload = () => {
+        const cv = crest.image as HTMLCanvasElement, g = cv.getContext('2d')!, N = 1024;
+        const ar = (img.height || 800) / (img.width || 1000), w = N * 0.86, h = w * ar * 1.2, x = (N - w) / 2, y = (N - h) / 2;
+        const shape = document.createElement('canvas'); shape.width = shape.height = N;
+        const sg = shape.getContext('2d')!; sg.drawImage(img, x, y, w, h);
+        const tint = (col: string) => { const c = document.createElement('canvas'); c.width = c.height = N; const cg = c.getContext('2d')!; cg.drawImage(shape, 0, 0); cg.globalCompositeOperation = 'source-in'; cg.fillStyle = col; cg.fillRect(0, 0, N, N); return c; };
+        g.clearRect(0, 0, N, N);
+        g.save(); g.filter = 'blur(5px)'; g.globalAlpha = 0.35; g.drawImage(tint('#000'), 5, 8); g.restore();   // thread shadow on the knit
+        g.drawImage(tint('#f5f3ee'), 0, 0);
+        // satin stitches: fine diagonal lines across the thread, clipped to the letter
+        const st = tint('rgba(0,0,0,0)'), stg = st.getContext('2d')!;
+        stg.globalCompositeOperation = 'source-over'; stg.drawImage(shape, 0, 0); stg.globalCompositeOperation = 'source-in';
+        for (let k = -N; k < N * 2; k += 7) { stg.strokeStyle = 'rgba(150,145,135,.35)'; stg.lineWidth = 2; stg.beginPath(); stg.moveTo(k, 0); stg.lineTo(k - N * 0.6, N); stg.stroke(); }
+        g.drawImage(st, 0, 0);
+        crest.needsUpdate = true;
+      };
+      img.src = malbonUrl;
+    }
     crest.colorSpace = THREE.SRGBColorSpace; crest.anisotropy = 8; crest.wrapS = crest.wrapT = THREE.ClampToEdgeWrapping; crest.repeat.set(1, 1);
     const chest = J[M.bones.indexOf('spine_02')];
     const side = p.handed === 'left' ? -1 : 1;
     const cz = M.collar.reduce((a, c) => Math.max(a, c[2]), -9) - 0.01;
-    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.07, M.collar.reduce((a, c) => Math.max(a, c[1]), -9) - 0.115, cz) : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.06 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
+    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.07, M.collar.reduce((a, c) => (c[2] > a[2] ? c : a))[1] - 0.088, cz)   /* level with the second button */ : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.06 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
   }
   const shirtMesh = add('shirt', shirtMat);
   // the shells are split along their UV seams; average the normals across those splits so the fabric shades

@@ -301,10 +301,10 @@ for vi in body_idx:
     neckw = vw[vi].get(BONES.index('neck_01'), 0) + vw[vi].get(BONES.index('head'), 0)
     # shirt: torso and upper arms (short sleeves), from the belt up to the collar
     shirt_lo = belt_y - (C.get('untuckedDrop', 0.0) if C.get('untucked') else 0.035)
-    if y > shirt_lo - 0.035 and neckw < 0.5 and y < neck_y + 0.01:   # a little past the hem: folded back onto it below
+    if y > shirt_lo and neckw < 0.5 and y < neck_y + 0.01:
         sleeve_ok = True
-        if arm_l > 0.5: sleeve_ok = along(vi, 'upperarm_l', 'lowerarm_l') < C['sleeve'] + 0.08
-        if arm_r > 0.5: sleeve_ok = along(vi, 'upperarm_r', 'lowerarm_r') < C['sleeve'] + 0.08
+        if arm_l > 0.5: sleeve_ok = along(vi, 'upperarm_l', 'lowerarm_l') < C['sleeve']
+        if arm_r > 0.5: sleeve_ok = along(vi, 'upperarm_r', 'lowerarm_r') < C['sleeve']
         if sleeve_ok and (torso > 0.3 or arm_l > 0.3 or arm_r > 0.3):
             shirt[vi] = True
             loose = 1 - min(1, abs(y - (pelvis_y + 0.2)) / 0.3)
@@ -408,41 +408,20 @@ if C.get('hang', 0) > 0:
         Vs[arm] = cc + rv / np.maximum(rl, 1e-6)[:, None] * want[:, None]
     Vshirt = Vs; shirt_off = np.zeros(NV)
 
-# clean, straight hems: the shirt mask runs a little past the bottom hem and the sleeve hems; fold those
-# vertices back onto the hem line (otherwise the edge follows the body's triangles and comes out jagged)
+# clean, straight hems: the mask's edge follows the body's triangles and comes out jagged, so move the
+# boundary vertices onto the hem lines (bottom: a level line; sleeves: square to the arm)
 _lo = belt_y - (C.get('untuckedDrop', 0.0) if C.get('untucked') else 0.035)
-for vi in np.nonzero(shirt)[0]:
+_bd = [vi for vi in np.nonzero(shirt)[0] if any(not shirt[n] for n in NB[vi])]
+for vi in _bd:
+    arm = None
     for sfx in 'lr':
-        if wsum(vi, [f'upperarm_{sfx}', f'lowerarm_{sfx}', f'hand_{sfx}']) > 0.5:
-            a0, a1 = joint[BONES.index(f'upperarm_{sfx}')], joint[BONES.index(f'lowerarm_{sfx}')]; ax = a1 - a0
-            t = float(np.dot(Vshirt[vi] - a0, ax) / np.dot(ax, ax))
-            if t > C['sleeve']: Vshirt[vi] = Vshirt[vi] - ax * (t - C['sleeve'])
-    if Vshirt[vi, 1] < _lo: Vshirt[vi, 1] = _lo
-
-# straight-cut trouser legs: push each leg out to a minimum radius round the hip→ankle line
-for sfx in 'lr':
-    hip = joint[BONES.index(f'thigh_{sfx}')]; ank = joint[BONES.index(f'foot_{sfx}')]; knee = joint[BONES.index(f'calf_{sfx}')]
-    ax = ank - hip; L2 = float(np.dot(ax, ax))
-    for vi in np.nonzero(pants)[0]:
-        if wsum(vi, [f'thigh_{sfx}', f'calf_{sfx}']) < 0.5 or Vpants[vi, 1] > hip[1] + 0.02:
-            continue
-        t = float(np.clip(np.dot(Vpants[vi] - hip, ax) / L2, 0, 1)); c = hip + ax * t
-        r = Vpants[vi] - c; rl = np.linalg.norm(r)
-        rmin = np.interp(t, [0, 0.45, 1.0], [C['thighR'], C['kneeR'], C['hemR']])
-        if C.get('shorts'): rmin = np.interp(t, [0, 0.4], [C['thighR'], C['shortsHemR']])  # roomy, straight leg opening
-        want = max(rl + pants_off[vi], rmin)
-        dirv = r / max(rl, 1e-6)
-        # inner side near the crotch: don't cross the body's midline
-        inward = -np.sign(c[0]) * dirv[0]
-        if inward > 0.3:
-            lim = (abs(c[0]) - 0.004) / max(inward, 1e-3)
-            want = min(want, max(rl + 0.004, lim))
-        # blend the straight cut in below the hip so there's no ledge
-        yy = Vpants[vi, 1]; bl = float(np.clip((hip[1] + 0.02 - yy) / 0.16, 0, 1)); bl = bl * bl * (3 - 2 * bl)
-        cur = rl + pants_off[vi]
-        Vpants[vi] = c + dirv * (cur + bl * (want - cur))
-        pants_off[vi] = 0.0
-Vpants = smooth_positions_from(Vpants, pants, 2) if 'smooth_positions_from' in globals() else Vpants
+        if wsum(vi, [f'upperarm_{sfx}', f'lowerarm_{sfx}', f'hand_{sfx}']) > 0.5: arm = sfx
+    if arm:
+        a0, a1 = joint[BONES.index(f'upperarm_{arm}')], joint[BONES.index(f'lowerarm_{arm}')]; ax = a1 - a0
+        t = float(np.dot(Vshirt[vi] - a0, ax) / np.dot(ax, ax))
+        if abs(t - C['sleeve']) < 0.12: Vshirt[vi] = Vshirt[vi] - ax * (t - C['sleeve'])
+    elif Vshirt[vi, 1] < _lo + 0.06:
+        Vshirt[vi, 1] = _lo
 
 # the untucked shirt hangs over the shorts' waistband: keep it clear of the shorts everywhere they overlap
 if C.get('untucked'):
@@ -454,7 +433,9 @@ if C.get('untucked'):
         sp = Vshirt[vi] + N[vi] * shirt_off[vi]
         d, j = kd.query(sp)
         if d > 0.05: continue
-        pn = N[pid[j]]; gap = float(np.dot(sp - Pp[j], pn))
+        pn = N[pid[j]].copy(); pn[1] = 0; ln = np.linalg.norm(pn)
+        if ln < 0.3: continue
+        pn /= ln; gap = float(np.dot(sp - Pp[j], pn))      # pushed out sideways only, never down
         if gap < C.get('overPants', 0.008): Vshirt[vi] = Vshirt[vi] + pn * (C.get('overPants', 0.008) - gap)
 meshes = {}
 # the feet are hidden inside the shoes: drop them from the skin so they never poke through
@@ -933,7 +914,31 @@ if F and F.get('unwrap') and lm_idx is not None:
             src = np.r_[src, cyl(ear_pts[i:i + 1])]; dst = np.r_[dst, img_ears[j:j + 1]]
         print('ears: predicted', pred.round(0).tolist(), '→ painted', img_ears.tolist())
     uwarp = RBFInterpolator(src, dst, kernel='thin_plate_spline', smoothing=U0.get('smoothing', 2.0), degree=1)
-    uarr = np.asarray(uim).astype(np.float32) / 255.0
+    # the 3D eyeballs show through the lid openings and the mesh mouth is closed: paint the eye openings and the open
+    # mouth out of the unwrap (skin over the eyes with a lash line, lips over the teeth) so nothing appears twice
+    import cv2
+    ua = np.asarray(uim).copy()
+    EYE = {'r': [33, 246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153, 145, 144, 163, 7],
+           'l': [263, 466, 388, 387, 386, 385, 384, 398, 362, 382, 381, 380, 374, 373, 390, 249]}
+    INNER_LIP = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95]
+    hole = np.zeros(ua.shape[:2], np.uint8)
+    for k in EYE: cv2.fillPoly(hole, [np.round(Lu[EYE[k]]).astype(np.int32)], 255)
+    hole_e = cv2.dilate(hole, np.ones((5, 5), np.uint8))
+    ua = cv2.inpaint(ua, hole_e, 6, cv2.INPAINT_TELEA)
+    mouth = np.zeros(ua.shape[:2], np.uint8); cv2.fillPoly(mouth, [np.round(Lu[INNER_LIP]).astype(np.int32)], 255)
+    lipcol = np.median(np.asarray(uim)[(cv2.dilate(mouth, np.ones((9, 9), np.uint8)) > 0) & (mouth == 0)], axis=0)
+    ua[mouth > 0] = lipcol
+    ua = cv2.inpaint(ua, cv2.dilate(mouth, np.ones((3, 3), np.uint8)), 4, cv2.INPAINT_TELEA)
+    # a soft lip line through the middle of the closed smile
+    mid = (Lu[[78, 81, 13, 311, 308]] + Lu[[78, 178, 14, 402, 308]]) / 2
+    ln = np.zeros(ua.shape[:2], np.float32); cv2.polylines(ln, [np.round(mid).astype(np.int32)], False, 1.0, 2, cv2.LINE_AA)
+    ln = cv2.GaussianBlur(ln, (5, 5), 1.2)[..., None]
+    ua = (ua * (1 - 0.35 * ln)).astype(np.uint8)
+    # upper lash lines (the eyeball itself comes from the 3D eye)
+    for k, upper in (('r', [33, 246, 161, 160, 159, 158, 157, 173, 133]), ('l', [263, 466, 388, 387, 386, 385, 384, 398, 362])):
+        cv2.polylines(ua, [np.round(Lu[upper]).astype(np.int32)], False, (52, 36, 30), 2, cv2.LINE_AA)
+    Image.fromarray(ua).save(os.path.join(os.path.dirname(__file__), 'data', 'face_unwrap.clean.jpg'), quality=92)
+    uarr = ua.astype(np.float32) / 255.0
     cheeks = [50, 280, 101, 330]
     cs = [Lu[i] for i in cheeks]
     skin_rgb = np.median(np.array([uarr[int(y) - 6:int(y) + 6, int(x) - 6:int(x) + 6].reshape(-1, 3) for x, y in cs]).reshape(-1, 3), axis=0)
