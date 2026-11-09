@@ -36,6 +36,11 @@ Repo: `neilbaylor/The-hunt`, branch `main`. Commit often (usage limits cut agent
   - Trail heel lifts slightly at delivery; hands wrap the grip properly; head stays steady.
 - **Per-club setup:** driver about 70 cm toe to ball, teed with 3.7 cm of peg; 3-wood on a low tee; 7i about 53 cm. Full swings carry ≥60% of the club's distance. A lefty's path curve is mirrored (hook goes right).
 - **Next:** an intro pose facing the camera, then step-in-to-address animation API for the HUD.
+- **Idle at address (queued for the next swing agent):** while waiting at address, Neil shouldn't be frozen:
+  - small natural movement: breathing, tiny weight shifts, a settle of the feet;
+  - every few seconds, a small waggle of the club: the clubhead lifts and swings back a few inches with the wrists, then sets back behind the ball;
+  - Rose's opening waggle in tools/refs/swing/rose_dtl.gif is the reference.
+  - If the player starts the swing mid-waggle, the swing just goes from wherever the club is: blend smoothly from the current waggle pose straight into the takeaway, with no snap back to address and no delay. Swing input always wins.
 
 ## Ball / physics
 `src/game/ball.ts`, `shot.ts`.
