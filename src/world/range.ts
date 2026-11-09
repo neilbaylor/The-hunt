@@ -1038,13 +1038,17 @@ if (vAutumn > 0.0) {
       .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''))
       // light through the leaves when the sun is behind them
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+// readable canopies: bright crowns catching the sky, dark undersides (the canopy normals point out of the crown)
+float topL = smoothstep(-0.65, 0.85, (vec4(normal, 0.0) * viewMatrix).y);
+reflectedLight.indirectDiffuse *= mix(0.42, 1.35, topL);
+reflectedLight.directDiffuse *= mix(0.7, 1.15, topL);
 float backlit = pow(max(dot(normalize(-vViewPosition), uSunView), 0.0), 3.0);
 reflectedLight.directDiffuse += diffuseColor.rgb * uSunCol * uTrans * (0.03 + 0.18 * backlit);
 // leaves are matte: no sky sheen on the cards
 reflectedLight.directSpecular *= 0.15;
 reflectedLight.indirectSpecular *= 0.1;`);
   };
-  m.customProgramCacheKey = () => 'range-foliage-v4';
+  m.customProgramCacheKey = () => 'range-foliage-v5';
   return m;
 }
 
@@ -1261,17 +1265,21 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene): 
       }
     });
     // glossy painted fibreglass: a crisp clear-coat highlight running up the stick
-    const pinMat = new THREE.MeshPhysicalMaterial({ color: FLAG_YELLOW, emissive: FLAG_YELLOW, emissiveIntensity: 0.06, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.4 });
+    const pinMat = new THREE.MeshPhysicalMaterial({ color: FLAG_YELLOW, emissive: FLAG_YELLOW, emissiveIntensity: 0.16, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.4 });
     const poleMesh = new THREE.Mesh(mergeGeometries(poles.map(p => p.toNonIndexed()), false)!, pinMat);
     poleMesh.castShadow = true;
     const tipMesh = new THREE.Mesh(mergeGeometries(tips.map(p => p.toNonIndexed()), false)!, new THREE.MeshStandardMaterial({ color: '#2a2a2a', roughness: 0.4, metalness: 0.6 }));
     // draw order: terrain (-3), the hole mask (-2), the cup inside (-1), then everything else
-    const cupMesh = new THREE.Mesh(finish(cups), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, side: THREE.DoubleSide }));
-    cupMesh.renderOrder = -1;
+    // walls are seen from inside only (their outsides would poke out of the turf); rim and bottom face up
+    const cupMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
+    const cupWalls = new THREE.Mesh(finish(cups.filter((_, i) => i % 4 < 2)), cupMat.clone()); (cupWalls.material as THREE.Material).side = THREE.BackSide;
+    const cupMesh = new THREE.Mesh(finish(cups.filter((_, i) => i % 4 >= 2)), cupMat);
+    cupMesh.renderOrder = cupWalls.renderOrder = -1;
     const holeMesh = new THREE.Mesh(mergeGeometries(holes, false)!, new THREE.ShaderMaterial({
       vertexShader: 'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); gl_FragDepth = 1.0; }',
-      colorWrite: location.search.includes('holedbg'), polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+      fragmentShader: 'void main() { gl_FragColor = vec4(0.0); gl_FragDepth = 1.0; }',
+      // a written depth is what gets tested, so the test is 'always'; safe because only the terrain is drawn before it
+      colorWrite: false, depthFunc: THREE.AlwaysDepth,
     }));
     holeMesh.renderOrder = -2;
     const ferMesh = new THREE.Mesh(mergeGeometries(ferrules, false)!, new THREE.MeshStandardMaterial({ color: '#b9bcc0', roughness: 0.3, metalness: 0.9 }));
@@ -1326,7 +1334,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
     boardMesh.castShadow = true; boardMesh.receiveShadow = true;
     const postMesh = new THREE.Mesh(mergeGeometries(posts.map(p => p.index ? p.toNonIndexed() : p), false)!, signMat);
     postMesh.castShadow = true; postMesh.receiveShadow = true;
-    scene.add(poleMesh, tipMesh, cupMesh, holeMesh, ferMesh, flagMesh, boardMesh, postMesh);
+    scene.add(poleMesh, tipMesh, cupMesh, cupWalls, holeMesh, ferMesh, flagMesh, boardMesh, postMesh);
   }
 
   // trees

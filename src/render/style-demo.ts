@@ -50,7 +50,7 @@ const fill = new THREE.DirectionalLight('#fff3e6', 0.9); scene.add(fill, fill.ta
 const feet = new THREE.Vector3(0.9, 0, 0);
 if (view === 'face' && faceCam) {
   const head = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(head);
-  camera.fov = 26; camera.position.copy(faceCam); camera.lookAt(head.x, head.y - 0.1, head.z);
+  camera.fov = 21; camera.position.copy(faceCam); camera.lookAt(head.x, head.y - 0.06, head.z);
 } else if (view === 'close') {
   // head and upper body, from the camera side
   const h = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(h);

@@ -41,11 +41,11 @@ const B3Q = K({ hipTurn: -0.6, hipTilt: 0.21, hipSide: -0.01, chestTurn: -1.38, 
 const T: Keys = { hipTurn: -0.78, hipTilt: 0.2, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.18, pro: 0.1, hinge: 1, beta: -0.2 };
 // downswing: the hips lead (they're already unwinding while the chest is still turned), the trail side drops
 const TRANS = K({ hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
-const DOWN = K({ hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 1, beta: -0.16 }, T);
-const LATE = K({ hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.38, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.08, hinge: 0.5, beta: -0.08 }, T);
-// delivery: lead arm about parallel on the way down, shaft still lagging (wrists fully set), hips already open,
+const DOWN = K({ hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.72, beta: -0.16 }, T);
+const LATE = K({ hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.38, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.08, hinge: 0.45, beta: -0.08 }, T);
+// delivery: lead arm about parallel on the way down, shaft lagging ~45° behind the hands on plane, hips already open,
 // trail elbow tucked in front of the trail hip
-const DELIV = K({ hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.04, shrug: 0.04, pro: -0.04, hinge: 0.95, beta: -0.15 }, T);
+const DELIV = K({ hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.04, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
 const I: Keys = { hipTurn: 0.7, hipTilt: 0.16, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.4, shift: 0.08, drop: -0.012, heel: 0.28, shrug: -0.05, pro: -0.13, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
 const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.5, hinge: -0.08, beta: 0.08, pro: -0.12 }, I);
@@ -248,15 +248,17 @@ export class Golfer {
     // trail heel comes up and the trail knee kicks in toward the target in the follow-through
     p.footUpL = undefined; p.footUpR = undefined;
     if (heel > 0) {
-      // trail foot: the heel comes up and the foot pivots on its toe until the sole faces back (away from the target)
+      // trail foot pivots on its toe: the heel swings out (laces turn toward the target), then lifts about the
+      // foot's own cross axis until the sole faces back. Never rolled onto its side.
+      const Yv = new THREE.Vector3(0, 1, 0);
       const toe = p.toeR.clone(); toe.x += 0.03 * heel;
-      const v = p.ankleR.clone().sub(p.toeR);
-      const up = new THREE.Vector3(0, 1, 0);
-      const pitchAxis = new THREE.Vector3(Math.cos(flareR), 0, -Math.sin(flareR));
-      const yaw = 0.55 * smooth(0.3, 1, heel);
-      const lift = 1.25 * heel;
-      v.applyAxisAngle(pitchAxis, -lift).applyAxisAngle(up, yaw);
-      up.applyAxisAngle(pitchAxis, -lift).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+      const v = p.ankleR.clone().sub(p.toeR), up = Yv.clone();
+      const yaw = 1.15 * smooth(0.1, 0.9, heel);          // + about Y swings the heel toward -X (away from the target)
+      v.applyAxisAngle(Yv, yaw); up.applyAxisAngle(Yv, yaw);
+      const lat = new THREE.Vector3().crossVectors(Yv, v).normalize();
+      const lift = 1.2 * smooth(0, 0.85, heel);
+      const sgn = v.clone().applyAxisAngle(lat, 0.3).y > v.y ? 1 : -1;
+      v.applyAxisAngle(lat, sgn * lift); up.applyAxisAngle(lat, sgn * lift);
       p.ankleR.copy(toe).add(v);
       p.toeR.copy(toe);
       p.footUpR = up;
@@ -346,7 +348,7 @@ export class Golfer {
         const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];
         const L = (v: number[]) => new THREE.Vector3(v[0], v[1], v[2]).applyQuaternion(qChest);
         const ARC = [   // [f, grip (from the neck, × body scale), shaft butt→head]
-          [0.12, [0.06, -0.52, 0.32], [0.55, -0.25, 0.8]],
+          [0.12, [0.06, -0.5, 0.4], [0.45, -0.22, 0.9]],
           [0.33, [0.12, -0.25, 0.45], [0.15, 0.95, 0.25]],
           [0.55, [0.15, 0.02, 0.3], [-0.35, 0.55, -0.75]],
         ] as [number, number[], number[]][];
@@ -370,8 +372,8 @@ export class Golfer {
       // full finish target, built in the chest's frame: hands up past the lead shoulder, shaft wrapped behind the neck
       const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];
       const L = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(qChest);
-      const gripFin = neck.clone().add(L(0.15, 0.1, 0.0));
-      const shaftFin = L(-0.6, -0.24, -0.76).normalize();   // across the back of the shoulders, behind the neck            // grip → club head
+      const gripFin = neck.clone().add(L(0.14, 0.2, 0.03));
+      const shaftFin = L(-0.72, -0.48, -0.5).normalize();   // across the back of the shoulders, angled down behind            // grip → club head
       const faceFin = L(0, 0.35, -0.9).normalize();                  // where the club face points
       // club local frame: shaft runs hosel → butt along shaftDir, face looks along +X
       const mLocal = new THREE.Matrix4(), mFin = new THREE.Matrix4();

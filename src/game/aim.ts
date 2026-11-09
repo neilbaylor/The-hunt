@@ -239,12 +239,17 @@ export class AimController {
 
   /** camera for the aim view: high behind the ball, looking steeply down the aim line */
   cameraWant(pos: THREE.Vector3, look: THREE.Vector3) {
-    // solved so that on a portrait phone the ball sits just above the swing stick (~62% down the
-    // screen) and the landing ring near the top (~20%): height 0.7·D, 0.625·D behind, pitched 41° down
+    // framed for the real lens: the ball sits just above the swing stick (64% down the screen) and the
+    // landing ring below the top chips (28%). Height is fixed at 0.96·D; solve the set-back and pitch.
     const b = this.o.ballPos(), d = this.dirVec(), D = Math.max(25, aim.distanceYds * YD), z = this.zoom;
-    const H = 0.7 * D * z, B = 0.625 * D * z;
+    const t = Math.tan(THREE.MathUtils.degToRad(this.o.camera.fov / 2)), H = 0.96 * D * z;
+    const yb = 0.28, yr = -0.44; // NDC, + = below centre
+    const solve = (B: number) => { const ab = Math.atan2(H, B), ar = Math.atan2(H, B + D); const p = ab - Math.atan(yb * t); return { p, err: Math.tan(ar - p) - yr * t }; };
+    let lo = 0, hi = 4 * D;
+    for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (solve(mid).err > 0) hi = mid; else lo = mid; }
+    const B = (lo + hi) / 2, pitch = Math.max(0.2, solve(B).p);
     pos.copy(b).addScaledVector(d, -B); pos.y = b.y + H;
-    look.copy(pos).addScaledVector(d, H / Math.tan(THREE.MathUtils.degToRad(41))); look.y = b.y;
+    look.copy(pos).addScaledVector(d, H / Math.tan(pitch)); look.y = b.y;
   }
 
   private worldAt(cx: number, cy: number): THREE.Vector3 | null {

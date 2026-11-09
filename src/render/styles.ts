@@ -46,6 +46,7 @@ const COMMON = /* glsl */`
 uniform sampler2D tColor; uniform sampler2D tDepth; uniform vec2 res; uniform float cNear, cFar, px, time;
 varying vec2 vUv;
 float viewZ(vec2 uv) { float d = texture2D(tDepth, uv).x; return d >= 0.99999 ? 6000.0 : -perspectiveDepthToViewZ(d, cNear, cFar); }
+float nearW(float z) { return 1.0 - smoothstep(6.0, 60.0, z); }
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -104,7 +105,7 @@ float skinMask(vec3 c) { // warm skin tones: r > g > b with moderate saturation
   float r = c.r, g = c.g, b = c.b;
   return smoothstep(0.03, 0.09, r - g) * smoothstep(0.0, 0.05, g - b) * smoothstep(0.15, 0.3, r);
 }
-vec3 graphicRealism(vec2 uv, float S, float cross) {
+vec3 graphicRealism(vec2 uv, float S, float crossH) {
   vec2 p = uv * res / px;
   float z = viewZ(uv), nw = nearW(z), near = smoothstep(14.0, 3.0, z);
   vec3 c0 = texture2D(tColor, uv).rgb;
@@ -123,7 +124,7 @@ vec3 graphicRealism(vec2 uv, float S, float cross) {
   float wob = 0.3 * vnoise(p * 0.05);
   float h1 = 1.0 - smoothstep(0.12, 0.3, abs(fract(dot(p, d1) / 3.2 + wob) - 0.5) * 2.0);
   float h2 = 1.0 - smoothstep(0.12, 0.3, abs(fract(dot(p, d2) / 3.2 + wob) - 0.5) * 2.0);
-  float t1 = 1.0 - smoothstep(0.55, 0.82, shade), t2 = (1.0 - smoothstep(0.35, 0.58, shade)) * cross;
+  float t1 = 1.0 - smoothstep(0.55, 0.82, shade), t2 = (1.0 - smoothstep(0.35, 0.58, shade)) * crossH;
   float h = max(h1 * t1, h2 * t2) * (1.0 - smoothstep(25.0, 90.0, z)) * (1.0 - 0.7 * sk);
   c = mix(c, c * 0.35, h * (0.35 + 0.4 * S));
   // ink: contour weight swells and tapers; interior lines only where tone breaks sharply
@@ -137,7 +138,6 @@ vec3 graphicRealism(vec2 uv, float S, float cross) {
 }
 // paper: fibres and tooth
 // how much line weight a pixel gets: heavy on the near golfer, light far away
-float nearW(float z) { return 1.0 - smoothstep(6.0, 60.0, z); }
 `;
 
 const STYLE_FRAG: Record<Exclude<StyleId, 0>, string> = {
