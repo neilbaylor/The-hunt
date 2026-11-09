@@ -75,6 +75,10 @@ if (view === 'portrait') {
     camera.position.set(bx * 0.55, t.pos.y + 1.7, bz + 9); camera.lookAt(bx, t.pos.y + 1.1, bz);
   }
   focus.copy(t.pos);
+} else if (view === 'flagcam') {
+  // close on the featured flag (frame strips of the waving cloth: ?t0= seconds of simulated time before the shot)
+  const t = range.featured ?? range.targets[1];
+  camera.position.set(t.pos.x - 3.2, t.pos.y + 2.0, t.pos.z + 3.6); camera.lookAt(t.pos.x + 0.4, t.pos.y + 2.1, t.pos.z); focus.copy(t.pos);
 } else if (view === 'landcam') {
   // the game's landing camera: past the landing spot, off to the side and raised, looking back at the ball by the 150 green
   const bx = -8, bz = -131, by = range.heightAt(bx, bz);
@@ -102,6 +106,7 @@ Object.assign(window, { __range: range, __focus: focus, __cam: camera, __rendere
 const stats = document.getElementById('stats')!;
 if (qs.get('stats') === '0') stats.style.display = 'none';
 let last = performance.now(), frames = 0;
+if (qs.get('t0')) range.update(Number(qs.get('t0')), camera, focus);
 function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   renderer.info.reset();

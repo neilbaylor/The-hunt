@@ -7,7 +7,7 @@ import { Golfer, PHI_TOP, PHI_FINISH, SHOT_STYLE, type SwingPhase } from './golf
 import { NEIL } from './golfer/profile';
 import { loadNeil } from './golfer/assets';
 import { CLUB_SPECS } from './golfer/club';
-import { Ball, BALL } from './game/ball';
+import { Ball, BALL, WIND } from './game/ball';
 import { planShot, LIES, YD, type ShotPlan } from './game/shot';
 import { Tracer } from './game/tracer';
 import { ShotCam, isLongShot, type ShotCamCtx } from './game/shotcam';
@@ -520,6 +520,7 @@ function frame(now: number) {
   { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? 2.4 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   tracer.update(camera, state === 'ready' ? 0.6 : 1);
   focus.copy(state === 'flight' || state === 'result' ? ball.pos : golfer.ballWorld(tmp));
+  range?.setWind(WIND); // the flags stream with the ball's wind (a light breeze when there is none)
   range?.update(dt, camera, focus);
 
   // dynamic resolution: keep frames under ~20 ms

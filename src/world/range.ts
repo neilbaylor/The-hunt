@@ -30,6 +30,8 @@ export interface Range {
   /** scale blade, tree and far-tree counts, tree LOD distance and the shadow map to a performance tier (cheap, any time) */
   setDetail(d: Detail): void;
   readonly detail: Detail;
+  /** wind (m/s, blowing toward); the flags stream with it. Below ~0.3 m/s they show a light breeze instead. */
+  setWind(v: THREE.Vector3): void;
   /**
    * Put the featured target green (yellow crest flag, real cup) at this carry distance in yards, a little off the
    * line so it clears the scenery greens and bunkers; it slides there if already shown. null hides it.
@@ -815,6 +817,11 @@ function pinGeometries(H: number, fw: number, fh: number, pr: number, k: number,
   const n = flag.getAttribute('position').count;
   flag.setAttribute('aPhase', new THREE.BufferAttribute(new Float32Array(n).fill(phase), 1));
   flag.setAttribute('aLen', new THREE.BufferAttribute(new Float32Array(n).fill(fw), 1));
+  flag.setAttribute('aH', new THREE.BufferAttribute(new Float32Array(n).fill(fh), 1));
+  // the pole's axis at the top of the flag's hoist (the shader rebuilds the cloth from here, so the wind can turn it)
+  const pole3 = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { pole3[i * 3] = 0; pole3[i * 3 + 1] = H - 0.08 - 0.03 * kf; pole3[i * 3 + 2] = 0; }
+  flag.setAttribute('aPole', new THREE.BufferAttribute(pole3, 3));
   // the base ferrule, seated in the bottom of the cup
   const fer = new THREE.CylinderGeometry(pr * 1.35, pr * 1.2, 0.045, 12); fer.translate(0, -CUP.DEEP + 0.0225, 0);
   return { pole, tip, flag, fer };
@@ -1313,7 +1320,9 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
 
   // greens: yellow flagsticks with waving crest flags, cups, and yardage boards
   const targets: RangeTarget[] = GREENS.map(g => ({ yards: g.yards, pos: new THREE.Vector3(g.x, heightAt(g.x, g.z), g.z), radius: g.r, color: FLAG_YELLOW }));
-  const flagUniforms = { uTime: { value: 0 } };
+  // wind for the flags: x, z = direction it blows toward, w = strength 0..1 (eased); a light breeze when there is none
+  const flagUniforms = { uTime: { value: 0 }, uWind: { value: new THREE.Vector3(0.95, -0.31, 0.36) } };
+  const windIn = new THREE.Vector3(), BREEZE = new THREE.Vector3(3.0, 0, -1.0);
   const featGroup = new THREE.Group(), featPin = new THREE.Group();
   const featTarget: RangeTarget = { yards: 150, pos: new THREE.Vector3(0, 0, -9999), radius: 9, color: FLAG_YELLOW };
   const feat = { from: new THREE.Vector2(), to: new THREE.Vector2(), r0: 9, r1: 9, t: 1, s0: 1, s1: 1 };
@@ -1333,6 +1342,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
       const H = 2.13 * k + 0.08, fw = 0.51 * kf, fh = 0.36 * kf, pr = 0.0085 * k;
       const pin = pinGeometries(H, fw, fh, pr, k, kf, i * 1.7 + 0.4);
       for (const geo of [pin.pole, pin.tip, pin.flag, pin.fer]) geo.translate(g.x, y0, g.z);
+      { const a = pin.flag.getAttribute('aPole') as THREE.BufferAttribute; for (let v = 0; v < a.count; v++) a.setXYZ(v, a.getX(v) + g.x, a.getY(v) + y0, a.getZ(v) + g.z); }
       poles.push(pin.pole); tips.push(pin.tip); flags.push(pin.flag); ferrules.push(pin.fer);
       const cup = cupGeometries();
       for (const geo of [...cup.parts, cup.mask]) geo.translate(g.x, y0, g.z);
@@ -1386,31 +1396,39 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
     flagMat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = flagUniforms.uTime;
       sh.uniforms.uSunView = treeUniforms.uSunView; sh.uniforms.uSunCol = treeUniforms.uSunCol;
+      sh.uniforms.uWind = flagUniforms.uWind;
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', `#include <common>
 attribute float aPhase;
 attribute float aLen;
+attribute float aH;
+attribute vec3 aPole;
 uniform float uTime;
-float flagWave(vec2 st) {
-  float a = 0.2 * pow(st.x, 1.1) * (0.8 + 0.2 * sin(uTime * 0.6 + aPhase));
-  return a * (sin(st.x * 9.0 + st.y * 1.2 - uTime * 6.2 + aPhase) + 0.4 * sin(st.x * 17.0 - st.y * 3.0 - uTime * 10.5 + aPhase * 1.7));
+uniform vec3 uWind;
+// the cloth at (u along the fly from the hoist, v up the hoist): it streams downwind, droops when the wind is light,
+// and carries a wave that travels from the pole to the free edge, growing toward it, with slow gusts on top
+vec3 flagPos(vec2 st) {
+  float u = st.x, v = st.y, L = aLen, s = uWind.z;
+  vec3 D = normalize(vec3(uWind.x, 0.0, uWind.y)), N = vec3(-D.z, 0.0, D.x);
+  float gust = 0.7 + 0.3 * sin(uTime * 0.71 + aPhase) * sin(uTime * 0.23 + aPhase * 2.3);
+  float amp = (0.06 + 0.17 * s) * L * pow(u, 1.15) * gust;
+  float sp = 4.0 + 7.0 * s;
+  float w = amp * (sin(u * 7.5 + v * 1.4 - uTime * sp + aPhase) + 0.35 * sin(u * 14.0 - v * 2.6 - uTime * sp * 1.55 + aPhase * 1.7));
+  float slack = (1.0 - s);
+  float reach = u * L * (1.0 - slack * 0.3 * u) - abs(w) * 0.35;
+  float droop = (slack * 0.5 + 0.05) * u * u * L * (1.0 - 0.35 * v);
+  vec3 p = aPole + D * (0.012 + reach) + N * w;
+  p.y += -(1.0 - v) * aH - droop;
+  return p;
 }`)
         .replace('#include <beginnormal_vertex>', `
-vec2 st0 = uv;
-float e0 = 0.02;
-float w0 = flagWave(st0), wx = flagWave(st0 + vec2(e0, 0.0)), wy = flagWave(st0 + vec2(0.0, e0));
-float L = aLen;
-vec3 objectNormal = normalize(vec3(-(wx - w0) / (e0 * L) * L, -(wy - w0) / (e0 * 0.7 * L) * L, 1.0));
-objectNormal = vec3(objectNormal.x * cos(-0.25) + objectNormal.z * sin(-0.25), objectNormal.y, -objectNormal.x * sin(-0.25) + objectNormal.z * cos(-0.25));
+vec3 P0 = flagPos(uv);
+vec3 Pu = flagPos(uv + vec2(0.02, 0.0)) - P0, Pv = flagPos(uv + vec2(0.0, 0.02)) - P0;
+vec3 objectNormal = normalize(cross(Pu, Pv));
 #ifdef USE_TANGENT
 vec3 objectTangent = vec3(tangent.xyz);
 #endif`)
-        .replace('#include <begin_vertex>', `#include <begin_vertex>
-float wv = w0 * L;
-vec3 nrmFlag = vec3(sin(-0.25), 0.0, cos(-0.25));
-transformed += nrmFlag * wv;
-transformed.y -= st0.x * st0.x * 0.06 * L * (1.0 - st0.y * 0.4);
-transformed -= vec3(cos(-0.25), 0.0, -sin(-0.25)) * abs(wv) * 0.25;`);
+        .replace('#include <begin_vertex>', `vec3 transformed = P0;`);
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform vec3 uSunView;\nuniform vec3 uSunCol;')
         .replace('#include <map_fragment>', `
@@ -1423,7 +1441,7 @@ float thru = pow(max(dot(normalize(-vViewPosition), uSunView), 0.0), 2.0);
 reflectedLight.directDiffuse += diffuseColor.rgb * uSunCol * (0.06 + 0.28 * thru);
 reflectedLight.indirectSpecular *= 0.3;`);
     };
-    flagMat.customProgramCacheKey = () => 'range-flag-v2';
+    flagMat.customProgramCacheKey = () => 'range-flag-v3';
     const flagMesh = new THREE.Mesh(mergeGeometries(flags, false)!, flagMat);
     flagMesh.frustumCulled = false;
     const signMat = new THREE.MeshStandardMaterial({ map: makeSignAtlas(renderer), roughness: 0.78 });
@@ -1807,6 +1825,7 @@ gl_Position = projectionMatrix * mvPosition;`);
     get featured() { return FEAT.on > 0.5 ? featTarget : null; },
     get detail() { return detail; },
     setDetail(d) { applyDetail(d); },
+    setWind(v) { windIn.copy(v); },
     setFeaturedTarget(yards) {
       if (yards === null || !(yards > 0)) {
         FEAT.on = 0; FEAT_U.value.w = 0; featGroup.visible = false;
@@ -1865,6 +1884,13 @@ gl_Position = projectionMatrix * mvPosition;`);
       }
       su.time.value = time;
       flagUniforms.uTime.value = time;
+      {
+        // the range's wind (setWind), or a light breeze; strength eases so gusts and changes don't snap
+        const w = windIn.lengthSq() > 0.09 ? windIn : BREEZE, sp = Math.hypot(w.x, w.z);
+        const U = flagUniforms.uWind.value, k = 1 - Math.exp(-dt * 1.5);
+        U.x += (w.x / sp - U.x) * k; U.y += (w.z / sp - U.y) * k;
+        U.z += (clamp(sp / 9, 0.2, 1) - U.z) * k;
+      }
       grassUniforms.uTime.value = time;
       treeUniforms.uTime.value = time;
       treeUniforms.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
