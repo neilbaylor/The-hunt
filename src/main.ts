@@ -108,6 +108,14 @@ const SW = { active: false, phase: 'idle' as 'idle' | 'back' | 'down', press: [0
 let plan: ShotPlan | null = null;
 let card: CardData | null = null;
 let hitStop = 0;
+// ── fast forward (hold the 3D view while the ball is in the air) ──
+// Self-contained: its own little pill at the top centre, outside the HUD's DOM, so HUD styling isn't disturbed.
+const ff = { held: false, scale: 1, pill: document.createElement('div') };
+ff.pill.textContent = '⏩ 3×'; ff.pill.hidden = true; ff.pill.setAttribute('aria-live', 'polite');
+ff.pill.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 64px);transform:translateX(-50%);z-index:40;'
+  + 'padding:6px 14px;border-radius:999px;background:rgba(20,30,52,.78);color:#fff;font:700 14px/1 system-ui,sans-serif;'
+  + 'letter-spacing:.06em;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.25)';
+document.body.appendChild(ff.pill);
 let resultT = 0;
 const style = () => SHOT_STYLE[hud.mode];
 const fullBack = () => PHI_TOP * style().back * profile.swing.length;
@@ -358,6 +366,10 @@ function frame(now: number) {
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
   frameTimes.push(dt); if (frameTimes.length > 90) frameTimes.shift();
   if (hitStop > 0) { hitStop -= dt; dt *= 0.18; }
+  // fast forward: hold the 3D view while the ball is flying/rolling → the ball and cameras run at up to 3×
+  ff.scale += ((ff.held && state === 'flight' ? 3 : 1) - ff.scale) * Math.min(1, dt / 0.15);
+  ff.pill.hidden = !(ff.held && state === 'flight');
+  const simDt = dt * ff.scale;   // the ball sub-steps internally (≤ 4 ms), so 3× stays stable
 
   // golfer
   G.idleT += dt;
@@ -392,7 +404,7 @@ function frame(now: number) {
     // spin set on the spin ball ramps in over the rest of the flight
     if (ball.phase === 'flight') ball.setAftertouch(hud.spin.y, hud.spin.x);
     const wasFlight = ball.phase === 'flight';
-    ball.step(dt);
+    ball.step(simDt);
     tracer.push(ball.pos);
     if (wasFlight && ball.phase !== 'flight') {
       sound.land(ball.lastSurface === 'green' ? 0.6 : ball.lastSurface === 'rough' ? 0.9 : 0.2);
@@ -416,7 +428,7 @@ function frame(now: number) {
   ballMesh.scale.setScalar(Math.max(1, d * 0.0035));
   hud.tickSpin(dt, state === 'flight' && ball.phase === 'flight');
 
-  updateCamera(dt, now);
+  updateCamera(simDt, now);
   { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? 2.4 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   tracer.update(camera, state === 'ready' ? 0.6 : 1);
   focus.copy(state === 'flight' || state === 'result' ? ball.pos : golfer.ballWorld(tmp));
@@ -438,8 +450,13 @@ const onViewport = () => { const { w, h } = viewport(); renderer.setSize(w, h); 
 addEventListener('resize', onViewport);
 window.visualViewport?.addEventListener('resize', onViewport);
 addEventListener('orientationchange', () => setTimeout(onViewport, 250));
-// a tap anywhere during the result skips ahead
-renderer.domElement.addEventListener('pointerdown', () => { sound.unlock(); if (state === 'result') nextBall(); });
+// a tap anywhere during the result skips ahead; holding the view during a shot fast-forwards it
+renderer.domElement.addEventListener('pointerdown', e => {
+  sound.unlock();
+  if (state === 'result') { nextBall(); return; }
+  if (state === 'flight') { ff.held = true; try { renderer.domElement.setPointerCapture(e.pointerId); } catch { /* not supported */ } }
+});
+for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) renderer.domElement.addEventListener(ev, () => { ff.held = false; });
 requestAnimationFrame(t => { last = t; frame(t); });
 (window as any).__game = {
   golfer, ball, hud, aim, aimCtl, get state() { return state; },
