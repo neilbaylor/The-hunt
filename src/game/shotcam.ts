@@ -24,7 +24,7 @@ export const SHOTCAM = {
   fallTilt: 3,           // deg: camera roll as the ball falls
   landLead: 1.7,         // s before touchdown to start settling on the landing view
   land: 1.4,             // s: settle from the chase to the landing view
-  landBack: 26, landSide: 12, landUp: 5.5,  // landing view: past the landing spot, off to the side, raised
+  landFwd: 9, landSide: 18, landUp: 4.5,   // landing view: beside the landing spot (a touch past it), raised; never across the ball's path
 };
 
 export interface ShotCamCtx {
@@ -106,7 +106,7 @@ export class ShotCam {
     const fromPos = f ? f.pos : this.from.pos, fromLook = f ? f.look : this.from.look;
     o.pos.copy(fromPos).lerp(this.landPos!, s);
     const lookNow = b.pos.clone().addScaledVector(Y, 0.3);
-    o.look.copy(fromLook).lerp(lookNow, s);
+    o.look.copy(fromLook).lerp(lookNow, smoother(Math.min(1, s * 2.5)));   // the ball stays the subject
     o.dFov = (f ? f.dFov : this.from.dFov) * (1 - s); o.roll = (f ? f.roll : this.from.roll) * (1 - s);
     if (f) { this.from.pos.copy(f.pos); this.from.look.copy(f.look); this.from.dFov = f.dFov; this.from.roll = f.roll; }
     return o;
@@ -156,7 +156,7 @@ export class ShotCam {
     const land = ctx.predictLanding() ?? b.pos.clone();
     const dir = new THREE.Vector3(b.vel.x, 0, b.vel.z); if (dir.lengthSq() < 1) dir.copy(this.targetDir); dir.normalize();
     const lat = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(-this.side);
-    const tries: [number, number][] = [[C.landBack, C.landSide], [C.landBack, -C.landSide], [C.landBack * 0.8, C.landSide * 1.6], [C.landBack * 0.8, -C.landSide * 1.6], [C.landBack * 1.3, C.landSide * 0.5]];
+    const tries: [number, number][] = [[C.landFwd, C.landSide], [C.landFwd, -C.landSide], [C.landFwd * 1.8, C.landSide * 0.8], [C.landFwd * 1.8, -C.landSide * 0.8], [0, C.landSide * 1.3]];
     let p = land.clone().addScaledVector(dir, tries[0][0]).addScaledVector(lat, tries[0][1]);
     for (const [fw, sd] of tries) { const c = land.clone().addScaledVector(dir, fw).addScaledVector(lat, sd); if (!ctx.blocked(c.x, c.z)) { p = c; break; } }
     p.y = Math.max(land.y, ctx.groundAt(p.x, p.z)) + C.landUp;
