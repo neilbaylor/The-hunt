@@ -41,6 +41,10 @@ const poses: Record<string, any> = {
   t10: { phase: 'follow', phi: PHI_FINISH * 0.1 }, t20: { phase: 'follow', phi: PHI_FINISH * 0.2 }, t45: { phase: 'follow', phi: PHI_FINISH * 0.45 }, t60: { phase: 'follow', phi: PHI_FINISH * 0.6 },
 };
 golfer.body.setSmile(+(q.get('smile') ?? 0));
+// face (generated head): &expr=smile:0.8,grimace:0,browUp:0,blink:1 &gaze=x,y (-1..1)
+{ const face = (golfer.body as any).face;
+  if (face && q.has('gaze')) { const [gx, gy] = q.get('gaze')!.split(',').map(Number); face.setGaze(gx, gy ?? 0); }
+  if (face && q.has('expr')) face.setExpression(Object.fromEntries(q.get('expr')!.split(',').map(t => { const [k, v] = t.split(':'); return [k, +v]; }))); }
 if (q.has('novisor')) golfer.body.root.traverse(o => { if (o.name === 'visor') o.visible = false; });
 // generic poses: b0.3 = backswing at 30% of a full top, d0.38 = downswing with the hands at 38% of the top, f0.12 = 12% of the follow-through
 const pm = /^([bdf])([\d.]+)$/.exec(q.get('pose') ?? '');

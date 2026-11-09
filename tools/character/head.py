@@ -29,6 +29,7 @@ ap.add_argument('--tex', type=int, default=2048)
 ap.add_argument('--unwrap', default=None, help="front-on cylindrical face texture (+ .lm.json; default: neil.json face.unwrap); 'none' to skip")
 ap.add_argument('--hair', default=None, help='hair colour (default: the profile look.hair in src/golfer/profile.ts, else #4a3628)')
 ap.add_argument('--unwrap-weight', type=float, default=4.0, help='how strongly the unwrap wins over the portrait where both see')
+ap.add_argument('--mpfb', default='/tmp/mh/mpfb2/src/mpfb/data', help='MakeHuman (MPFB2) data, for the expression targets')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
 ap.add_argument('--debug', default=None, help='directory for debug images')
@@ -312,6 +313,67 @@ _vn = vnormals(LV, LF)
 flip = np.einsum('ij,ij->i', _fn, _vn[LF].sum(1)) < 0
 LF[flip] = LF[flip][:, ::-1]
 print('flipped', int(flip.sum()), 'folded faces')
+# ───────────────────────── expressions: MakeHuman's expression units, transferred onto this head ─────────────────────────
+# MakeHuman skin vertex → base-mesh vertex (by UV), its target deltas → the body's units (fitted against the baked smile),
+# the MakeHuman head warped onto ours by the face landmarks (thin-plate), and each of our vertices takes the deltas of
+# the nearest warped MakeHuman vertices.
+EXPR = {
+    'blink': {'eye-left-closure': 1.0, 'eye-right-closure': 1.0},
+    'smile': {'mouth-corner-puller': 0.8, 'mouth-upward-retraction': 0.35, 'eye-left-slit': 0.25, 'eye-right-slit': 0.25},
+    'grimace': {'mouth-depression-retraction': 0.8, 'mouth-retraction': 0.4, 'neck-platysma': 0.6, 'eyebrows-left-down': 0.5, 'eyebrows-right-down': 0.5, 'eye-left-slit': 0.4, 'eye-right-slit': 0.4},
+    'browUp': {'eyebrows-left-up': 1.0, 'eyebrows-right-up': 1.0},
+    'browDown': {'eyebrows-left-down': 0.8, 'eyebrows-right-down': 0.8, 'eyebrows-left-inner-up': 0.2, 'eyebrows-right-inner-up': 0.2},
+    'jawOpen': {'mouth-open': 0.6},
+}
+morph_d = {}
+base_obj = os.path.join(A.mpfb, '3dobjs/base.obj')
+if os.path.exists(base_obj):
+    import gzip
+    from scipy.interpolate import RBFInterpolator
+    bvt, vt2v = [], {}
+    for line in open(base_obj):
+        if line.startswith('vt '): bvt.append([float(a) for a in line.split()[1:3]])
+        elif line.startswith('f '):
+            for q_ in line.split()[1:]:
+                a_ = q_.split('/'); vt2v[int(a_[1]) - 1] = int(a_[0]) - 1
+    bvt = np.array(bvt)
+    duv, jvt = cKDTree(bvt).query(SUV.astype(float))
+    skin2base = np.array([vt2v.get(int(j), -1) for j in jvt])
+    print(f'makehuman skin→base by uv: max uv miss {duv.max():.2e}, unmapped {(skin2base < 0).sum()}')
+    def tgt(name):
+        d = {}
+        with gzip.open(os.path.join(A.mpfb, f'targets/expression/units/caucasian/{name}.target.gz'), 'rt') as fh:
+            for line in fh:
+                if line.strip() and line[0] != '#': a_ = line.split(); d[int(a_[0])] = [float(a_[1]), float(a_[2]), float(a_[3])]
+        out = np.zeros((len(SP), 3))
+        for i, bv in enumerate(skin2base):
+            if bv in d: out[i] = d[bv]
+        return out
+    # units: fit the baked smile morph
+    try:
+        sm = json.load(open(os.path.join(HERE, 'neil.json')))['expressions']['smile']
+        rec = sum(w * tgt(k.split('/')[-1]) for k, w in sm.items() if w)
+        stored = arr(sk['morph_smile']).reshape(-1, 3).astype(float)
+        kunit = float((rec * stored).sum() / max((rec * rec).sum(), 1e-12))
+    except Exception as e_:
+        print('  (no smile to fit units against:', e_, ')'); kunit = 0.1 * 1.0
+    print(f'target units → metres: {kunit:.5f}')
+    # the MakeHuman head warped onto ours by the landmarks
+    okw = ~np.isnan(lm_mh).any(1) & ~np.isnan(lm_f).any(1)
+    warp = RBFInterpolator(lm_mh[okw], lm_f[okw], kernel='thin_plate_spline', smoothing=1e-5, degree=1)
+    headv = np.nonzero(SP[:, 1] > lm_mh[152, 1] - 0.04)[0]
+    WV = warp(SP[headv])
+    dq, iq = cKDTree(WV).query(LV, k=6)
+    wq = 1 / (dq + 1e-4); wq /= wq.sum(1, keepdims=True)
+    reach = np.clip((0.014 - dq[:, 0]) / 0.008, 0, 1)        # only where the warped MakeHuman face lies on ours
+    reach *= np.clip(((LV - cen) @ pn - BAND) / 0.01, 0, 1)  # nothing on the neck loft
+    for name, parts in EXPR.items():
+        d = sum(w * tgt(k) for k, w in parts.items()) * kunit
+        dv = (d[headv][iq] * wq[..., None]).sum(1) * reach[:, None]
+        morph_d[name] = dv
+        print(f'  expression {name}: {int((np.linalg.norm(dv, axis=1) > 2e-4).sum())} verts move, max {np.linalg.norm(dv, axis=1).max() * 1000:.1f} mm')
+else:
+    print('(no MakeHuman data at', A.mpfb, '- no expressions)')
 # ───────────────────────── unwrap ─────────────────────────
 atlas = xatlas.Atlas(); atlas.add_mesh(LV.astype(np.float32), LF.astype(np.uint32))
 co = xatlas.ChartOptions(); co.max_cost = 2.0
@@ -546,6 +608,26 @@ tex = cv2.inpaint(np.clip(tex, 0, 255).astype(np.uint8), 255 - have, 3, cv2.INPA
 Image.fromarray(tex).save(os.path.join(A.out, 'head.jpg'), quality=88, optimize=True)
 dbg('head_tex.png', tex)
 
+# ── the eyes: per-vertex eye coordinates (e = (across, up), the eye opening is |e| < 1), so the shader can draw
+#    sclera, iris and lids and move them (gaze, blink) whatever the UV charts do round the eyes ──
+eyeA = np.tile([9.0, 9.0, 1.0, 0.4], (len(LV), 1)); eyeB = np.zeros((len(LV), 2))
+eyes_info = []
+for (ca, cb, up, lo_, ir) in ((33, 133, 159, 145, 468), (362, 263, 386, 374, 473)):   # both 'across' axes point to +x (true)
+    c3 = (lm_f[ca] + lm_f[cb]) / 2; X = (lm_f[cb] - lm_f[ca]) / 2
+    Y = (lm_f[up] - lm_f[lo_]) / 2; Y = Y - X * (Y @ X) / (X @ X)
+    Y = Y / np.linalg.norm(Y) * max(np.linalg.norm(Y), 0.0035)        # a squinted sculpt: keep a readable opening
+    d = LV - c3
+    ex, ey = d @ X / (X @ X), d @ Y / (Y @ Y)
+    nrm = np.cross(X, Y); depth = np.abs(d @ nrm / np.linalg.norm(nrm))
+    near = (np.abs(ex) < 2.2) & (np.abs(ey) < 4) & (depth < 0.012)
+    eyeA[near, 0], eyeA[near, 1] = ex[near], ey[near]
+    eyeA[near, 2] = np.linalg.norm(Y) / np.linalg.norm(X)             # up-units per across-unit
+    eyeA[near, 3] = 0.0062 / np.linalg.norm(X)                        # iris radius (6.2 mm) in across-units
+    di = lm_f[ir] - c3; eyeB[near] = [di @ X / (X @ X), di @ Y / (Y @ Y)]
+    eyes_info.append({'halfWidthMM': float(np.linalg.norm(X) * 1000), 'halfOpenMM': float(np.linalg.norm(Y) * 1000), 'iris': [float(di @ X / (X @ X)), float(di @ Y / (Y @ Y))]})
+    print(f"  eye: half-width {np.linalg.norm(X) * 1000:.1f} mm, half-opening {np.linalg.norm(Y) * 1000:.1f} mm, iris at {np.round(eyeB[near][0], 2) if near.any() else '-'}, {int(near.sum())} verts")
+# colours the shader paints with, from the texture round the eyes
+eyes_uv = eyes_info
 # ───────────────────────── skin tone for the body ─────────────────────────
 # the body's skin texture at the forearms/neck vs the face's skin: a multiplier for the body skin material
 sk_img = np.asarray(Image.open(os.path.join(os.path.dirname(binp), 'skin.jpg')).convert('RGB')).astype(float)
@@ -573,13 +655,22 @@ def put(name, a):
 put('position', PV.ravel()); put('normal', PN.ravel()); put('uv', UV.astype(np.float32).ravel())
 put('index', IDX.astype(np.uint16 if len(UV) < 65536 else np.uint32).ravel())
 put('skinIndex', bidx.ravel()); put('skinWeight', bw.ravel()); put('seam', seamw)
+_ea, _eb = eyeA[vmap], eyeB[vmap]; _ei = np.nonzero(_ea[:, 0] < 8)[0]          # sparse: only the verts round the eyes
+put('eye_i', _ei.astype(np.uint16 if len(UV) < 65536 else np.uint32)); put('eye_v', np.c_[_ea[_ei], _eb[_ei]].astype(np.float32).ravel())
+# expressions: sparse, int16 in 10 µm units
+mnames = []
+for name, dv in morph_d.items():
+    d = mir(dv[vmap])
+    nz = np.nonzero(np.abs(d).max(1) > 1e-5)[0]
+    put('morph_' + name + '_i', nz.astype(np.uint16 if len(UV) < 65536 else np.uint32)); put('morph_' + name + '_d', np.round(d[nz] / 1e-5).astype(np.int16).ravel())
+    mnames.append(name)
 meta = {
     'arrays': desc, 'bones': [B[i] for i in bones_used],
     'eye': list(map(float, eye_mh)), 'ipd': float(ipd_mh),
     'seam': {'point': list(map(float, mir(cen))), 'normal': list(map(float, mir(pn))), 'band': BAND},
     'skinTint': list(map(float, tint)), 'skinColor': list(map(float, skin_c / 255)), 'hairColor': list(map(float, hair_c / 255)),
     'mirrored': mirror, 'source': os.path.basename(A.raw), 'photos': [os.path.basename(p) for p in photos],
-    'tris': int(len(UF)), 'tex': T,
+    'tris': int(len(UF)), 'tex': T, 'morphs': mnames, 'morphUnit': 1e-5, 'eyes': eyes_uv,
 }
 mj = json.dumps(meta).encode()
 while (8 + len(mj)) % 4: mj += b' '

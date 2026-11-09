@@ -6,7 +6,7 @@ import type { Body, Skeleton as SkelInfo } from './body';
 import type { GolferProfile } from './profile';
 import { buildVisor } from './headwear';
 import { applyFabric } from './fabric';
-import { buildGenHead, hideAboveSeam, loadGenHead, type GenHeadData } from './genhead';
+import { buildGenHead, hideAboveSeam, loadGenHead, type GenHeadData, type FaceController } from './genhead';
 import crestUrl from '../assets/brand/toronto-hunt-crest.png?url';
 import malbonUrl from '../assets/brand/malbon-m.svg?url';
 
@@ -88,7 +88,7 @@ function fabricNormal(kind: 'pique' | 'twill' | 'leather') {
   }, false, kind === 'pique' ? 60 : kind === 'twill' ? 45 : 20);
 }
 
-export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extras: HumanExtras } {
+export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extras: HumanExtras; face?: FaceController } {
   const M = data.meta;
   const J = M.joint.map(a => new THREE.Vector3(a[0], a[1], a[2]));
   const Tl = M.tail.map(a => new THREE.Vector3(a[0], a[1], a[2]));
@@ -136,7 +136,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   applyFabric(skinMat, 'skin', data.skinSmile && !genOn ? { ...fu, smile: { map: tex(data.skinSmile), amount: smileAmt } } : fu);
   const skin = add('skin', skinMat)!;
   const eyeL = M.eyeballs.l.c, eyeR = M.eyeballs.r.c;
-  const gen = genOn ? buildGenHead(data.head!, M.bones, skeleton, root, new THREE.Vector3(...(M.eye as [number, number, number])), Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1], eyeL[2] - eyeR[2]), M.visor.center[1] - 0.012) : null;
+  const gen = genOn ? buildGenHead(data.head!, M.bones, skeleton, root, new THREE.Vector3(...(M.eye as [number, number, number])), Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1], eyeL[2] - eyeR[2]), M.visor.center[1] - 0.012, p.look.eyes) : null;
   if (gen) { hideAboveSeam(skinMat, gen.seam); skinMat.color.copy(gen.tint); meshes.push(gen.mesh); }
   const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
@@ -305,7 +305,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   // polo collar: one continuous piece of shirt fabric round the neck (no seam at the back). A stand rises off
   // the neckline, rolls softly over and falls as a leaf onto the shoulders, ending in two points that lie on the
   // collarbones either side of the placket. The leaf is laid onto the shirt surface so it never cuts into it.
-  const chestBi = M.bones.indexOf('spine_02'), pelvisBi = M.bones.indexOf('pelvis');
+  const pelvisBi = M.bones.indexOf('pelvis');
   {
     // the shirt surface near the neck (bind space), for laying things onto it
     const sp = shirtMesh!.geometry.getAttribute('position') as THREE.BufferAttribute, sn = shirtMesh!.geometry.getAttribute('normal') as THREE.BufferAttribute;
@@ -315,12 +315,32 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const inside = new THREE.Vector3(c.x, c.y - 0.16, c.z - 0.02);
     const cand: number[] = [];
     for (let i = 0; i < sp.count; i++) if (sp.getY(i) > loY && Math.hypot(sp.getX(i) - c.x, sp.getZ(i) - c.z) < 0.24) cand.push(i);
-    const near = (p: THREE.Vector3) => {   // smoothed nearest surface point + normal (6 nearest, inverse-distance weighted)
+    const nearest6 = (p: THREE.Vector3) => {
       const best: [number, number][] = [];
       for (const i of cand) {
         const d = (sp.getX(i) - p.x) ** 2 + (sp.getY(i) - p.y) ** 2 + (sp.getZ(i) - p.z) ** 2;
         if (best.length < 6 || d < best[5][0]) { best.push([d, i]); best.sort((x, y) => x[0] - y[0]); if (best.length > 6) best.pop(); }
       }
+      return best;
+    };
+    // collar, placket and buttons are skinned like the shirt under them (weights of the nearest shirt
+    // vertices), so they move with the fabric through the swing instead of riding rigidly on one bone
+    const ssi = shirtMesh!.geometry.getAttribute('skinIndex') as THREE.BufferAttribute, ssw = shirtMesh!.geometry.getAttribute('skinWeight') as THREE.BufferAttribute;
+    const armBone = new Set(M.bones.map((n, i) => (/upperarm|lowerarm|hand/.test(n) ? i : -1)).filter(i => i >= 0));   // the collar never follows the arms
+    const skinned = (geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[]) => {
+      const pa = geo.getAttribute('position') as THREE.BufferAttribute, si = new Uint16Array(pa.count * 4), sw = new Float32Array(pa.count * 4), v = new THREE.Vector3();
+      for (let k = 0; k < pa.count; k++) {
+        v.fromBufferAttribute(pa, k); const acc = new Map<number, number>();
+        for (const [d, i] of nearest6(v)) { const w = 1 / (Math.sqrt(d) + 0.002); for (let c = 0; c < 4; c++) { const b = ssi.getComponent(i, c), ww = ssw.getComponent(i, c) * w; if (ww > 0 && !armBone.has(b)) acc.set(b, (acc.get(b) ?? 0) + ww); } }
+        const top4 = [...acc].sort((a, b) => b[1] - a[1]).slice(0, 4), tot = top4.reduce((s, x) => s + x[1], 0) || 1;
+        top4.forEach(([b, w], c) => { si[k * 4 + c] = b; sw[k * 4 + c] = w / tot; });
+      }
+      geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4)); geo.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+      const m = new THREE.SkinnedMesh(geo, mat); m.frustumCulled = false; m.castShadow = m.receiveShadow = true;
+      root.add(m); m.bind(skeleton); meshes.push(m); if (location.search.includes('dbgnocollar')) m.visible = false; return m;
+    };
+    const near = (p: THREE.Vector3) => {   // smoothed nearest surface point + normal (6 nearest, inverse-distance weighted)
+      const best = nearest6(p);
       const q = new THREE.Vector3(), n = new THREE.Vector3(); let ws = 0;
       for (const [d, i] of best) { const w = 1 / (Math.sqrt(d) + 0.002); ws += w; q.x += sp.getX(i) * w; q.y += sp.getY(i) * w; q.z += sp.getZ(i) * w; n.x += sn.getX(i) * w; n.y += sn.getY(i) * w; n.z += sn.getZ(i) * w; }
       q.multiplyScalar(1 / ws); n.normalize();
@@ -381,15 +401,12 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
     for (let i = 0; i < COLS; i++) for (let r = 0; r < rows - 1; r++) { const a = i * rows + r, b = a + rows; idx.push(a, b, a + 1, a + 1, b, b + 1); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-    g.translate(-J[chestBi].x, -J[chestBi].y, -J[chestBi].z);
     const collarMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-    const col = new THREE.Mesh(g, collarMat);
-    col.castShadow = col.receiveShadow = true; bones[chestBi].add(col); meshes.push(col);
+    skinned(g, collarMat);
     // a little thickness: a soft rolled edge along the leaf's outer edge
     const rim: THREE.Vector3[] = [];
-    for (let i = 0; i <= COLS; i++) rim.push(P(i, rows - 1).sub(J[chestBi]));
-    const rimM = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim), COLS, 0.0016, 6), collarMat);
-    rimM.castShadow = true; bones[chestBi].add(rimM);
+    for (let i = 0; i <= COLS; i++) rim.push(P(i, rows - 1));
+    skinned(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim), COLS, 0.0016, 6), collarMat);
     // placket: a stitched strip laid on the shirt from the neckline down, with two white four-hole buttons
     const top = neck(0);
     const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.28)'; g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(5, -10, 54, 258); g.beginPath(); g.moveTo(32, -10); g.lineTo(32, 250); g.stroke(); }, true, 1);
@@ -402,16 +419,16 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const { q, n } = near(v); v.sub(n.clone().multiplyScalar(v.clone().sub(q).dot(n) - 0.0012));   // onto the surface, 1.2 mm proud
       pa.setXYZ(i, v.x, v.y, v.z);
     }
-    pg.computeVertexNormals(); pg.translate(-J[chestBi].x, -J[chestBi].y, -J[chestBi].z);
-    bones[chestBi].add(new THREE.Mesh(pg, plkMat));
+    pg.computeVertexNormals();
+    skinned(pg, plkMat);
     const btnTex = canvasTex(64, 64, g => { g.fillStyle = '#f4f2ec'; g.beginPath(); g.arc(32, 32, 30, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 3; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.stroke(); g.fillStyle = 'rgba(0,0,0,.45)'; for (const [x, y] of [[26, 26], [38, 26], [26, 38], [38, 38]]) { g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill(); } }, true, 1);
     btnTex.wrapS = btnTex.wrapT = THREE.ClampToEdgeWrapping; btnTex.repeat.set(1, 1);
     const rimMat = new THREE.MeshStandardMaterial({ color: '#e8e5dc', roughness: 0.35 }), faceMat = new THREE.MeshStandardMaterial({ map: btnTex, roughness: 0.3 });
     for (const dy of [-0.032, -0.088]) {
       const { q, n } = near(new THREE.Vector3(top.x, top.y + dy, top.z + 0.02));
-      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.0056, 0.0056, 0.0024, 20), [rimMat, faceMat, faceMat]);
-      b.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
-      b.position.copy(q).addScaledVector(n, 0.0028).sub(J[chestBi]); bones[chestBi].add(b);
+      const bg = new THREE.CylinderGeometry(0.0056, 0.0056, 0.0024, 20);
+      bg.applyMatrix4(new THREE.Matrix4().compose(q.clone().addScaledVector(n, 0.0028), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n), new THREE.Vector3(1, 1, 1)));
+      skinned(bg, [rimMat, faceMat, faceMat]);
     }
   }
   // belt: a leather band round the waist with a buckle, on the pelvis
@@ -724,8 +741,10 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     if (teeth?.morphTargetInfluences) teeth.morphTargetInfluences[0] = v;
     smileAmt.value = Math.min(1, Math.max(0, (v - 0.15) * 1.3));
     if (teeth) teeth.visible = v > 0.08 && !M.paintedMouth && !gen; // closed mouth: keep teeth from showing through the lips
+    gen?.face.setExpression({ smile: Math.max(0, v0 - 0.25) / 0.75 * 0.7 });   // the generated head already smiles; more on top
   };
   // with the generated head: its own hair, eyes and teeth replace the MakeHuman scalp shell, hair cards, eyeballs and teeth
   if (gen) root.traverse(o => { if (['hair', 'hair-shell', 'eye', 'teeth'].includes(o.name)) o.visible = false; });
-  return { root, bones, skel, meshes, materials: { skin: skinMat, glove }, setSmile, extras };
+  // face: expressions, gaze and blinks on the generated head (setExpression({smile, grimace, browUp, browDown, jawOpen, blink}), lookAt, setGaze)
+  return { root, bones, skel, meshes, materials: { skin: skinMat, glove }, setSmile, extras, face: gen?.face };
 }
