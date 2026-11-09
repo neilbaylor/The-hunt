@@ -24,7 +24,10 @@ export interface SwingState {
 
 export const BALL_R = 0.02135;
 const IN = 0.0254;
-const GRIP_R = 0.0115; // grip radius under the hands (it tapers 9.8 → 12.8 mm in club.ts)
+const GRIP_R = 0.0115;
+// finger flexion on a grip (radians, MCP/PIP/DIP; index, middle, ring, pinky; thumb unused), traced with MediaPipe
+// Hand Landmarker from a tour-style overlap grip photo: the index least curled (trigger finger), middle/ring peaking at PIP
+const GRIP_CURL = [[0, 0, 0], [0.23, 0.58, 0.7], [0.61, 1.31, 1.06], [1.15, 1.41, 1.06], [1.15, 0.99, 1.38]].map(r => r.map(v => v * 0.92)); // grip radius under the hands (it tapers 9.8 → 12.8 mm in club.ts)
 
 // Body keyframes. Turns and forward bend traced from tour swing sequences (MediaPipe pose landmarks, three
 // down-the-line sequences, outliers dropped); side bend and pelvis shift, which a down-the-line camera can't
@@ -558,22 +561,28 @@ export class Golfer {
         // which way round the grip these fingers wrap: the way the hand points from its knuckles
         const handDirW = E.handDir[s].clone().applyQuaternion(qh), radP = P.clone().sub(axisP).addScaledVector(axisD, -P.clone().sub(axisP).dot(axisD));
         const wrapSign = Math.sign(new THREE.Vector3().crossVectors(radP, handDirW).dot(axisD)) || 1;
-        chain.forEach((b, si) => {
-          let best = 0, bestErr = Infinity;
-          const angP = angleOf(P);
-          for (let d = -0.6; d <= 1.8; d += 0.03) {
-            const q = qhs.clone().multiply(qr.setFromAxisAngle(axis, acc + d));
-            const end = P.clone().add(segs[si].clone().applyQuaternion(q));
-            // each segment must carry on round the grip the way the fingers wrap (never fold back)
-            let adv = (angleOf(end) - angP) * wrapSign; adv = Math.atan2(Math.sin(adv), Math.cos(adv));
-            const r = fromAxis(end), err = Math.max(0, rFinger - r) * 3 + Math.max(0, r - rFinger) + (adv < 0.08 ? 0.05 + (0.08 - adv) * 0.1 : 0); // sinking in is worse than a gap
-            if (err < bestErr - 1e-5) { bestErr = err; best = d; }
+        // traced finger shape (MediaPipe hand landmarks on real grips): keep each finger's MCP/PIP/DIP ratios and fit
+        // only an MCP offset and an overall scale so the whole finger lies on the grip, wrapping forward round it
+        const base = GRIP_CURL[fi];
+        const pose = (d: number, sc: number, out?: THREE.Quaternion[]) => {
+          let Pp = P.clone(), a = 0, err = 0, angPrev = angleOf(Pp);
+          for (let si = 0; si < 3; si++) {
+            a += si === 0 ? base[0] + d : base[si] * sc;
+            const q = qhs.clone().multiply(qr.setFromAxisAngle(axis, a));
+            out?.push(q.clone());
+            const end = Pp.clone().add(segs[si].clone().applyQuaternion(q));
+            let adv = (angleOf(end) - angPrev) * wrapSign; adv = Math.atan2(Math.sin(adv), Math.cos(adv));
+            const r = fromAxis(end);
+            err += Math.max(0, rFinger - r) * 3 + Math.max(0, r - rFinger) + (adv < 0.05 ? 0.03 + (0.05 - adv) * 0.1 : 0);
+            Pp = end; angPrev = angleOf(end);
           }
-          acc += best;
-          const q = qhs.clone().multiply(new THREE.Quaternion().setFromAxisAngle(axis, acc));
-          local(b, parentQ, q); parentQ = q;
-          P.add(segs[si].clone().applyQuaternion(q));
-        });
+          return err;
+        };
+        let bd = 0, bs = 1, be = Infinity;
+        for (let d = -0.5; d <= 1.0; d += 0.04) for (let sc = 0.6; sc <= 1.45; sc += 0.05) { const e = pose(d, sc); if (e < be) { be = e; bd = d; bs = sc; } }
+        const qs: THREE.Quaternion[] = []; pose(bd, bs, qs);
+        chain.forEach((b, si) => { local(b, parentQ, qs[si]); parentQ = qs[si]; });
+        void acc;
       });
     }
     // toes stay flat on the ground when the heel comes up: the toe bone keeps the foot's bind pitch (as at address)
