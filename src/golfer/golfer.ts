@@ -211,14 +211,18 @@ export class Golfer {
       const gl = this.club.gripLead, gr = this.club.gripTrail, sd = this.club.shaftDir.clone().normalize();
       void towardL; void towardR;
       const frame = (side: 'L' | 'R', grip: THREE.Vector3) => {
-        const beta = side === 'L' ? 0.5 : 0.25, alpha = side === 'L' ? 1.0 : 1.2;
+        const beta = side === 'L' ? 0.5 : 0.25, alpha = side === 'L' ? 1.25 : 1.45;
         const palm = (side === 'L' ? new THREE.Vector3(-Math.cos(beta), 0, Math.sin(beta)) : new THREE.Vector3(Math.cos(beta), 0, -Math.sin(beta)));
         palm.addScaledVector(sd, -palm.dot(sd)).normalize();
         const under = new THREE.Vector3().crossVectors(palm, sd).normalize();
         if (under.z < 0) under.negate();                                    // toward the underside (ball side) of the grip
         const dir = sd.clone().multiplyScalar(-Math.cos(alpha)).addScaledVector(under, Math.sin(alpha)).normalize();
-        const rGrip = GRIP_R;
-        const wrist = grip.clone().addScaledVector(palm, -(rGrip + 0.02 * k)).addScaledVector(dir, -0.065 * k);
+        // place the hand by its knuckles: the middle knuckle sits on the grip surface on the palm side of the shaft
+        // (finger base half-thickness out from the grip), and the wrist follows from the hand's own bind geometry
+        const E = this.extras!, mcp = this.body.bones[E.fingers[side][2][0]].position;
+        const along = mcp.dot(E.handDir[side]), depth = mcp.dot(E.palm[side]);
+        const rMcp = GRIP_R + 0.011 * k;
+        const wrist = grip.clone().addScaledVector(palm, -rMcp).addScaledVector(dir, -along).addScaledVector(palm, -depth);
         return { dir, palm, wrist };
       };
       const fL = frame('L', gl), fR = frame('R', gr);
@@ -456,14 +460,28 @@ export class Golfer {
       // along the grip with a gentle fixed curl.
       const g = this.club.group, axisP = this.club.butt.clone().applyQuaternion(qc).add(g.position), axisD = this.club.shaftDir.clone().applyQuaternion(qc).normalize();
       const fromAxis = (pt: THREE.Vector3) => { const d = pt.clone().sub(axisP); return d.addScaledVector(axisD, -d.dot(axisD)).length(); };
-      const handP = this.rig.wristPos[s];
+      // the mesh's own wrist: its forearm joint plus the hand bone's offset (the mesh forearm can differ from the rig's)
+      const handP = this.rig.P[fore].clone().add(bones[E.hand[s]].position.clone().applyQuaternion(Q[fore]));
+      (this as any).__handGap = (this as any).__handGap ?? {}; (this as any).__handGap[s] = handP.distanceTo(this.rig.wristPos[s]);
       const gripPt = (s === 'L' ? this.club.gripLead : this.club.gripTrail);
       const rFinger = GRIP_R + 0.0085 * this.k; void gripPt;
       E.fingers[s].forEach((chain, fi) => {
         let parentQ = qh, acc = 0;
         if (fi === 0) {
-          const axis = E.curlAxis[s].clone().lerp(E.handDir[s], 0.6).normalize();
-          [0.25, 0.3, 0.25].forEach((c, si) => { acc += c; const q = qh.clone().multiply(new THREE.Quaternion().setFromAxisAngle(axis, acc)); local(chain[si], parentQ, q); parentQ = q; });
+          // thumb: lies along the grip pointing down it (toward the club head), on its own side of the shaft
+          const offs = chain.map(b => bones[b].position.clone());
+          const segs = [offs[1], offs[2], offs[2].clone().multiplyScalar(0.8)];
+          let P = handP.clone().add(offs[0].clone().applyQuaternion(qh));
+          let qPrev = qh.clone();
+          chain.forEach((b, si) => {
+            const d = P.clone().sub(axisP), along = d.dot(axisD);
+            const radial = d.clone().addScaledVector(axisD, -along); const rl = radial.length(); radial.normalize();
+            const target = axisP.clone().addScaledVector(axisD, along - (0.03 + 0.012 * si)).addScaledVector(radial, Math.max(rFinger, rl * 0.6 + rFinger * 0.4));
+            const segW = segs[si].clone().applyQuaternion(qPrev).normalize();
+            const q = new THREE.Quaternion().setFromUnitVectors(segW, target.sub(P).normalize()).multiply(qPrev);
+            local(b, parentQ, q); parentQ = q; qPrev = q;
+            P.add(segs[si].clone().applyQuaternion(q));
+          });
           return;
         }
         const offs = chain.map(b => bones[b].position.clone());
