@@ -108,7 +108,7 @@ export function hideAboveSeam(mat: THREE.Material, seam: { p: THREE.Vector3; n: 
   mat.onBeforeCompile = (sh, r) => {
     prev(sh, r);
     sh.fragmentShader = sh.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-      if (dot(vB - vec3(${f(seam.p.x)}, ${f(seam.p.y)}, ${f(seam.p.z)}), vec3(${f(seam.n.x)}, ${f(seam.n.y)}, ${f(seam.n.z)})) > 0.004 && abs(vB.x) < 0.16 && vB.y > ${f(seam.p.y - 0.12)}) discard;`);
+      if (dot(vB - vec3(${f(seam.p.x)}, ${f(seam.p.y)}, ${f(seam.p.z)}), vec3(${f(seam.n.x)}, ${f(seam.n.y)}, ${f(seam.n.z)})) > 0.0 && abs(vB.x) < 0.16 && vB.y > ${f(seam.p.y - 0.12)}) discard;`);
   };
   mat.customProgramCacheKey = () => prevKey() + '-genhead';
 }
