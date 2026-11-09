@@ -153,7 +153,7 @@ export class Golfer {
     this.clubIndex = index; this.mode = mode;
     const spec = CLUB_SPECS[index];
     if (this.club) { this.char.remove(this.club.group); this.club.group.traverse(o => (o as THREE.Mesh).geometry?.dispose?.()); }
-    const extra = Math.round((this.profile.heightM - 1.78) / 0.05) * 0.5 * IN; // fitted: +1" for 6'3"
+    const extra = Math.max(0, Math.round((this.profile.heightM - 1.8) / 0.1)) * 0.5 * IN; // fitted: +0.5" per 10 cm over 1.80 m (+0.5" at 6'3")
     this.club = buildClub(spec, extra, this.body.materials.glove, this.body.materials.skin);
     this.char.add(this.club.group);
     this.setupAddress();
