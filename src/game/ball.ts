@@ -137,7 +137,9 @@ export class Ball {
       } else {
         const sp = Math.hypot(v.x, v.z);
         const dec = F.roll * G * dt;
-        if (sp <= dec || sp < 0.03) { v.set(0, 0, 0); if (Math.hypot(_n.x, _n.z) < 0.04 || sp < 0.01) this.phase = 'stopped'; }
+        // turf holds a slow ball on a slope (static friction): it only keeps creeping if the slope beats the grass
+        const slopeAcc = Math.hypot(_n.x, _n.z) * G * 0.71;
+        if (sp <= dec || sp < 0.03) { v.set(0, 0, 0); if (slopeAcc < F.roll * G * 1.15 || sp < 0.01) this.phase = 'stopped'; }
         else { v.x *= (sp - dec) / sp; v.z *= (sp - dec) / sp; }
         this.sv.set(v.x, 0, v.z);
       }

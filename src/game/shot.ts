@@ -80,7 +80,7 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   if (mode === 'pitch') { la = C.launch + 6; spin = 6500 + 1200 * (C.pitch ?? 0.8); }
   if (mode === 'flop') { la = 50 + 4 * (1 - (C.flop ?? 1)); spin = 4800; }
   if (mode === 'full' && r.power < 0.8) { la *= 0.92 + 0.08 * r.power; spin *= 0.75 + 0.25 * r.power; }
-  if (lie.name === 'Rough') spin *= 0.6;               // flyer-ish: less spin from the rough
+  if (lie.name === 'Rough') spin *= (C.pitch || ['8i', '9i', '7i', '6i', '5i'].includes(id)) ? 0.6 : 0.85; // flyers: irons lose spin from the rough, woods much less
   if (lie.name === 'Fairway bunker') spin *= 0.85;
   la += rnd() * 3.2 * e;                               // tempo: a bit high or low
   // strike point: under the ball launches higher with more backspin, over it lower with less; off-centre loses a little
