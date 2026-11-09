@@ -539,6 +539,15 @@ vec3 groundColor(vec2 p) {
   leafc *= 0.65 + 0.7 * clump;
   col = mix(col, leafc, smoothstep(0.15, 0.6, canopy));
   col *= 0.84 + 0.3 * var;
+  // a soft lawn grain in the middle distance (where the blade picture has faded) and broad, gentle colour patches
+  // so no stretch looks stamped out; the grain is faded where it would alias
+  {
+    float g1 = texture2D(uNoise, p * 0.9 + 0.17).a, g2 = texture2D(uNoise, p * 0.37).r;
+    float alias = clamp(fwidth(p.x * 0.9) + fwidth(p.y * 0.9), 0.0, 1.0);
+    col *= 1.0 + (0.09 * (g1 - 0.5) + 0.07 * (g2 - 0.5)) * (1.0 - alias);
+    float macro = texture2D(uNoise, p * 0.0125 + 0.61).b;
+    col *= vec3(1.0 + 0.06 * (macro - 0.5), 1.0 + 0.03 * (macro - 0.5), 1.0 - 0.04 * (macro - 0.5));
+  }
   // first cut ring
   float cut = inside(fwSD(p, ${FIRST_CUT.toFixed(1)}), 0.0);
   col = mix(col, ${v3(COL.cut)} * (0.88 + 0.22 * var), cut);
@@ -546,8 +555,8 @@ vec3 groundColor(vec2 p) {
   // fairway with mowing stripes across the line and fainter lanes along it
   float fw = inside(fwSD(p, 0.0), 0.0);
   float across = stripes(p.y / 9.144 + 0.5 + 0.035 * sin(p.x / 11.0) + 0.02 * sin(p.x / 4.3 + p.y * 0.05)), along = stripes(p.x / 9.0 + 0.5 + 0.03 * sin(p.y / 17.0));
-  vec3 fwc = mix(${v3(COL.fwDark)}, ${v3(COL.fwLight)}, 0.5 + 0.12 * (across - 0.5));
-  fwc *= 1.0 + 0.15 * mowSheen(across, vec2(0.0, 1.0)) + 0.045 * mowSheen(along, vec2(1.0, 0.0));
+  vec3 fwc = mix(${v3(COL.fwDark)}, ${v3(COL.fwLight)}, 0.5 + 0.2 * (across - 0.5));
+  fwc *= 1.0 + 0.2 * mowSheen(across, vec2(0.0, 1.0)) + 0.06 * mowSheen(along, vec2(1.0, 0.0));
   fwc *= 0.9 + 0.18 * (0.6 * n1 + 0.4 * n2);
   col = mix(col, fwc, fw);
   gRough = mix(gRough, 0.92, fw);
@@ -622,7 +631,8 @@ vec3 groundColor(vec2 p) {
   // tee box: short diagonal-cut turf
   float tm = inside(teeSD(p), 0.0);
   vec3 tc = mix(${v3(COL.tee)}, ${v3(COL.teeLight)}, 0.45);
-  tc *= 1.0 + 0.055 * mowSheen(stripes((p.x + p.y) / 2.2), vec2(0.7071, 0.7071));
+  // tee: a crisp diagonal cross-cut, each pass light one way and dark the other
+  tc *= 1.0 + 0.1 * mowSheen(stripes((p.x + p.y) / 1.5), vec2(0.7071, 0.7071)) + 0.06 * mowSheen(stripes((p.x - p.y) / 1.5), vec2(0.7071, -0.7071));
   tc *= 0.95 + 0.08 * n1 + 0.04 * n2;
   // tee box wear: a few lighter scuffs and divots near the ball
   float wear = smoothstep(0.62, 0.8, texture2D(uNoise, p * 0.9 + 3.1).g) * (1.0 - smoothstep(1.5, 4.0, length(p - vec2(0.3, -0.6))));
@@ -664,7 +674,7 @@ vec3 groundColor(vec2 p) {
       // turf is a poor mirror: damp the sky sheen that makes grass look plastic at grazing angles
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular *= 0.3;\nreflectedLight.indirectSpecular *= 0.25;');
   };
-  m.customProgramCacheKey = () => 'range-ground-v8';
+  m.customProgramCacheKey = () => 'range-ground-v9';
   return m;
 }
 
@@ -1570,6 +1580,8 @@ reflectedLight.indirectSpecular *= 0.3;`);
 
   // grass blades around the tee: real turf in the foreground
   const grassUniforms = { uTime: { value: 0 } };
+  let grassPatch: (x: number, z: number, now: number) => void = () => {};
+  const patchAt = new THREE.Vector2(1e9, 0);
   {
     // a curved, tapering blade: 3 segments, darker at the root, lighter and a touch yellow at the tip
     const bladeGeo = new THREE.BufferGeometry();
@@ -1622,29 +1634,59 @@ gl_Position = projectionMatrix * mvPosition;`);
       // the tee itself, in front of the swing camera
       [-3.5, 4.5, -6.5, 2.6, 0.25],
     ];
+    // one blade at (x, z) into `target` slot i: tee very short and crisp, fairway short, rough taller, darker and
+    // more upright with a few seed heads of dry colour; returns false where no blade belongs
+    const blade = (target: THREE.InstancedMesh, i: number, x: number, z: number): boolean => {
+      const surf = surfaceAt(x, z);
+      if (surf === 'bunker' || surf === 'green') return false;
+      const nearEdge = teeSD(x, z) > -0.12 && teeSD(x, z) < 0.25; if (nearEdge) return false;
+      if (surf === 'tee' && (Math.hypot(x, z) < 0.05 || (Math.abs(x - 0.9) < 0.38 && Math.abs(z) < 0.5) || (Math.abs(x + 0.9) < 0.38 && Math.abs(z) < 0.5))) return false;
+      const rough = surf === 'rough';
+      const h = surf === 'tee' ? 0.011 + rand() * 0.011 : surf === 'fairway' ? 0.024 + rand() * 0.02 : 0.07 + rand() * 0.1;
+      p.set(x, heightAt(x, z) - 0.002, z);
+      const lean = rough ? 0.35 : 0.5;
+      e.set((rand() - 0.5) * lean, rand() * Math.PI * 2, (rand() - 0.5) * lean); q.setFromEuler(e);
+      s.set(h * (rough ? 0.75 : 1), h, h * (rough ? 0.75 : 1));
+      target.setMatrixAt(i, m4.compose(p, q, s));
+      groundColorCPU(x, z, c).multiplyScalar((rough ? 0.68 : 0.82) + rand() * 0.3);
+      if (rand() < (rough ? 0.12 : 0.05)) c.lerp(COL.roughDry, rough ? 0.5 : 0.2);
+      target.setColorAt(i, c);
+      return true;
+    };
     while (n < COUNT && guard++ < 600000) {
       const r0 = rand();
       let acc = 0, zn = zones[zones.length - 1];
       for (const zz of zones) { acc += zz[4]; if (r0 < acc) { zn = zz; break; } }
       const x = zn[0] + rand() * (zn[1] - zn[0]), z = zn[2] + rand() * (zn[3] - zn[2]);
-      const surf = surfaceAt(x, z);
-      if (surf === 'bunker' || surf === 'green') continue;
-      const nearEdge = teeSD(x, z) > -0.12 && teeSD(x, z) < 0.25; if (nearEdge) continue;
-      if (surf === 'tee' && (Math.hypot(x, z) < 0.05 || (Math.abs(x - 0.9) < 0.38 && Math.abs(z) < 0.5) || (Math.abs(x + 0.9) < 0.38 && Math.abs(z) < 0.5))) continue;
-      const h = surf === 'tee' ? 0.011 + rand() * 0.012 : surf === 'fairway' ? 0.024 + rand() * 0.022 : 0.05 + rand() * 0.07;
-      p.set(x, heightAt(x, z) - 0.002, z);
-      e.set((rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5); q.setFromEuler(e);
-      s.set(h, h, h);
-      im.setMatrixAt(n, m4.compose(p, q, s));
-      groundColorCPU(x, z, c).multiplyScalar(0.82 + rand() * 0.3);
-      if (rand() < 0.07) c.lerp(COL.roughDry, surf === 'rough' ? 0.45 : 0.2);
-      im.setColorAt(n, c);
-      n++;
+      if (blade(im, n, x, z)) n++;
     }
     im.count = n;
     im.computeBoundingSphere();
     im.receiveShadow = true;
     scene.add(im);
+    // a patch of blades that follows the ball once it is down the range (landing and rest cameras): rough reads
+    // tall and breaks the ball's silhouette, fairway reads as cut turf. Re-laid when the ball has moved on.
+    const PATCH = 7000, PR = 7;
+    const patch = new THREE.InstancedMesh(bladeGeo, mat, PATCH);
+    patch.count = 0; patch.receiveShadow = true; patch.frustumCulled = false;
+    scene.add(patch);
+    let lastLay = -1;
+    grassPatch = (cx: number, cz: number, now: number) => {
+      if (Math.hypot(cx, cz) < 24) { patch.count = 0; patchAt.set(1e9, 0); return; } // the tee's own blades cover it
+      if (Math.hypot(cx - patchAt.x, cz - patchAt.y) < 2.5 || now - lastLay < 0.25) return;
+      lastLay = now; patchAt.set(cx, cz);
+      let k = 0;
+      const save = seed; seed = (Math.floor(cx * 7.1) * 7919 + Math.floor(cz * 3.3)) | 1;
+      for (let t = 0; t < PATCH * 2 && k < PATCH; t++) {
+        // denser toward the middle, so the ball sits in grass and the edge fades out
+        const a = rand() * Math.PI * 2, r = PR * Math.pow(rand(), 0.75);
+        if (blade(patch, k, cx + Math.cos(a) * r, cz + Math.sin(a) * r)) k++;
+      }
+      seed = save;
+      patch.count = k;
+      patch.instanceMatrix.needsUpdate = true;
+      if (patch.instanceColor) patch.instanceColor.needsUpdate = true;
+    };
   }
 
   // contact shadow: a soft dark blob that grounds the golfer (real games bake or compute AO here)
@@ -1734,6 +1776,8 @@ gl_Position = projectionMatrix * mvPosition;`);
     update(dt, camera, focus) {
       time += dt;
       if (FEAT.on > 0.5 && feat.t < 1) { feat.t = Math.min(1, feat.t + dt / 0.9); placeFeat(feat.t); }
+      // blades round the ball when it is on the ground down the range and the camera is close to it
+      if (!tight && focus.y - heightAt(focus.x, focus.z) < 2.5 && camera.position.distanceTo(focus) < 40) grassPatch(focus.x, focus.z, time);
       // tree detail by distance from the camera to each chunk's stretch of the range
       for (const t of treeLods) {
         const cz = camera.position.z, d = Math.max(0, cz - t.zA, t.zB - cz) + Math.max(0, camera.position.y - 60);
