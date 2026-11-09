@@ -101,4 +101,4 @@ if (view === 'probe') {
     return out;
   };
 }
-setTimeout(() => { renderer.render(scene, cam); (window as any).__ready = true; }, 700);
+setTimeout(() => { renderer.render(scene, cam); (window as any).__ready = true; }, +(q.get('wait') ?? 2500));

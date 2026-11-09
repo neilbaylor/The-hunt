@@ -126,11 +126,18 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.4, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
     // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
-    const crest = new THREE.TextureLoader().load(crestUrl); crest.colorSpace = THREE.SRGBColorSpace; crest.anisotropy = 8;
+    const crest = O.chestLogo === 'malbon-m' ? canvasTex(256, 256, g => {
+      // white embroidered script 'm' (loopy single stroke)
+      g.clearRect(0, 0, 256, 256); g.strokeStyle = '#f4f2ec'; g.lineWidth = 15; g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath(); g.moveTo(34, 190); g.bezierCurveTo(48, 120, 70, 66, 92, 70); g.bezierCurveTo(116, 74, 96, 150, 104, 176);
+      g.bezierCurveTo(112, 120, 138, 70, 160, 74); g.bezierCurveTo(186, 80, 160, 170, 182, 182); g.bezierCurveTo(196, 190, 214, 176, 226, 158);
+      g.moveTo(60, 120); g.bezierCurveTo(30, 108, 30, 70, 60, 64); g.stroke();
+    }, true, 1) : new THREE.TextureLoader().load(crestUrl);
+    crest.colorSpace = THREE.SRGBColorSpace; crest.anisotropy = 8; crest.wrapS = crest.wrapT = THREE.ClampToEdgeWrapping; crest.repeat.set(1, 1);
     const chest = J[M.bones.indexOf('spine_02')];
     const side = p.handed === 'left' ? -1 : 1;
     const cz = M.collar.reduce((a, c) => Math.max(a, c[2]), -9) - 0.01;
-    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
+    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.055 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
   }
   add('shirt', shirtMat);
   const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.82, sheen: 0.3, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.6), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
@@ -139,6 +146,9 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const glove = new THREE.MeshPhysicalMaterial({ color: O.glove, roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color('#ffffff'), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   applyFabric(glove, 'glove', fu);
   add('glove', glove);
+  const sockMat = new THREE.MeshPhysicalMaterial({ color: '#f2f1ec', roughness: 0.95, sheen: 0.6, sheenColor: new THREE.Color('#ffffff'), polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  applyFabric(sockMat, 'glove', fu);
+  add('socks', sockMat);
   void fabricNormal;
   void data.eyes;
   const teeth = add('teeth', new THREE.MeshStandardMaterial({ color: '#e8e0d2', roughness: 0.35 }));

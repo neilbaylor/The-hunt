@@ -210,7 +210,11 @@
     "shoeGap": 0.007,
     "thighR": 0.1,
     "kneeR": 0.086,
-    "hemR": 0.08
+    "hemR": 0.08,
+    "shorts": true,
+    "shortsAboveKnee": 0.075,
+    "shortsHemR": 0.088,
+    "socks": 0.045
   },
   "faceShape": {
     "photos": [

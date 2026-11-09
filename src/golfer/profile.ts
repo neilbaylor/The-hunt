@@ -32,6 +32,7 @@ export interface Outfit {
   shoes: string;
   shoeTrim: string;
   glove: string;
+  chestLogo?: 'malbon-m' | 'toronto-hunt';
   headwear: Headwear | null;
 }
 
@@ -77,17 +78,18 @@ export const NEIL: GolferProfile = {
   },
   outfit: {
     top: 'polo',
-    shirt: '#1f2f4f',
+    shirt: '#1c4739',     // Malbon forest green polo
     topColor: '#d6d3cc',
-    topTrim: '#f2c21b',
+    topTrim: '#1c4739',
     emblem: '#b3262e',
-    pants: '#c9bfa6',
+    pants: '#c8b38a',     // khaki shorts
     shoes: '#f3f2ee',
-    shoeTrim: '#b3262e',
+    shoeTrim: '#e6e5e0',
     glove: '#f6f5f1',
+    chestLogo: 'malbon-m',
     headwear: { kind: 'visor', color: '#f3efe4', under: '#24382b', logo: 'pizza-hut' },
   },
-  swing: { tempo: 1.2, length: 1.0, finishHigh: 1.0, waggle: true },
+  swing: { tempo: 1.1, length: 1.0, finishHigh: 1.0, waggle: true }, // ≈1.3 s to a full top with the eased approach
 };
 
 export const feetInches = (m: number) => {

@@ -310,7 +310,8 @@ for vi in body_idx:
             tuck = min(1.0, max(0.0, (y - (belt_y - 0.04)) / 0.08))  # tucked in: hugs the body at the waistband
             shirt_off[vi] = C['shirtGap'] * (0.5 + 0.5 * tuck) + C['shirtLoose'] * loose * tuck
     # trousers: belt line down to just above the ankle
-    if y < belt_y + 0.004 and feet < 0.85 and legs > 0.3 and y > min(ankle_y.values()) - 0.012:
+    hem_y = (joint[BONES.index('calf_l')][1] + C['shortsAboveKnee']) if C.get('shorts') else min(ankle_y.values()) - 0.012
+    if y < belt_y + 0.004 and feet < 0.85 and legs > 0.3 and y > hem_y:
         pants[vi] = True
         knee = min(abs(y - joint[BONES.index('calf_l')][1]), 0.3)
         pants_off[vi] = C['pantsGap'] + C['pantsLoose'] * (0.6 + 0.4 * (1 - knee / 0.3)) * (1.2 if y < joint[BONES.index('calf_l')][1] else 1)
@@ -370,6 +371,7 @@ for sfx in 'lr':
         t = float(np.clip(np.dot(Vpants[vi] - hip, ax) / L2, 0, 1)); c = hip + ax * t
         r = Vpants[vi] - c; rl = np.linalg.norm(r)
         rmin = np.interp(t, [0, 0.45, 1.0], [C['thighR'], C['kneeR'], C['hemR']])
+        if C.get('shorts'): rmin = np.interp(t, [0, 0.4], [C['thighR'], C['shortsHemR']])  # roomy, straight leg opening
         want = max(rl + pants_off[vi], rmin)
         dirv = r / max(rl, 1e-6)
         # inner side near the crotch: don't cross the body's midline
@@ -393,6 +395,11 @@ meshes['skin'] = build_mesh(body_faces, V, keep=~feet_hidden)
 meshes['shirt'] = build_mesh(body_faces, Vshirt, normals=N, keep=shirt, extra_offset=shirt_off)
 meshes['pants'] = build_mesh(body_faces, Vpants, normals=N, keep=pants, extra_offset=pants_off)
 meshes['glove'] = build_mesh(body_faces, V, normals=N, keep=glove, normal_out=0.0012)
+if C.get('socks'):
+    socks = np.zeros(NV, bool)
+    for vi in body_idx:
+        if min(ankle_y.values()) - 0.02 < V[vi, 1] < min(ankle_y.values()) + C['socks'] and wsum(vi, ['calf_l', 'calf_r', 'foot_l', 'foot_r']) > 0.5: socks[vi] = True
+    meshes['socks'] = build_mesh(body_faces, V, normals=N, keep=socks, normal_out=0.0015)
 meshes['teeth'] = build_mesh(face_list({'helper-upper-teeth', 'helper-lower-teeth', 'helper-tongue'}), V)
 
 # ───────────────────────── cloth detail fields + ambient occlusion ─────────────────────────
@@ -459,7 +466,7 @@ cloud_n = [vertex_normals_tri(meshes[k]) for k in ('skin', 'shirt', 'pants')]
 CP, CN = np.vstack(cloud), np.vstack(cloud_n)
 # subsample the cloud for speed
 sel = np.arange(0, len(CP), 2); CP, CN = CP[sel], CN[sel]
-for k in ('skin', 'shirt', 'pants', 'glove'):
+for k in [k for k in ('skin', 'shirt', 'pants', 'glove', 'socks') if k in meshes]:
     meshes[k]['ao'] = bake_ao(meshes[k], CP, CN)
     print('  ao', k, round(float(meshes[k]['ao'].min()), 2), round(float(meshes[k]['ao'].mean()), 3))
 
@@ -497,6 +504,7 @@ crease = np.where(np.nan_to_num(th) * 0 + (np.abs(np.nan_to_num(th)) > 90), crea
 m['cloth'] = np.c_[edge, seamd, crease, m['ao']].astype(np.float32)
 m['legT'] = tt.astype(np.float32)
 meshes['skin']['cloth'] = np.c_[np.full(len(meshes['skin']['pos']), 9.0), np.full(len(meshes['skin']['pos']), 9.0), np.full(len(meshes['skin']['pos']), 9.0), meshes['skin']['ao']].astype(np.float32)
+if 'socks' in meshes: meshes['socks']['cloth'] = np.c_[geodesic_from(meshes['socks'], boundary_vertices(meshes['socks'])), np.full(len(meshes['socks']['pos']), 9.0), np.full(len(meshes['socks']['pos']), 9.0), meshes['socks']['ao']].astype(np.float32)
 meshes['glove']['cloth'] = np.c_[geodesic_from(meshes['glove'], boundary_vertices(meshes['glove'])), np.full(len(meshes['glove']['pos']), 9.0), np.full(len(meshes['glove']['pos']), 9.0), meshes['glove']['ao']].astype(np.float32)
 
 # ───────────────────────── hair shell + head measurements ─────────────────────────
