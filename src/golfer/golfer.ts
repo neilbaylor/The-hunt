@@ -477,7 +477,7 @@ export class Golfer {
           let qPrev = qh.clone();
           chain.forEach((b, si) => {
             const d = P.clone().sub(axisP), along = d.dot(axisD);
-            const radial = d.clone().addScaledVector(axisD, -along); const rl = radial.length(); radial.normalize();
+            const radial = d.clone().addScaledVector(axisD, -along).normalize();
             const target = axisP.clone().addScaledVector(axisD, along - (0.022 + 0.01 * si)).addScaledVector(radial, s === 'L' ? rFinger - 0.002 : rFinger);
             const segW = segs[si].clone().applyQuaternion(qPrev).normalize();
             const q = new THREE.Quaternion().setFromUnitVectors(segW, target.sub(P).normalize()).multiply(qPrev);
