@@ -26,7 +26,7 @@ const LINES: Record<Outcome, string[]> = {
 export class FaceBadge {
   readonly el: HTMLDivElement;
   private badge: HTMLDivElement; private word: HTMLSpanElement; private bubble: HTMLDivElement;
-  private rt = new THREE.WebGLRenderTarget(128, 128, { samples: 4 });
+  private rt = new THREE.WebGLRenderTarget(192, 192, { samples: 4 });
   private cam = new THREE.PerspectiveCamera(20, 1, 0.05, 3);
   private blitScene = new THREE.Scene(); private blitCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private bg = new THREE.Color('#bfe0f2');

@@ -579,3 +579,19 @@ body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-orig
 /* during the shot the face badge slides up past the hidden club row */
 .hud.in-shot .who { transform: translateY(-60px); }
 @media (prefers-reduced-motion: reduce) { .hud .ed.pop { animation: none; } }
+
+/* ───────────── top-left: a bigger live face (stacked: face, name, swing word) with the editorial number beside it ───────────── */
+.hud .tl { display: grid; grid-template-columns: auto auto; grid-template-areas: "who ed" "who row"; column-gap: 12px; row-gap: 6px; align-items: start; justify-items: start; }
+.hud .tl .ed { grid-area: ed; margin: 4px 0 0; }
+.hud .tl .row { grid-area: row; }
+.hud .tl .who { grid-area: who; }
+.hud .ed-n { font-size: 88px; }
+.hud .ed.result .ed-n { font-size: 100px; }
+.hud .ed-c { font-size: 10.5px; letter-spacing: .22em; }
+.face-wrap { grid-template-columns: 92px; grid-template-rows: 92px auto auto; justify-items: center; row-gap: 6px; }
+.face-badge { width: 92px; height: 92px; box-shadow: 0 0 0 3px #fffaf0, 0 0 0 6px #c9a227, 0 8px 18px rgba(0,0,0,.32); }
+.face-name { grid-column: 1; grid-row: 2; justify-self: center; font-size: 13px; padding: 4px 10px 5px; }
+.face-word { grid-column: 1; grid-row: 3; margin-top: 0; }
+.face-bubble { left: 104px; top: 128px; }
+.hud.in-shot .who { transform: none; }
+@media (max-width: 380px) { .face-wrap { grid-template-columns: 84px; grid-template-rows: 84px auto auto; } .face-badge { width: 84px; height: 84px; } .hud .ed-n { font-size: 80px; } }
