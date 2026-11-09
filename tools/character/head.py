@@ -511,7 +511,7 @@ if A.unwrap != 'none' and os.path.exists(A.unwrap):
     xy = uw(cyl(cp))
     cu = np.stack([map_coordinates(U[..., k], [xy[:, 1] - 0.5, xy[:, 0] - 0.5], order=1, mode='nearest') for k in range(3)], 1)
     ang = np.abs(np.arctan2(cp[:, 0] - hc_[0], cp[:, 2] - hc_[2]))
-    wu = np.clip(np.minimum.reduce([xy[:, 0] - 4, UW - 4 - xy[:, 0], xy[:, 1] - 4, UH - 4 - xy[:, 1]]) / 14, 0, 1)
+    wu = np.clip(np.minimum.reduce([xy[:, 0] - 4, UW - 4 - xy[:, 0], xy[:, 1] - 4, UH - 4 - xy[:, 1]]) / 60, 0, 1) ** 1.5   # wide, soft edges
     wu *= np.clip((np.radians(UCFG.get('maxAngle', 105)) - ang) / 0.25, 0, 1)
     wu *= np.clip((cp[:, 1] - (lm_f[152, 1] - 0.05)) / 0.02, 0, 1)
     # the unwrap's flat orange margins (round the ears, the corners) are not skin detail
@@ -544,6 +544,10 @@ skin_known = known & ~hairy & (conf > 0.8) & (lum > 120) & (cp[:, 1] < eyeY - 0.
 hair_c = np.median(col[hair_known], 0) if hair_known.sum() > 50 else np.array([92, 64, 44.])
 skin_c = np.median(col[skin_known], 0) if skin_known.sum() > 50 else np.array([215, 150, 120.])
 if skin_from_unwrap is not None: skin_c = skin_from_unwrap
+# the neck's own tone (a touch darker than the cheeks): the fill and the fade into the body use it
+neck_sel = known & (conf > 0.8) & (cp[:, 1] < lm_f[152, 1] - 0.005) & (cp[:, 1] > lm_f[152, 1] - 0.04)
+neck_c = np.median(col[neck_sel], 0) if neck_sel.sum() > 200 else skin_c * 0.95
+print('neck colour', neck_c.round())
 # pencil highlights and paper flecks in the hair: hold the hair to its own tone
 hl = col.mean(1) / max(hair_c.mean(), 1)
 tame = hairy & (hl > 1.3)
@@ -570,7 +574,7 @@ gd -= hiN * np.einsum('ij,ij->i', gd, hiN)[:, None]; gd /= np.linalg.norm(gd, ax
 def aniso(F_perp, F_par):
     q = cp * F_perp + gd * np.einsum('ij,ij->i', cp, gd)[:, None] * (F_par - F_perp); return snoise(q)
 strand = 0.55 + 0.7 * (0.55 * aniso(2600, 70) + 0.3 * aniso(900, 30) + 0.15 * snoise(cp * 150))
-fill = hair_amt[:, None] * hair_c * strand[:, None] * (0.55 + 0.45 * relief[:, None]) + (1 - hair_amt[:, None]) * skin_c * (0.92 + 0.08 * relief[:, None])
+fill = hair_amt[:, None] * hair_c * strand[:, None] * (0.55 + 0.45 * relief[:, None]) + (1 - hair_amt[:, None]) * neck_c * (0.92 + 0.08 * relief[:, None])
 # soft hair edge at the nape
 out = col * conf[:, None] + fill * (1 - conf[:, None])
 # ── hair colour: his own dark brown, whatever the textures say (the unwrap's hair is lighter and redder) ──
@@ -600,7 +604,7 @@ out = out * (1 - H_[:, None]) + rec * H_[:, None]
 print('hair recoloured to', hair_hex, 'over', int((H_ > 0.5).sum()), 'texels; source hair lum', round(float(hm_mean), 1))
 # the neck band fades to the body's skin tone (the body is tinted to the face below)
 nk = np.clip(((LV[vmap][UF[tt]] * tw[..., None]).sum(1) - cen) @ pn / (BAND + 0.012), 0, 1) ** 0.7
-out = out * nk[:, None] + skin_c * 0.93 * (1 - nk[:, None])
+out = out * nk[:, None] + neck_c * (1 - nk[:, None])
 tex = np.zeros((T, T, 3), np.float32); have = np.zeros((T, T), np.uint8)
 tex[ty, tx] = out; have[ty, tx] = 255
 # dilate into the gutters so mips don't bleed black
@@ -636,7 +640,7 @@ la = B.index('lowerarm_l')
 arm = np.nonzero((SI[:, 0] == la) & (SW[:, 0] > 0.8))[0]
 uvs = SUV[arm]; px_ = np.clip((uvs[:, 0] * sk_img.shape[1]).astype(int), 0, sk_img.shape[1] - 1); py_ = np.clip(((1 - uvs[:, 1]) * sk_img.shape[0]).astype(int), 0, sk_img.shape[0] - 1)
 arm_c = np.median(sk_img[py_, px_], 0)
-tint = np.clip((skin_c / 255) ** 2.2 / np.maximum((arm_c / 255) ** 2.2, 1e-3), 0.5, 1.6)
+tint = np.clip((neck_c / 255) ** 2.2 / np.maximum((arm_c / 255) ** 2.2, 1e-3), 0.5, 1.6)
 print('body arm colour', arm_c.round(), '→ tint (linear)', tint.round(3))
 
 # ───────────────────────── write head.bin ─────────────────────────

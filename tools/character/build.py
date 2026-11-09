@@ -476,9 +476,12 @@ if C.get('hideUnderShirt'):
         for n in NB[vi]:
             if shirt[n]: _r.append(_pi[vi]); _c.append(_pi[n]); _d.append(float(np.linalg.norm(V[vi] - V[n])))
     _G = _coo((_d, (_r, _c)), shape=(len(_ids), len(_ids))).tocsr()
-    _bd = [_pi[vi] for vi in _ids if any(not shirt[n] for n in NB[vi])]
-    _dist = _dij(_G, indices=_bd, min_only=True)
-    under_shirt[_ids[_dist > C['hideUnderShirt']]] = True
+    _bv = [vi for vi in _ids if any(not shirt[n] for n in NB[vi])]
+    _neck = [_pi[vi] for vi in _bv if V[vi, 1] > neck_y - 0.12 and wsum(vi, ['upperarm_l', 'upperarm_r']) < 0.3]
+    _rest = [_pi[vi] for vi in _bv if _pi[vi] not in set(_neck)]
+    # keep a deep margin inside the sleeves and hem (you can look up them), only a sliver under the collar
+    _keep = (_dij(_G, indices=_rest, min_only=True) <= C['hideUnderShirt']) | (_dij(_G, indices=_neck, min_only=True) <= C.get('hideUnderCollar', 0.012))
+    under_shirt[_ids[~_keep]] = True
 
 meshes = {}
 # the feet are hidden inside the shoes: drop them from the skin so they never poke through

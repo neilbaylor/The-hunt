@@ -78,7 +78,7 @@ const BODY: Record<FabricKind, string> = {
   `,
   glove: /* glsl */ `
     float fine = 1.0 - smoothstep(0.0005, 0.002, fwidth(vB.y));
-    h += 0.0002 * fn3(vB * 1200.0) * fine;
+    h += 0.00005 * fn3(vB * 900.0) * fine;  // soft leather grain (stronger reads as sparkle)
     float cuff = 1.0 - smoothstep(0.012, 0.016, vC.x);
     col *= 1.0 - 0.12 * cuff;   // dark tab at the cuff
     h += 0.0006 * cuff;
