@@ -189,6 +189,9 @@ export class Golfer {
     const pos = this.pose;
     const armLen = this.rig.len.upper + this.rig.len.fore;
     const wristAddr = this.extras ? this.clubAt.clone().add(this.gripFrame('L', this.club.gripLead).wrist) : this.gripAddr.clone();
+    // how far the hands hang ahead of the shoulder: more with the longer clubs (toes ~49 cm from the ball with a wedge,
+    // ~53 with a 7 iron, ~68 with the driver)
+    const handsAhead = (0.03 + 0.03 * Math.min(1, Math.max(0, (this.club.length - 0.9) / 0.1))) * k;
     const solveZ = () => {
       let lo = -1.2, hi = -0.1;
       for (let it = 0; it < 20; it++) {
@@ -197,7 +200,7 @@ export class Golfer {
         this.addressKeys(pos); this.rig.apply(pos);
         const sh = this.rig.P[BONE.upperL];
         // shoulder a touch outside the hands (toward the ball) — a plumb line from it hangs just inside the toes
-        if (sh.z < wristAddr.z - 0.045 * k) lo = z; else hi = z;   // shoulder a little behind the hands (traced: the hands hang just ahead of it)
+        if (sh.z < wristAddr.z - handsAhead) lo = z; else hi = z;   // shoulder a little behind the hands (traced: the hands hang just ahead of it)
       }
       // arm length to the actual wrist on the grip (real hands), else to the grip less a hand
       return this.extras ? this.rig.P[BONE.upperL].distanceTo(wristAddr) : this.rig.P[BONE.upperL].distanceTo(this.gripAddr) - 0.072 * k;

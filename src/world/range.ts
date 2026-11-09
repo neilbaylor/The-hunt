@@ -77,17 +77,19 @@ const TIMES: Record<TimeOfDay, TimePreset> = {
 const TEE = { cx: 0, cz: 2, hx: 7, hz: 8, r: 1.4 }; // tee box rounded rectangle (x∈[-7,7], z∈[-6,10])
 const TEE_DROP = 0.32; // how far the tee box stands above the ground around it
 const FW_START = -6.5, FW_END = -322, CAP0 = 14, CAP1 = 26, FIRST_CUT = 2.6;
-const FRINGE = 1.8;
+const FRINGE = 2.1;
 
 interface Green { yards: number; x: number; z: number; r: number; p: number; color: string }
 const GREENS: Green[] = [
   // the first three sit close to the line so their flags are in the portrait swing camera's narrow frame
-  { yards: 50, x: -6.5, z: -50 * YD, r: 6.5, p: 0.3, color: '#d7263d' },
-  { yards: 100, x: 9.5, z: -100 * YD, r: 8.5, p: 1.7, color: '#ffd23f' },
-  { yards: 150, x: -12, z: -150 * YD, r: 10.5, p: 2.9, color: '#f4f4ef' },
-  { yards: 200, x: 15, z: -200 * YD, r: 12, p: 4.2, color: '#2f6fdf' },
-  { yards: 250, x: -12, z: -250 * YD, r: 13.5, p: 5.1, color: '#ff8a1c' },
-  { yards: 300, x: 6, z: -300 * YD, r: 15, p: 0.9, color: '#9b5de5' },
+  // the chipping / putting green just short-left of the tee, then the target greens (about 1.7x the area they were)
+  { yards: 25, x: -13, z: -25 * YD, r: 9.5, p: 2.2, color: '#f4f4ef' },
+  { yards: 50, x: -6.5, z: -50 * YD, r: 8.5, p: 0.3, color: '#d7263d' },
+  { yards: 100, x: 9.5, z: -100 * YD, r: 11, p: 1.7, color: '#ffd23f' },
+  { yards: 150, x: -12, z: -150 * YD, r: 13.5, p: 2.9, color: '#f4f4ef' },
+  { yards: 200, x: 15, z: -200 * YD, r: 15.5, p: 4.2, color: '#2f6fdf' },
+  { yards: 250, x: -12, z: -250 * YD, r: 17.5, p: 5.1, color: '#ff8a1c' },
+  { yards: 300, x: 6, z: -300 * YD, r: 19.5, p: 0.9, color: '#9b5de5' },
 ];
 // the clubhouse on the rise beyond the range: white clapboard, dark roof, a flag on the gable
 const CLUBHOUSE = { x: -42, z: -585, w: 34, d: 14, h: 8, yaw: 0.12 };
@@ -98,10 +100,10 @@ const featWob = (a: number) => 1 + 0.06 * Math.sin(2 * a + 1.1) + 0.04 * Math.si
 const featD = (x: number, z: number) => Math.hypot(x - FEAT.x, z - FEAT.z) / (FEAT.r * featWob(Math.atan2(z - FEAT.z, x - FEAT.x)));
 interface Bunker { x: number; z: number; rx: number; rz: number; rot: number; p: number }
 const BUNKERS: Bunker[] = [
-  { x: -6.5, z: -126, rx: 4.8, rz: 2.4, rot: 0.45, p: 0.7 },
-  { x: -29, z: -229, rx: 5.2, rz: 3.0, rot: -0.35, p: 2.1 },
+  { x: 4, z: -124, rx: 4.8, rz: 2.4, rot: 0.45, p: 0.7 },
+  { x: -36, z: -229, rx: 5.2, rz: 3.0, rot: -0.35, p: 2.1 },
   { x: 25, z: -150, rx: 7.5, rz: 2.8, rot: 0.12, p: 3.3 },
-  { x: 3, z: -254, rx: 6.2, rz: 2.2, rot: 0.05, p: 4.6 },
+  { x: 3, z: -248, rx: 6.2, rz: 2.2, rot: 0.05, p: 4.6 },
 ];
 
 // ───────────────────────── math helpers (shared by CPU + mirrored in GLSL) ─────────────────────────
@@ -136,7 +138,7 @@ function fwHalf(z: number, grow: number): number {
   if (z < s1 + CAP1) { const t = (s1 + CAP1 - z) / CAP1; h *= Math.sqrt(Math.max(0, 1 - t * t)); }
   return h;
 }
-const wob = (a: number, p: number) => 1 + 0.08 * Math.sin(2 * a + p) + 0.05 * Math.sin(3 * a + 2 * p);
+const wob = (a: number, p: number) => 1 + 0.11 * Math.sin(2 * a + p) + 0.06 * Math.sin(3 * a + 2 * p) + 0.03 * Math.sin(5 * a + 3 * p);
 /** normalised distance from a green's centre (1 = edge of the putting surface) */
 function greenD(g: Green, x: number, z: number): number {
   const dx = x - g.x, dz = z - g.z;
@@ -369,7 +371,7 @@ function makeFlagTexture(renderer: THREE.WebGLRenderer): THREE.CanvasTexture {
     g.strokeStyle = 'rgba(120,85,10,0.55)'; g.setLineDash([5, 4]); g.lineWidth = 1.6;
     g.strokeRect(9, 9, W - 18, H - 18); g.beginPath(); g.moveTo(30, 0); g.lineTo(30, H); g.stroke(); g.setLineDash([]);
     if (crestImg) {
-      const ch = H * 0.7, cw = ch * crestImg.width / crestImg.height;
+      const ch = H * 0.8, cw = ch * crestImg.width / crestImg.height;
       g.drawImage(crestImg, W * 0.53 - cw / 2, H / 2 - ch / 2, cw, ch);
       // printed ink sits in the cloth: let the weave show through a little
       for (let y = 0; y < H; y += 2) { g.fillStyle = 'rgba(0,0,0,0.035)'; g.fillRect(0, y, W, 1); }
@@ -415,8 +417,8 @@ function makeSignAtlas(renderer: THREE.WebGLRenderer): THREE.CanvasTexture {
       if (crestImg) { const ch = 132, cw = ch * crestImg.width / crestImg.height; g.drawImage(crestImg, x + 36, y + 62, cw, ch); g.fillStyle = 'rgba(22,48,33,0.5)'; g.fillRect(x + 36 + cw + 14, y + 52, 3, 152); }
       for (let k = 0; k < 220; k++) { g.fillStyle = 'rgba(239,233,216,0.55)'; g.fillRect(x + 30 + rand() * 450, y + 40 + rand() * 190, 1 + rand() * 3, 1 + rand() * 2); }
     });
-    const [bx, by] = cell(6); grain(bx, by, 512, 256, '#5a4430', '#2c1f14', 4);
-    const [tx, ty] = cell(7); grain(tx, ty, 512, 256, '#4a3826', '#20160c', 1);
+    const [bx, by] = cell(14); grain(bx, by, 512, 256, '#5a4430', '#2c1f14', 4);
+    const [tx, ty] = cell(15); grain(tx, ty, 512, 256, '#4a3826', '#20160c', 1);
     seed = save;
     t.needsUpdate = true;
   };
@@ -571,7 +573,7 @@ vec3 groundColor(vec2 p) {
     vec4 g = GREENS[i];
     vec2 d = p - g.xy;
     float a = atan(d.y, d.x);
-    float gd = length(d) / (g.z * (1.0 + 0.08 * sin(2.0 * a + g.w) + 0.05 * sin(3.0 * a + 2.0 * g.w)));
+    float gd = length(d) / (g.z * (1.0 + 0.11 * sin(2.0 * a + g.w) + 0.06 * sin(3.0 * a + 2.0 * g.w) + 0.03 * sin(5.0 * a + 3.0 * g.w)));
     if (gd > 1.6) continue;
     float fr = inside(gd, 1.0 + ${FRINGE.toFixed(2)} / g.z);
     col = mix(col, ${v3(COL.fringe)} * (0.92 + 0.14 * n1), fr);
@@ -796,6 +798,11 @@ function cupGeometries(): { parts: THREE.BufferGeometry[]; mask: THREE.BufferGeo
     ],
     mask,
   };
+}
+/** real proportions near the tee (7 ft stick, 20 x 14 in flag); far pins grow a little so they still read from the tee */
+function pinScale(yards: number) {
+  const far = Math.max(0, yards - 90);
+  return { k: 1 + far / 900, kf: 1 + far / 380 };
 }
 /** a flagstick (from 8 cm down in the cup), its top ferrule and the crest flag, at the origin */
 function pinGeometries(H: number, fw: number, fh: number, pr: number, k: number, kf: number, phase: number) {
@@ -1322,8 +1329,8 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
     GREENS.forEach((g, i) => {
       const y0 = heightAt(g.x, g.z);
       // a touch bigger far away so they still read from the tee; the cloth more so, so the crest reads on a phone
-      const k = 1.1 + g.yards / 300, kf = 1.75 + g.yards / 160;
-      const H = 2.3 * k, fw = 0.56 * kf, fh = 0.4 * kf, pr = 0.0095 * k * 1.25;
+      const { k, kf } = pinScale(g.yards);
+      const H = 2.13 * k + 0.08, fw = 0.51 * kf, fh = 0.36 * kf, pr = 0.0085 * k;
       const pin = pinGeometries(H, fw, fh, pr, k, kf, i * 1.7 + 0.4);
       for (const geo of [pin.pole, pin.tip, pin.flag, pin.fer]) geo.translate(g.x, y0, g.z);
       poles.push(pin.pole); tips.push(pin.tip); flags.push(pin.flag); ferrules.push(pin.fer);
@@ -1337,20 +1344,20 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
       signSpots.push({ x: bx, z: bz, w: W });
       const yaw = Math.atan2(0 - bx, 2 - bz);
       const board = new THREE.BoxGeometry(W, BH, T);
-      for (const f of [0, 1, 2, 3]) mapFace(board, f, 7, 0.06);
-      mapFace(board, 4, i); mapFace(board, 5, 6);
+      for (const f of [0, 1, 2, 3]) mapFace(board, f, 15, 0.06);
+      mapFace(board, 4, i); mapFace(board, 5, 14);
       board.rotateY(yaw); board.translate(bx, by + lift + BH / 2, bz);
       boards.push(board);
       // a capped timber post at each end, standing proud of the board
       for (const px of [-W / 2 - 0.05, W / 2 + 0.05]) {
         const ph2 = lift + BH + 0.12 + 0.3;
         const post = new THREE.BoxGeometry(0.11 * (1 + W / 6), ph2, 0.11 * (1 + W / 6));
-        for (const f of [0, 1, 2, 3, 4, 5]) mapFace(post, f, 7, 0.02);
+        for (const f of [0, 1, 2, 3, 4, 5]) mapFace(post, f, 15, 0.02);
         post.translate(px, ph2 / 2 - 0.3, -T * 0.2); post.rotateY(yaw); post.translate(bx, by, bz);
         posts.push(post);
         const cap = new THREE.ConeGeometry(0.1 * (1 + W / 6), 0.07, 4, 1); cap.rotateY(Math.PI / 4);
         cap.translate(px, ph2 - 0.3 + 0.035, -T * 0.2); cap.rotateY(yaw); cap.translate(bx, by, bz);
-        const cuv = cap.getAttribute('uv') as THREE.BufferAttribute; const [u0, v0] = cellUV(7); for (let v = 0; v < cuv.count; v++) cuv.setXY(v, u0 + 0.02 + cuv.getX(v) * 0.2, v0 + 0.02 + cuv.getY(v) * 0.2);
+        const cuv = cap.getAttribute('uv') as THREE.BufferAttribute; const [u0, v0] = cellUV(15); for (let v = 0; v < cuv.count; v++) cuv.setXY(v, u0 + 0.02 + cuv.getX(v) * 0.2, v0 + 0.02 + cuv.getY(v) * 0.2);
         posts.push(cap);
       }
     });
@@ -1428,8 +1435,8 @@ reflectedLight.indirectSpecular *= 0.3;`);
 
     // the featured target's pin and cup: built once at the 150-yd size; the pin is scaled with distance
     {
-      const k = 1.1 + 150 / 300, kf = 1.75 + 150 / 160;
-      const pin = pinGeometries(2.3 * k, 0.56 * kf, 0.4 * kf, 0.0095 * k * 1.25, k, kf, 0.9);
+      const { k, kf } = pinScale(150);
+      const pin = pinGeometries(2.13 * k + 0.08, 0.51 * kf, 0.36 * kf, 0.0085 * k, k, kf, 0.9);
       const cup = cupGeometries();
       const mk = (g: THREE.BufferGeometry, m: THREE.Material, order = 0, shadow = false) => { const o = new THREE.Mesh(g, m); o.renderOrder = order; o.castShadow = shadow; return o; };
       const fl = mk(pin.flag, flagMat); fl.frustumCulled = false;
@@ -1806,7 +1813,7 @@ gl_Position = projectionMatrix * mvPosition;`);
         const i = targets.indexOf(featTarget); if (i >= 0) targets.splice(i, 1);
         return;
       }
-      const yd = clamp(yards, 20, 330), z = -yd * YD, r = clamp(5.5 + yd * 0.03, 6.5, 13);
+      const yd = clamp(yards, 20, 330), z = -yd * YD, r = clamp(7 + yd * 0.04, 8.5, 17);
       // a spot near the line that clears the scenery greens and the bunkers, preferring a little right of centre
       const clear = (x: number) => {
         let c = Infinity;
@@ -1822,7 +1829,7 @@ gl_Position = projectionMatrix * mvPosition;`);
       }
       // a bigger flag than the scenery greens' so it is the one the eye goes to (scaled up, the pole runs on
       // down through the cup bottom, out of sight)
-      const s1 = clamp((1.75 + yd / 160) / 2.6875 * 1.45, 1.1, 1.8);
+      const s1 = clamp(pinScale(yd).kf / pinScale(150).kf * 1.1, 1.0, 1.35);
       if (FEAT.on < 0.5) { feat.from.set(best, z); feat.r0 = r; feat.s0 = s1; feat.t = 1; targets.push(featTarget); }
       else { feat.from.set(FEAT.x, FEAT.z); feat.r0 = FEAT.r; feat.s0 = featPin.scale.x; feat.t = 0; }
       feat.to.set(best, z); feat.r1 = r; feat.s1 = s1;
