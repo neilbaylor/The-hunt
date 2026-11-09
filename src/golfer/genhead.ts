@@ -219,7 +219,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       tb.copy(target).applyMatrix4(m4).sub(eyeBind);
       gx = mirroredX * Math.atan2(tb.x, tb.z) / 0.6; gy = Math.atan2(tb.y, Math.hypot(tb.x, tb.z)) / 0.45;
     } else {
-      if (now > nextGlance) { idleGaze.set(0, 0);   // (no idle glances: at rest the real painted eyes show; lookAt / setGaze move them) nextGlance = now + 0.8 + Math.random() * 2.2; }
+      if (now > nextGlance) { idleGaze.set(0, 0); /* no idle glances: at rest the real painted eyes show; lookAt / setGaze move them */ nextGlance = now + 0.8 + Math.random() * 2.2; }
       gx = idleGaze.x; gy = idleGaze.y;
     }
     gx = Math.max(-1, Math.min(1, gx)); gy = Math.max(-1, Math.min(1, gy));
