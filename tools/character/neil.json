@@ -165,6 +165,38 @@
         ],
         "weight": 0.8,
         "excludeMouth": true
+      },
+      {
+        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/618c8746-image.png",
+        "eyeR": [
+          77,
+          260
+        ],
+        "eyeL": [
+          184,
+          244
+        ],
+        "nose": [
+          113,
+          326
+        ],
+        "mouth": [
+          126,
+          378
+        ],
+        "chin": [
+          132,
+          483
+        ],
+        "skinSample": [
+          95,
+          160,
+          175,
+          200
+        ],
+        "weight": 0.7,
+        "excludeMouth": true,
+        "excludeLeftEye": true
       }
     ],
     "faceHalfWidth": 0.07,
