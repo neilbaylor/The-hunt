@@ -6,6 +6,7 @@ import type { Body, Skeleton as SkelInfo } from './body';
 import type { GolferProfile } from './profile';
 import { buildVisor } from './headwear';
 import { applyFabric } from './fabric';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildGenHead, hideAboveSeam, loadGenHead, type GenHeadData, type FaceController } from './genhead';
 import crestUrl from '../assets/brand/toronto-hunt-crest.png?url';
 import malbonUrl from '../assets/brand/malbon-m.svg?url';
@@ -67,6 +68,64 @@ function canvasTex(w: number, h: number, draw: (g: CanvasRenderingContext2D) => 
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d')!);
   const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat); t.anisotropy = 8; return t;
+}
+/** Merge parts with different materials into ONE geometry + ONE atlas texture (one draw call): every textured
+ *  part's canvas is packed into the atlas (tinted by its material colour), every plain-coloured part gets a small
+ *  solid patch, and each part's UVs are remapped into its slot. Parts' own transforms are applied. */
+type AtlasItem = { key: string; w: number; h: number; draw: (g: CanvasRenderingContext2D, x: number, y: number) => void; x: number; y: number; pad: number };
+type AtlasLayout = { items: Map<string, AtlasItem>; tex: THREE.CanvasTexture; AW: number; AH: number };
+function bakeAtlas(parts: THREE.Mesh[], AW = 2048, reuse?: AtlasLayout) {
+  type Item = AtlasItem;
+  const items = reuse ? reuse.items : new Map<string, Item>();
+  const keyOf = (m: THREE.MeshStandardMaterial) => {
+    const col = m.color ? m.color.getHexString() : 'ffffff';
+    const key = (m.map ? m.map.uuid : 'c') + col;
+    if (!items.has(key)) {
+      if (m.map) {
+        if (reuse) throw new Error('bakeAtlas: part not in the reused atlas');
+        const cv = m.map.image as HTMLCanvasElement, sc = Math.min(1, (cv.width > 8 * cv.height ? AW / 3 : AW / 2) / cv.width);   // long strips go a third wide
+        const w = Math.round(cv.width * sc), h = Math.max(8, Math.round(cv.height * sc));
+        items.set(key, { key, w, h, x: 0, y: 0, pad: 4, draw: (g, x, y) => {
+          g.drawImage(cv, x, y, w, h);
+          if (col !== 'ffffff') { g.save(); g.globalCompositeOperation = 'multiply'; g.fillStyle = '#' + col; g.fillRect(x, y, w, h); g.restore(); }
+        } });
+      } else if (reuse) throw new Error('bakeAtlas: colour not in the reused atlas');
+      else items.set(key, { key, w: 24, h: 24, x: 0, y: 0, pad: 12, draw: (g, x, y) => { g.fillStyle = '#' + col; g.fillRect(x - 12, y - 12, 48, 48); } });
+    }
+    return key;
+  };
+  const keys = parts.map(p => keyOf(p.material as THREE.MeshStandardMaterial));
+  let AH: number, tex: THREE.CanvasTexture;
+  if (reuse) { AH = reuse.AH; tex = reuse.tex; }
+  else {
+    // shelf packing, tallest first; short items stack in columns under each other within a row
+    let x = 0, y = 0, rowH = 0, colX = -1, colY = 0, colW = 0;
+    for (const it of [...items.values()].sort((a, b) => b.h - a.h)) {
+      const W = it.w + 2 * it.pad, H = it.h + 2 * it.pad;
+      if (colX >= 0 && colY + H <= y + rowH && W <= colW) { it.x = colX + it.pad; it.y = colY + it.pad; colY += H; continue; }
+      if (x + W > AW) { x = 0; y += rowH; rowH = 0; colX = -1; }
+      it.x = x + it.pad; it.y = y + it.pad; rowH = Math.max(rowH, H);
+      colX = x; colY = y + H; colW = W; x += W;
+    }
+    AH = Math.ceil((y + rowH) / 4) * 4;
+    tex = canvasTex(AW, AH, g => { g.fillStyle = '#808080'; g.fillRect(0, 0, AW, AH); for (const it of items.values()) it.draw(g, it.x, it.y); }, true, 1);
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.repeat.set(1, 1);
+  }
+  const geos = parts.map((p, i) => {
+    p.updateMatrix();
+    let g = p.geometry.clone().applyMatrix4(p.matrix);
+    if (!g.index) { const n = g.getAttribute('position').count; g.setIndex([...Array(n).keys()]); }
+    if (!g.getAttribute('normal')) g.computeVertexNormals();
+    const it = items.get(keys[i])!, n = g.getAttribute('position').count, uvIn = g.getAttribute('uv') as THREE.BufferAttribute | undefined;
+    const uv = new Float32Array(n * 2), solid = !(p.material as THREE.MeshStandardMaterial).map;
+    for (let k = 0; k < n; k++) {
+      const u = solid || !uvIn ? 0.5 : Math.min(1, Math.max(0, uvIn.getX(k))), v = solid || !uvIn ? 0.5 : Math.min(1, Math.max(0, uvIn.getY(k)));
+      uv[k * 2] = (it.x + u * it.w) / AW; uv[k * 2 + 1] = 1 - (it.y + (1 - v) * it.h) / AH;
+    }
+    const out = new THREE.BufferGeometry(); out.setIndex(g.index); out.setAttribute('position', g.getAttribute('position')); out.setAttribute('normal', g.getAttribute('normal')); out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g = out; return g;
+  });
+  return { geometry: mergeGeometries(geos)!, texture: tex, layout: { items, tex, AW, AH } as AtlasLayout };
 }
 let seed = 3; const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 
@@ -402,11 +461,11 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     for (let i = 0; i < COLS; i++) for (let r = 0; r < rows - 1; r++) { const a = i * rows + r, b = a + rows; idx.push(a, b, a + 1, a + 1, b, b + 1); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
     const collarMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-    skinned(g, collarMat);
+    const bits: THREE.Mesh[] = [new THREE.Mesh(g, collarMat)];   // collar, rolled edge, placket and buttons: baked into one mesh below
     // a little thickness: a soft rolled edge along the leaf's outer edge
     const rim: THREE.Vector3[] = [];
     for (let i = 0; i <= COLS; i++) rim.push(P(i, rows - 1));
-    skinned(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim), COLS, 0.0016, 6), collarMat);
+    bits.push(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim), COLS, 0.0016, 6), collarMat));
     // placket: a stitched strip laid on the shirt from the neckline down, with two white four-hole buttons
     const top = neck(0);
     const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.28)'; g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(5, -10, 54, 258); g.beginPath(); g.moveTo(32, -10); g.lineTo(32, 250); g.stroke(); }, true, 1);
@@ -420,16 +479,21 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       pa.setXYZ(i, v.x, v.y, v.z);
     }
     pg.computeVertexNormals();
-    skinned(pg, plkMat);
+    bits.push(new THREE.Mesh(pg, plkMat));
     const btnTex = canvasTex(64, 64, g => { g.fillStyle = '#f4f2ec'; g.beginPath(); g.arc(32, 32, 30, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 3; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.stroke(); g.fillStyle = 'rgba(0,0,0,.45)'; for (const [x, y] of [[26, 26], [38, 26], [26, 38], [38, 38]]) { g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill(); } }, true, 1);
     btnTex.wrapS = btnTex.wrapT = THREE.ClampToEdgeWrapping; btnTex.repeat.set(1, 1);
     const rimMat = new THREE.MeshStandardMaterial({ color: '#e8e5dc', roughness: 0.35 }), faceMat = new THREE.MeshStandardMaterial({ map: btnTex, roughness: 0.3 });
     for (const dy of [-0.032, -0.088]) {
       const { q, n } = near(new THREE.Vector3(top.x, top.y + dy, top.z + 0.02));
-      const bg = new THREE.CylinderGeometry(0.0056, 0.0056, 0.0024, 20);
-      bg.applyMatrix4(new THREE.Matrix4().compose(q.clone().addScaledVector(n, 0.0028), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n), new THREE.Vector3(1, 1, 1)));
-      skinned(bg, [rimMat, faceMat, faceMat]);
+      const xf = new THREE.Matrix4().compose(q.clone().addScaledVector(n, 0.0028), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n), new THREE.Vector3(1, 1, 1));
+      bits.push(new THREE.Mesh(new THREE.CylinderGeometry(0.0056, 0.0056, 0.0024, 20, 1, true).applyMatrix4(xf), rimMat));
+      bits.push(new THREE.Mesh(new THREE.CircleGeometry(0.0056, 20).rotateX(-Math.PI / 2).translate(0, 0.0012, 0).applyMatrix4(xf), faceMat));
     }
+    // one skinned mesh, one atlas: one draw call; too small to need a shadow of its own
+    const baked = bakeAtlas(bits, 512);
+    const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.84, sheen: 0.2, sheenColor: collarMat.sheenColor, sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const cm = skinned(baked.geometry, bitsMat); cm.name = 'collar'; cm.castShadow = false;
+    bits.forEach(b => b.geometry.dispose());
   }
   // belt: a leather band round the waist with a buckle, on the pelvis
   {
@@ -559,6 +623,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const laceMat = new THREE.MeshStandardMaterial({ color: '#f4f3ef', roughness: 0.75 });
   const liningMat = new THREE.MeshStandardMaterial({ color: '#f2f1ec', roughness: 0.95, side: THREE.DoubleSide });
   const spikeMat = new THREE.MeshStandardMaterial({ color: '#8a7350', roughness: 0.5, metalness: 0.35 });   // bronze-tone soft spikes, not black
+  let botTexShared: THREE.CanvasTexture | null = null, shoeAtlas: AtlasLayout | undefined, shoeMat: THREE.MeshPhysicalMaterial | undefined;
   for (const sfx of ['l', 'r'] as const) {
     const f = M.feet[sfx], fb = M.bones.indexOf(`foot_${sfx}`);
     const { len, z0, hw } = shoeDims(f);
@@ -654,8 +719,9 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       for (let i = 0; i <= out.length; i++) {
         const p = out[i % out.length], t = ts[i % out.length];
         if (i) per += p.distanceTo(out[(i - 1) % out.length]);
-        wp.push(p.x, yBot(t), p.y, p.x, yTop(t), p.y); wu.push(per * 6, 0, per * 6, 1);
+        wp.push(p.x, yBot(t), p.y, p.x, yTop(t), p.y); wu.push(per, 0, per, 1);
       }
+      for (let i = 0; i < wu.length; i += 2) wu[i] /= per;   // 0..1 round the sole
       for (let i = 0; i < out.length; i++) { const a = i * 2; wi.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
       const wall = new THREE.BufferGeometry(); wall.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3)); wall.setAttribute('uv', new THREE.Float32BufferAttribute(wu, 2)); wall.setIndex(wi); wall.computeVertexNormals();
       grp.add(new THREE.Mesh(wall, new THREE.MeshStandardMaterial({ map: soleTex, roughness: 0.55, side: THREE.DoubleSide })));
@@ -663,7 +729,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       // the leather outsole: tan-brown, a slightly darker heel block, a stitch line round the edge
       const minX = Math.min(...out.map(p => p.x)), maxX = Math.max(...out.map(p => p.x)), minZ = Math.min(...out.map(p => p.y)), maxZ = Math.max(...out.map(p => p.y));
       const UVx = (x: number) => (x - minX) / (maxX - minX), UVz = (z: number) => (z - minZ) / (maxZ - minZ);
-      const botTex = canvasTex(256, 768, g => {
+      const botTex = botTexShared ??= canvasTex(256, 768, g => {
         const W = 256, H = 768, X = (x: number) => UVx(x) * W, Y = (z: number) => (1 - UVz(z)) * H;
         g.fillStyle = '#7f5434'; g.fillRect(0, 0, W, H);
         for (let i = 0; i < 2500; i++) { g.fillStyle = rand() < 0.5 ? 'rgba(60,34,16,.10)' : 'rgba(200,150,100,.08)'; g.fillRect(rand() * W, rand() * H, 2 + rand() * 6, 1 + rand()); }
@@ -701,9 +767,16 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
         sp.position.set(xc(t) + xo * wOut(t) * 0.75, 0.002 + spring(t) * 0.9, zAt(t)); grp.add(sp);
       }
     }
-    grp.traverse(o => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    grp.position.sub(J[fb]);
-    bones[fb].add(grp); meshes.push(grp);
+    // bake the whole shoe into one mesh, one material, one atlas: one draw call per pass
+    const parts = grp.children.filter(o => (o as THREE.Mesh).isMesh) as THREE.Mesh[];
+    const baked = bakeAtlas(parts, 2048, shoeAtlas);          // the second shoe reuses the first one's atlas
+    shoeAtlas = baked.layout; baked.texture.anisotropy = 8;
+    shoeMat ??= new THREE.MeshPhysicalMaterial({ map: baked.texture, bumpMap: baked.texture, bumpScale: 0.8, roughness: 0.55, clearcoat: 0.25, clearcoatRoughness: 0.35, side: THREE.DoubleSide });
+    const shoe = new THREE.Mesh(baked.geometry, shoeMat); shoe.name = `shoe_${sfx}`;
+    shoe.castShadow = true; shoe.receiveShadow = true;
+    shoe.position.copy(J[fb]).negate();
+    for (const pm of parts) { pm.geometry.dispose(); }
+    bones[fb].add(shoe); meshes.push(shoe);
   }
 
   // hat

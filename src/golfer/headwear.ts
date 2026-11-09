@@ -1,15 +1,21 @@
 // Hats. For now: a classic tour visor (band round the head, open top, curved brim), with an optional
 // retro logo on the front. Built in head space: head centre at the origin, face toward +Z, metres.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Headwear } from './profile';
 import pizzaHutUrl from '../assets/brand/pizza-hut-classic.svg?url';
 
 // The front patch is drawn from the classic logo's vector art (src/assets/brand), so it's sharp at any size.
-function logoTexture(kind: Headwear['logo'], base: string, sx = 1) {
+// The band takes the top 512 rows; the bottom 128 rows hold plain patches (the visor's white and the brim's
+// slightly greyer underside), so the whole visor is one mesh with one texture.
+export const VISOR_BAND_V0 = 128 / 640;
+export const VISOR_PATCH = { top: [0.125, 64 / 640], under: [0.375, 64 / 640] } as const;
+function logoTexture(kind: Headwear['logo'], base: string, sx = 1, under = base) {
   const W = 4096, H = 512;
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const c = document.createElement('canvas'); c.width = W; c.height = 640;
   const g = c.getContext('2d')!;
-  g.fillStyle = base; g.fillRect(0, 0, W, H);
+  g.fillStyle = base; g.fillRect(0, 0, W, 640);
+  g.fillStyle = under; g.fillRect(W / 4, H, W / 4, 128);
   // twill fabric
   for (let y = 0; y < H; y += 3) for (let x = (y / 3) % 2 ? 0 : 1.5; x < W; x += 6) { g.fillStyle = 'rgba(0,0,0,.035)'; g.fillRect(x, y, 3, 1.4); }
   for (let i = 0; i < 9000; i++) { g.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,.03)' : 'rgba(255,255,255,.06)'; g.fillRect(Math.random() * W, Math.random() * H, 3, 1.5); }
@@ -64,7 +70,8 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   for (let i = 0; i < seg; i++) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
   let perim = 0;
   for (let i = 0; i < seg; i++) perim += Math.hypot(pos[(i * 2 + 2) * 3] - pos[i * 2 * 3], pos[(i * 2 + 2) * 3 + 2] - pos[i * 2 * 3 + 2]);
-  const fabric = new THREE.MeshStandardMaterial({ map: logoTexture(h.logo, h.color, (height / perim) * (4096 / 512)), roughness: 0.85, side: THREE.DoubleSide });
+  const underCol = new THREE.Color(h.color).multiplyScalar(0.86);   // one white cotton piece: the underside is the same fabric, a touch greyer
+  const fabric = new THREE.MeshStandardMaterial({ map: logoTexture(h.logo, h.color, (height / perim) * (4096 / 512), '#' + underCol.getHexString()), roughness: 0.85, side: THREE.DoubleSide });
   const band = new THREE.BufferGeometry();
   band.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   band.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -126,8 +133,6 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   const ny = (brim.getAttribute('normal') as THREE.BufferAttribute).getY(Math.floor(rows / 2) * (bs + 1) + bs / 2);
   if (ny < 0) { brim.setIndex(tri(true)); brim.computeVertexNormals(); }
   const under = brim.clone().translate(0, -0.0025, 0); under.setIndex(tri(ny >= 0)); under.computeVertexNormals();
-  // one white cotton piece: the underside is the same fabric, just a touch greyer, never black
-  const underCol = new THREE.Color(h.color).multiplyScalar(0.86);
   const top = new THREE.Mesh(brim, new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.75 }));
   const bottom = new THREE.Mesh(under, new THREE.MeshStandardMaterial({ color: underCol, roughness: 0.9 }));
   group.add(top, bottom);
@@ -135,26 +140,26 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   const edge: THREE.Vector3[] = [];
   for (let i = 0; i <= bs; i++) { const k = (rows * (bs + 1) + i) * 3; edge.push(new THREE.Vector3(bp[k], bp[k + 1] - 0.0012, bp[k + 2])); }
   group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(edge), 96, 0.0017, 8), new THREE.MeshStandardMaterial({ color: h.color, roughness: 0.7 })));
-  if (false && h.logo === 'pizza-hut' && profile) {
-    const PW = 1024, PH = 512, pc = document.createElement('canvas'); pc.width = PW; pc.height = PH;
-    const pg = pc.getContext('2d')!;
-    const ptex = new THREE.CanvasTexture(pc); ptex.colorSpace = THREE.SRGBColorSpace; ptex.anisotropy = 16;
-    const img = new Image();
-    img.onload = () => { const hh = PH * 0.86, ww = hh * (img.width / img.height || 1.254); pg.clearRect(0, 0, PW, PH); pg.drawImage(img, PW / 2 - ww / 2, PH / 2 - hh / 2, ww, hh); ptex.needsUpdate = true; };
-    img.src = pizzaHutUrl;
-    const span = 0.5, ps = 24, pp: number[] = [], pu: number[] = [], pi: number[] = [];
-    const ph = height * 0.82;
-    for (let i = 0; i <= ps; i++) {
-      const a = -span + (i / ps) * span * 2, pr = rAt(a)! + 0.0114;
-      const yc = y0 - 0.006 * (0.5 + 0.5 * Math.cos(a));
-      pp.push(Math.sin(a) * pr, yc - ph / 2, Math.cos(a) * pr + zc, Math.sin(a) * pr * 0.985, yc + ph / 2, Math.cos(a) * pr * 0.985 + zc * 0.015 + zc * 0.985 - zc * 0.985);
-      const u = mirrored ? 1 - i / ps : i / ps; pu.push(u, 0, u, 1);
+  // merge everything into one mesh with the band's texture (one draw call per pass): the band keeps its UVs
+  // (moved into the band rows), every other part samples a plain patch
+  const parts = group.children.filter(o => (o as THREE.Mesh).isMesh) as THREE.Mesh[];
+  const geos = parts.map(m => {
+    m.updateMatrix();
+    const g = m.geometry.clone().applyMatrix4(m.matrix);
+    if (!g.index) g.setIndex([...Array(g.getAttribute('position').count).keys()]);
+    if (!g.getAttribute('normal')) g.computeVertexNormals();
+    const n = g.getAttribute('position').count, uv = new Float32Array(n * 2), src = g.getAttribute('uv') as THREE.BufferAttribute | undefined;
+    const mat = m.material as THREE.MeshStandardMaterial, isBand = mat === fabric;
+    const patch = mat.color && mat.color.getHex() === underCol.getHex() ? VISOR_PATCH.under : VISOR_PATCH.top;
+    for (let k = 0; k < n; k++) {
+      if (isBand && src) { uv[k * 2] = src.getX(k); uv[k * 2 + 1] = VISOR_BAND_V0 + (1 - VISOR_BAND_V0) * src.getY(k); }
+      else { uv[k * 2] = patch[0]; uv[k * 2 + 1] = patch[1]; }
     }
-    for (let i = 0; i < ps; i++) { const a = i * 2; pi.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
-    const pgeo = new THREE.BufferGeometry(); pgeo.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3)); pgeo.setAttribute('uv', new THREE.Float32BufferAttribute(pu, 2)); pgeo.setIndex(pi); pgeo.computeVertexNormals();
-    const patch = new THREE.Mesh(pgeo, new THREE.MeshStandardMaterial({ map: ptex, transparent: true, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide }));
-    patch.name = 'visor-logo'; group.add(patch);
-  }
-  group.traverse(o => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    const out = new THREE.BufferGeometry(); out.setIndex(g.index); out.setAttribute('position', g.getAttribute('position')); out.setAttribute('normal', g.getAttribute('normal')); out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    return out;
+  });
+  group.clear();
+  const visor = new THREE.Mesh(mergeGeometries(geos)!, fabric); visor.name = 'visor-mesh';
+  visor.castShadow = true; visor.receiveShadow = true; group.add(visor);
   return group;
 }
