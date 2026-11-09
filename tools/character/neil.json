@@ -24,7 +24,7 @@
   "torso/torso-muscle-pectoral-incr": 0.3,
   "torso/measure-shoulder-dist-incr": 0.25,
   "torso/measure-bust-circ-incr": 0.15,
-  "stomach/stomach-pregnant-decr": 0.6,
+  "stomach/stomach-pregnant-decr": 1.0,
   "stomach/stomach-tone-incr": 0.35,
   "chin/chin-prominent-incr": 0.3,
   "chin/chin-width-incr": 0.45,

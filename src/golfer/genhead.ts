@@ -9,7 +9,7 @@ export interface GenHeadData {
     arrays: Record<string, { offset: number; count: number; type: string }>;
     bones: string[]; eye: number[]; ipd: number;
     seam: { point: number[]; normal: number[]; band: number };
-    skinTint: number[]; skinColor: number[]; hairColor: number[];
+    skinTint: number[]; skinColor: number[]; hairColor: number[]; skinXform?: number[][]; seamTone?: number[];
     morphs?: string[]; morphUnit?: number;
   };
   buf: ArrayBuffer; blobStart: number; tex: HTMLImageElement;
@@ -36,6 +36,7 @@ export interface GenHead {
   /** visor fit measured on the new head (same form as character.bin's meta.visor) */
   visor: { center: number[]; rx: number; rz: number; profile: number[] };
   tint: THREE.Color;
+  skin: { xform?: number[][]; tone?: number[] };
   face: FaceController;
 }
 
@@ -223,7 +224,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     lookAt(t) { target = t ? t.clone() : null; },
     setGaze(x, y = 0) { forced = x === null ? null : new THREE.Vector2(x, y); },
   };
-  return { mesh, seam, visor, tint: new THREE.Color(G.skinTint[0], G.skinTint[1], G.skinTint[2]), face: ctl };
+  return { mesh, seam, visor, tint: new THREE.Color(G.skinTint[0], G.skinTint[1], G.skinTint[2]), skin: { xform: G.skinXform, tone: G.seamTone }, face: ctl };
 }
 
 /** discard the MakeHuman skin above the seam (face, scalp, ears), keeping the neck and everything below.
@@ -299,13 +300,22 @@ export function buildHairCards(head: GenHead, opts: { color: string; eye: THREE.
   return m;
 }
 
-export function hideAboveSeam(mat: THREE.Material, seam: { p: THREE.Vector3; n: THREE.Vector3 }) {
+export function hideAboveSeam(mat: THREE.Material, seam: { p: THREE.Vector3; n: THREE.Vector3 }, skin?: { xform?: number[][]; tone?: number[] }) {
   const prev = mat.onBeforeCompile.bind(mat), prevKey = mat.customProgramCacheKey.bind(mat);
   const f = (x: number) => x.toFixed(5);
+  const X = skin?.xform, T = skin?.tone;
   mat.onBeforeCompile = (sh, r) => {
     prev(sh, r);
+    const d = `dot(vB - vec3(${f(seam.p.x)}, ${f(seam.p.y)}, ${f(seam.p.z)}), vec3(${f(seam.n.x)}, ${f(seam.n.y)}, ${f(seam.n.z)}))`;
     sh.fragmentShader = sh.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-      if (dot(vB - vec3(${f(seam.p.x)}, ${f(seam.p.y)}, ${f(seam.p.z)}), vec3(${f(seam.n.x)}, ${f(seam.n.y)}, ${f(seam.n.z)})) > 0.0 && abs(vB.x) < 0.16 && vB.y > ${f(seam.p.y - 0.12)}) discard;`);
+      if (${d} > 0.0 && abs(vB.x) < 0.16 && vB.y > ${f(seam.p.y - 0.12)}) discard;`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+      ${X ? `// the body's skin carried onto the head's tone (head.py: a Lab mean/spread transfer, as a linear-RGB affine)
+      diffuseColor.rgb = max(mat3(${f(X[0][0])}, ${f(X[1][0])}, ${f(X[2][0])}, ${f(X[0][1])}, ${f(X[1][1])}, ${f(X[2][1])}, ${f(X[0][2])}, ${f(X[1][2])}, ${f(X[2][2])}) * diffuseColor.rgb + vec3(${f(X[0][3])}, ${f(X[1][3])}, ${f(X[2][3])}), 0.0);` : ''}
+      ${T ? `{ // the top of the neck, just under the jaw: warmed and shaded toward the head's under-jaw tone
+        float nd = ${d}; float nk = (1.0 - smoothstep(0.0, 0.03, -nd)) * step(nd, 0.0) * step(${f(seam.p.y - 0.08)}, vB.y) * step(abs(vB.x), 0.12);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${f(T[0])}, ${f(T[1])}, ${f(T[2])}), 0.55 * nk) * (1.0 - 0.12 * nk * nk);
+      }` : ''}`);
   };
   mat.customProgramCacheKey = () => prevKey() + '-genhead';
 }

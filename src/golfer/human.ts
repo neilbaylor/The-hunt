@@ -196,7 +196,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const skin = add('skin', skinMat)!;
   const eyeL = M.eyeballs.l.c, eyeR = M.eyeballs.r.c;
   const gen = genOn ? buildGenHead(data.head!, M.bones, skeleton, root, new THREE.Vector3(...(M.eye as [number, number, number])), Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1], eyeL[2] - eyeR[2]), M.visor.center[1] - 0.022, p.look.eyes) : null;
-  if (gen) { hideAboveSeam(skinMat, gen.seam); skinMat.color.copy(gen.tint); meshes.push(gen.mesh); }
+  if (gen) { hideAboveSeam(skinMat, gen.seam, gen.skin); skinMat.color.copy(gen.tint); meshes.push(gen.mesh); }
   // strand-level hair on the generated head (cards rooted on its scalp, flattened under the visor band)
   const genHair = gen ? buildHairCards(gen, { color: p.look.hair, eye: new THREE.Vector3(...(M.eye as [number, number, number])), band: O.headwear ? { y: gen.visor.center[1] } : undefined }) : null;
   if (genHair) { const hb = M.bones.indexOf('head'); genHair.geometry.translate(-J[hb].x, -J[hb].y, -J[hb].z); bones[hb].add(genHair); meshes.push(genHair); }

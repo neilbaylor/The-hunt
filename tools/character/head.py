@@ -232,6 +232,7 @@ RAT = {  # name: (pair a, pair b, normaliser)
     'chin width / cheek width': ((148, 377), 'BZ'),
     'nose→chin / face height': ((2, 152), 'FH'),
     'temple width / cheek width': ((54, 284), 'BZ'),
+    'nose width (alae) / cheek width': ((98, 327), 'BZ'),
 }
 def ratios(p2):
     FH = np.linalg.norm(p2[10] - p2[152]); BZ = np.linalg.norm(p2[234] - p2[454])
@@ -261,15 +262,23 @@ def cam_full(L3):
 yN, yC, yZ = lm_f[2, 1], lm_f[152, 1], (lm_f[234, 1] + lm_f[454, 1]) / 2
 ear_zf = min(lm_f[234, 2], lm_f[454, 2])
 def sstep(a, b, x): t = np.clip((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t)
+_eb = FV[(FV[:, 1] > lm_f[13, 1]) & (FV[:, 1] < eyeYf + 0.01)]
+ear_tips = [(sx_, _eb[np.argmax(_eb[:, 0] * sx_)].copy()) for sx_ in (-1, 1)]
 def reshape(P, q):
-    wid, temple, jaw, chin, lower = q
+    wid, temple, jaw, chin, lower, nose = q
     P = P.copy(); x, y, z = P[:, 0], P[:, 1], P[:, 2]
     front = sstep(ear_zf - 0.03, ear_zf + 0.01, z)                       # the face, not the back of the head
     tj = sstep(yZ, yC + 0.012, y)                                        # 0 at the cheekbones, 1 at the jaw line
     tc = sstep(yC + 0.035, yC, y) * np.exp(-(x / 0.03) ** 2 * 0.5)      # the chin
     tt = np.exp(-((y - (eyeYf + 0.035)) / 0.022) ** 2) * front           # the temples
     S = wid * (1 + (temple - 1) * tt) * (1 + (jaw - 1) * tj * (0.4 + 0.6 * front)) * (1 + (chin - 1) * tc)
+    tn_ = np.exp(-((y - (yN + 0.006)) / 0.012) ** 2 - (x / 0.028) ** 2) * sstep(lm_f[2, 2] - 0.03, lm_f[2, 2] - 0.01, z)   # the nose
+    S = S * (1 + (nose - 1) * tn_)
     P[:, 0] = x * S
+    # the ears stand out a little more (the portrait's outline shows them further from the head)
+    for sx_, tip_ in ear_tips:
+        we_ = np.clip(1 - np.linalg.norm(P - tip_, axis=1) / 0.03, 0, 1) ** 1.5 * (P[:, 0] * sx_ > abs(tip_[0]) - 0.02)
+        P[:, 0] += sx_ * 0.004 * we_
     # a slight hollow under the cheekbones, in front of the jaw muscle (the portrait's lean cheeks)
     hol = np.exp(-(((np.abs(x) - 0.042) / 0.016) ** 2 + ((y - (yZ - 0.03)) / 0.018) ** 2)) * front
     P[:, 0] -= np.sign(x) * 0.0025 * hol
@@ -282,11 +291,11 @@ def reshape(P, q):
 from scipy.optimize import least_squares
 r0 = ratios(cam_fit(lm_f))
 if A.reshape:
-    q0 = np.array([A.head_width_face, 1.0, 1.0, 1.0, 1.0])
+    q0 = np.array([A.head_width_face, 1.0, 1.0, 1.0, 1.0, 1.0])
     def resid(q): return np.r_[np.log(ratios(cam_fit(reshape(lm_f, q))) / r_ref), 0.15 * np.log(q)]
     # the face reads round next to the portrait: keep it 2-5 % leaner overall and never shorten the lower face
     # (the landmarks put ours already a little long there); the rest is fitted to the portrait's proportions
-    fit = least_squares(resid, q0, bounds=([0.95, 0.88, 0.8, 0.75, 1.0], [0.98, 1.06, 1.06, 1.06, 1.08]), diff_step=1e-3)
+    fit = least_squares(resid, q0, bounds=([0.95, 0.88, 0.8, 0.75, 1.0, 0.95], [0.98, 1.06, 1.06, 1.06, 1.08, 1.12]), diff_step=1e-3)
     qf = fit.x
     FV = reshape(FV, qf); lm_f = reshape(lm_f, qf)
     # ── then the outline: render our head with the portrait's camera and fit the far cheek/jaw contour to the
@@ -319,7 +328,7 @@ if A.reshape:
         def prof(y): return np.interp(y, ys_, ss_, left=ss_[0], right=ss_[-1])
         def outl(P):
             P = P.copy(); fr_ = sstep(ear_zf - 0.03, ear_zf + 0.01, P[:, 2])
-            band_ = sstep(yC - 0.02, yC + 0.005, P[:, 1]) * sstep(yN + 0.03, yN, P[:, 1])
+            band_ = sstep(yC + 0.008, yC + 0.022, P[:, 1]) * sstep(yN + 0.03, yN, P[:, 1])   # cheeks and jaw, not the chin
             P[:, 0] *= 1 + (prof(P[:, 1]) - 1) * fr_ * band_
             return P
         FV = outl(FV); lm_f = outl(lm_f)
@@ -332,7 +341,7 @@ if A.reshape:
             cv2.drawContours(ov_, cs_, -1, colr, 2)
         Image.fromarray(ov_).save(os.path.join(DBG, 'outline_overlay.png'))
     r1 = ratios(cam_fit(lm_f))
-    print('face reshape: width %.3f, temples %.3f, jaw %.3f, chin %.3f, length below the nose %.3f' % tuple(qf))
+    print('face reshape: width %.3f, temples %.3f, jaw %.3f, chin %.3f, length below the nose %.3f, nose width %.3f' % tuple(qf))
 else:
     qf = None; r1 = r0
 ratio_table = {k: {'portrait': float(a), 'before': float(b), 'after': float(c)} for k, a, b, c in zip(RAT, r_ref, r0, r1)}
@@ -340,7 +349,8 @@ def nose_m(p2):
     FH = np.linalg.norm(p2[10] - p2[152]); BZ = np.linalg.norm(p2[234] - p2[454])
     return {'nose length (bridge→base) / face height': np.linalg.norm(p2[168] - p2[2]) / FH, 'nose width (alae) / cheek width': np.linalg.norm(p2[98] - p2[327]) / BZ}
 nm_ref, nm_now = nose_m(lm_ref), nose_m(cam_fit(lm_f))
-for k in nm_ref: ratio_table[k] = {'portrait': float(nm_ref[k]), 'before': float('nan'), 'after': float(nm_now[k])}
+for k in nm_ref:
+    if k not in ratio_table: ratio_table[k] = {'portrait': float(nm_ref[k]), 'before': float('nan'), 'after': float(nm_now[k])}
 for k, v in ratio_table.items():
     print(f"  {k:28s} portrait {v['portrait']:.3f}  ours before {v['before']:.3f} ({(v['before'] / v['portrait'] - 1) * 100:+.1f}%)  after {v['after']:.3f} ({(v['after'] / v['portrait'] - 1) * 100:+.1f}%)")
 print(f'hair: top {top_now - eyeYf:.3f} m above the eyes → {top_want - eyeYf:.3f} (above-band scale {kq:.2f})')
