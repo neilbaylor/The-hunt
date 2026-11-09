@@ -36,32 +36,32 @@ const GRIP_CURL = [[0, 0, 0], [0.23, 0.58, 0.7], [0.61, 1.31, 1.06], [1.15, 1.41
 // hinge: wrist cock as a fraction of a full set (− = re-hinged in the follow-through); beta: hands carried round
 // the body (radians about the vertical); pro: trail shoulder reaching toward the ball; reach: the hands' swing radius
 // as a multiple of the address one (a full top is a wide, high arc).
-interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: number; chestTilt: number; chestSide: number; shift: number; drop: number; heel: number; shrug: number; pro: number; hinge: number; beta: number; reach: number }
+interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: number; chestTilt: number; chestSide: number; shift: number; drop: number; heel: number; shrug: number; pro: number; hinge: number; beta: number; reach: number; lift: number }
 const K = (o: Partial<Keys>, base: Keys): Keys => ({ ...base, ...o });
 // address: spine bent toward the ball and tilted away from the target (trail shoulder low, lead hip high)
-const A: Keys = { reach: 1, hipTurn: 0.04, hipTilt: 0.28, hipSide: 0.07, chestTurn: 0.04, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15, hinge: 0, beta: 0 };
+const A: Keys = { lift: 0, reach: 1, hipTurn: 0.04, hipTilt: 0.28, hipSide: 0.07, chestTurn: 0.04, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15, hinge: 0, beta: 0 };
 const TAKE = K({ hipTurn: -0.16, hipSide: 0.05, chestTurn: -0.7, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.37, beta: -0.06 }, A);
-const HALF = K({ reach: 1.06, hipTurn: -0.4, hipSide: 0.02, chestTurn: -1.15, chestTilt: 0.67, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.1 }, A);
-const B3Q = K({ reach: 1.3, hipTurn: -0.6, hipTilt: 0.26, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.69, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.18 }, A);
-const T: Keys = { reach: 1.42, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.25, pro: 0.1, hinge: 0.88, beta: -0.17 };
+const HALF = K({ lift: 0.06, reach: 1.06, hipTurn: -0.4, hipSide: 0.02, chestTurn: -1.15, chestTilt: 0.67, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.1 }, A);
+const B3Q = K({ lift: 0.18, reach: 1.3, hipTurn: -0.6, hipTilt: 0.26, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.69, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.28 }, A);
+const T: Keys = { lift: 0.3, reach: 1.42, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.25, pro: 0.1, hinge: 0.88, beta: -0.32 };
 // downswing: the hips lead (they're already unwinding while the chest is still turned), the trail side drops
-const TRANS = K({ reach: 1.38, hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
-const DOWN = K({ reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.56, beta: -0.16 }, T);
-const LATE = K({ reach: 1.01, hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.32, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.02, hinge: 0.45, beta: -0.08 }, T);
+const TRANS = K({ lift: 0.28, reach: 1.38, hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
+const DOWN = K({ lift: 0.12, reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.56, beta: -0.16 }, T);
+const LATE = K({ lift: 0, reach: 1.01, hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.32, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.02, hinge: 0.45, beta: -0.08 }, T);
 // delivery: lead arm about parallel on the way down, shaft lagging ~45° behind the hands on plane, hips already open,
 // trail elbow tucked in front of the trail hip
-const DELIV = K({ reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.04, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
-const I: Keys = { reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.24, shift: 0.08, drop: -0.012, heel: 0.28, shrug: -0.05, pro: -0.11, hinge: 0, beta: 0 };
+const DELIV = K({ lift: 0.03, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.04, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
+const I: Keys = { lift: 0, reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.24, shift: 0.08, drop: -0.012, heel: 0.28, shrug: -0.05, pro: -0.11, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
 const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.45, hinge: -0.08, beta: 0.08, pro: -0.02 }, I);
 const THRU = K({ hipTurn: 1.25, hipTilt: 0.1, hipSide: 0.05, chestTurn: 1.35, chestTilt: 0.14, chestSide: 0.28, shift: 0.13, drop: -0.035, heel: 0.66, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
 const T3Q = K({ hipTurn: 1.5, hipTilt: 0.06, hipSide: 0.02, chestTurn: 1.75, chestTilt: 0.03, chestSide: 0.2, shift: 0.16, drop: -0.04, heel: 0.82, shrug: -0.12, pro: -0.02, hinge: -0.85, beta: 0.42 }, I);
 // full finish: belt buckle and chest past the target, weight on the lead leg, upright with a slight reverse-C
-const F: Keys = { reach: 1, hipTurn: 1.58, hipTilt: 0.08, hipSide: 0.0, chestTurn: 1.9, chestTilt: 0.18, chestSide: 0.1, shift: 0.17, drop: -0.04, heel: 0.97, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.52 };
+const F: Keys = { lift: 0, reach: 1, hipTurn: 1.58, hipTilt: 0.08, hipSide: 0.0, chestTurn: 1.9, chestTilt: 0.18, chestSide: 0.1, shift: 0.17, drop: -0.04, heel: 0.97, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.52 };
 // held finish: fully rotated (buckle and chest a little past the target), all the weight on a straight lead leg,
 // trail foot up on its toe with the knee against the lead knee, tall and stacked (spine only ~7° away from the
 // target, no backward bow), hands by the head
-const HOLD: Keys = { reach: 1, hipTurn: 1.72, hipTilt: 0.07, hipSide: -0.02, chestTurn: 2.05, chestTilt: 0.16, chestSide: 0.12, shift: 0.19, drop: -0.045, heel: 1, shrug: -0.12, pro: 0, hinge: -1.0, beta: 0.6 };
+const HOLD: Keys = { lift: 0, reach: 1, hipTurn: 1.72, hipTilt: 0.07, hipSide: -0.02, chestTurn: 2.05, chestTilt: 0.16, chestSide: 0.12, shift: 0.19, drop: -0.045, heel: 1, shrug: -0.12, pro: 0, hinge: -1.0, beta: 0.6 };
 // where each key sits: back/follow by the hands' angle as a fraction of a full top/finish, down by fraction of this top
 const KF_BACK: [number, Keys][] = [[0, A], [0.3, TAKE], [0.55, HALF], [0.8, B3Q], [1, T]];
 const KF_DOWN: [number, Keys][] = [[0, T], [0.15, TRANS], [0.45, DOWN], [0.62, DELIV], [0.8, LATE], [1, I]];
@@ -443,7 +443,11 @@ export class Golfer {
       const wF = s.phase === 'back' ? smooth(0, 0.12, phi / PHI_TOP) : smooth(0, 0.25, Math.max(0, phi) / Math.max(0.01, s.topPhi));
       if (wF > 0.001) {
         const sh = this.rig.P[BONE.upperL], len = (this.rig.len.upper + this.rig.len.fore) * 0.995;
-        const wT = sh.clone().add(p.wristL.clone().sub(sh).normalize().multiplyScalar(len));
+        // the lead arm raised toward vertical by the keyed lift: the hands above the trail shoulder at the top (traced)
+        const armDir = p.wristL.clone().sub(sh).normalize(), up = new THREE.Vector3(0, 1, 0);
+        const kAx = new THREE.Vector3().crossVectors(armDir, up);
+        if (key.lift > 0 && kAx.lengthSq() > 1e-6) armDir.applyAxisAngle(kAx.normalize(), Math.min(key.lift, armDir.angleTo(up) - 0.05));
+        const wT = sh.clone().add(armDir.multiplyScalar(len));
         const mv = wT.sub(p.wristL).multiplyScalar(wF);
         g.position.add(mv); p.wristL.add(mv); p.wristR.add(mv);
         this.rig.apply(p);
