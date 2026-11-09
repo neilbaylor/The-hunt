@@ -46,12 +46,12 @@ const B3Q = K({ lift: 0.18, reach: 1.3, hipTurn: -0.6, hipTilt: 0.26, hipSide: -
 const T: Keys = { lift: 0.3, reach: 1.42, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.25, pro: 0.1, hinge: 0.98, beta: -0.32 };
 // downswing: the hips lead (they're already unwinding while the chest is still turned), the trail side drops
 const TRANS = K({ lift: 0.28, reach: 1.38, hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
-const DOWN = K({ lift: 0.12, reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.56, beta: -0.16 }, T);
-const LATE = K({ lift: 0, reach: 1.01, hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.32, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.02, hinge: 0.45, beta: -0.08 }, T);
+const DOWN = K({ lift: -0.04, reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.56, beta: -0.16 }, T);
+const LATE = K({ lift: -0.1, reach: 1.01, hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.32, shift: 0.075, drop: 0.0, heel: 0.33, shrug: 0.0, pro: -0.02, hinge: 0.45, beta: -0.08 }, T);
 // delivery: lead arm about parallel on the way down, shaft lagging ~45° behind the hands on plane, hips already open,
 // trail elbow tucked in front of the trail hip
-const DELIV = K({ lift: 0.03, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.04, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
-const I: Keys = { lift: 0, reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.24, shift: 0.08, drop: -0.012, heel: 0.28, shrug: -0.05, pro: -0.11, hinge: 0, beta: 0 };
+const DELIV = K({ lift: -0.3, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.3, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
+const I: Keys = { lift: 0, reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.24, shift: 0.08, drop: -0.012, heel: 0.36, shrug: -0.05, pro: -0.11, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
 const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.45, hinge: -0.08, beta: 0.08, pro: -0.02 }, I);
 const THRU = K({ hipTurn: 1.25, hipTilt: 0.1, hipSide: 0.05, chestTurn: 1.35, chestTilt: 0.14, chestSide: 0.28, shift: 0.13, drop: -0.035, heel: 0.66, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
@@ -419,7 +419,7 @@ export class Golfer {
       const shR = this.rig.P[BONE.upperR];
       p.poleR.lerp(shR.clone().add(new THREE.Vector3(-0.12, -0.5, -0.35)), smooth(0.15, 0.85, u));
     }
-    if (s.phase === 'down') p.poleR.lerp(this.pelvisBase.clone().add(new THREE.Vector3(-0.15, -0.65, 0.4)), smooth(0.2, 0.6, 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi)));
+    if (s.phase === 'down') p.poleR.lerp(this.pelvisBase.clone().add(new THREE.Vector3(-0.1, -0.7, 0.15)), smooth(0.2, 0.6, 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi)));
     // elbows that let the wrists stay natural: aim each elbow at the point the forearm would come from if it
     // continued the hand's line on the grip (the hand's direction is fixed by the grip), so the wrist bends only a
     // little. Mostly for the trail arm, half for the lead; the follow-through sets its own elbows below.
@@ -450,7 +450,8 @@ export class Golfer {
         const armDir = p.wristL.clone().sub(sh).normalize(), up = new THREE.Vector3(0, 1, 0);
         const kAx = new THREE.Vector3().crossVectors(armDir, up);
         // (the club keeps its orientation: it stays pointing down the target line at the top)
-        if (key.lift > 0 && kAx.lengthSq() > 1e-6) armDir.applyAxisAngle(kAx.normalize(), Math.min(key.lift, armDir.angleTo(up) - 0.05));
+        // (negative lift drops the hands into the slot in the downswing: hands at the trail thigh at delivery, elbow tucked)
+        if (Math.abs(key.lift) > 1e-4 && kAx.lengthSq() > 1e-6) armDir.applyAxisAngle(kAx.normalize(), Math.min(key.lift, armDir.angleTo(up) - 0.05));
         const wT = sh.clone().add(armDir.multiplyScalar(len));
         const mv = wT.sub(p.wristL).multiplyScalar(wF);
         g.position.add(mv); p.wristL.add(mv); p.wristR.add(mv);
@@ -507,7 +508,7 @@ export class Golfer {
       // full finish target, built in the chest's frame: hands up past the lead shoulder, shaft wrapped behind the neck
       const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];
       const L = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(qChest);
-      const gripFin = neck.clone().add(L(0.14, 0.2, 0.03));
+      const gripFin = neck.clone().add(L(0.13, 0.05, -0.03));   // hands by the lead ear, a little behind (Rory)
       const shaftFin = L(-0.72, -0.48, -0.5).normalize();   // across the back of the shoulders, angled down behind            // grip → club head
       const faceFin = L(0, 0.35, -0.9).normalize();                  // where the club face points
       // club local frame: shaft runs hosel → butt along shaftDir, face looks along +X
@@ -527,8 +528,8 @@ export class Golfer {
       p.wristL.copy(this.hands.wristLead.clone().applyQuaternion(qB).add(g.position));
       p.wristR.copy(this.hands.wristTrail.clone().applyQuaternion(qB).add(g.position));
       // elbows: lead elbow folds down toward the target, trail elbow points down in front of the chest
-      p.poleL.lerp(neck.clone().add(L(0.45, -0.7, 0.25)), finW);
-      p.poleR.lerp(neck.clone().add(L(-0.2, -0.7, 0.5)), finW);
+      p.poleL.lerp(neck.clone().add(L(0.2, -0.45, 0.9)), finW);   // lead elbow folded in front, its tip pointing down (Rory)
+      p.poleR.lerp(neck.clone().add(L(-0.05, -0.4, 0.8)), finW);   // trail arm across the face, elbow forward
       this.rig.apply(p);
     }
     for (let pass = 0; pass < 2; pass++) {

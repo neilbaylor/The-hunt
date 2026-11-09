@@ -943,41 +943,62 @@ const UV_LEAF: [number, number, number, number] = [0.004, 0.004, 0.496, 0.996];
 const UV_PINE: [number, number, number, number] = [0.504, 0.51, 0.996, 0.99];
 const UV_SMALL: [number, number, number, number] = [0.504, 0.008, 0.746, 0.49];
 const UV_BARK_RECT: [number, number, number, number] = [778 / 1024, 1 - 500 / 512, 852 / 1024, 1 - 268 / 512]; // u0, v0, u1, v1
+const UV_BIRCH_RECT: [number, number, number, number] = [956 / 1024, 1 - 500 / 512, 1016 / 1024, 1 - 268 / 512];
 function makeFoliageAtlas(renderer: THREE.WebGLRenderer): THREE.CanvasTexture {
   // drawn in 1024×512 units at 2× resolution so leaf clusters stay crisp up close
   const cv = document.createElement('canvas'); cv.width = 2048; cv.height = 1024;
   const g = cv.getContext('2d')!;
   g.scale(2, 2);
   const R = () => rand();
-  const leaf = (x: number, y: number, len: number, wid: number, ang: number, light: number, hue: number) => {
-    g.save(); g.translate(x, y); g.rotate(ang);
-    const gr = g.createLinearGradient(0, -wid, 0, wid);
-    const c = (k: number) => `rgb(${Math.round((40 + 50 * light + hue * 16) * k)},${Math.round((80 + 62 * light) * k)},${Math.round((30 + 22 * light - hue * 8) * k)})`;
-    gr.addColorStop(0, c(0.82)); gr.addColorStop(0.5, c(1.08)); gr.addColorStop(1, c(0.72));
-    g.fillStyle = gr;
-    g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(len * 0.45, -wid, len, 0); g.quadraticCurveTo(len * 0.45, wid, 0, 0); g.fill();
-    g.strokeStyle = 'rgba(30,50,20,.35)'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, 0); g.lineTo(len * 0.9, 0); g.stroke();
-    g.restore();
-  };
-  // broadleaf cluster: twigs from the middle, leaves thick in the centre and ragged at the edge
+  // painted leaf masses (hand-drawn realism): overlapping rounded leaf clusters, each lit from the top with a
+  // darker underside, solid in the middle and scalloped, with a few see-through gaps, at the rim. Values stay clean
+  // and broad so the crown reads as a few big volumes, not a spray of specks.
   seed = 4242;
   g.clearRect(0, 0, 1024, 512);
-  g.strokeStyle = '#4a3a28'; g.lineCap = 'round';
-  for (let i = 0; i < 9; i++) { const a = R() * 6.28; g.lineWidth = 5 - i * 0.3; g.beginPath(); g.moveTo(256, 256); g.quadraticCurveTo(256 + Math.cos(a + 0.4) * 110, 256 + Math.sin(a + 0.4) * 110, 256 + Math.cos(a) * 205, 256 + Math.sin(a) * 205); g.stroke(); }
-  // leaves in small clumps along the twigs, denser in the middle, ragged at the edge, with see-through gaps
-  for (let c = 0; c < 70; c++) {
-    const ca = R() * 6.28, cr = Math.sqrt(R()) * 200, cx = 256 + Math.cos(ca) * cr, cy = 256 + Math.sin(ca) * cr;
-    const n = 6 + Math.floor(R() * 10), lt = R();
-    for (let i = 0; i < n; i++) {
-      const a = R() * 6.28, rr = R() * 26, x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
-      if (Math.hypot(x - 256, y - 256) > 238) continue;
-      leaf(x, y, 14 + R() * 18, 6 + R() * 5, a + (R() - 0.5) * 1.8, Math.min(1, lt * 0.7 + R() * 0.45), R());
+  const cluster = (x: number, y: number, r: number, light: number, warm: number, leafLen: number) => {
+    // the scalloped rim: small leaf tips standing out round the edge
+    const c = (k: number) => `rgb(${Math.round((44 + 58 * light + warm * 18) * k)},${Math.round((78 + 70 * light) * k)},${Math.round((30 + 26 * light - warm * 10) * k)})`;
+    g.fillStyle = c(0.72);
+    for (let i = 0, n = Math.round(r * 0.55); i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + R() * 0.3, l = leafLen * (0.8 + R() * 0.5);
+      g.save(); g.translate(x + Math.cos(a) * r * 0.86, y + Math.sin(a) * r * 0.86); g.rotate(a);
+      g.beginPath(); g.ellipse(l * 0.35, 0, l * 0.6, l * 0.3, 0, 0, 7); g.fill(); g.restore();
     }
+    // the body: lit from the top-left, shadowed toward the bottom-right
+    const gr = g.createRadialGradient(x - r * 0.35, y - r * 0.45, r * 0.1, x, y, r * 1.05);
+    gr.addColorStop(0, c(1.12)); gr.addColorStop(0.55, c(0.92)); gr.addColorStop(1, c(0.62));
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    // a little painted leaf texture inside: a few strokes, low contrast
+    for (let i = 0, n = Math.round(r * 0.4); i < n; i++) {
+      const a = R() * 6.28, rr = Math.sqrt(R()) * r * 0.8, lx = x + Math.cos(a) * rr, ly = y + Math.sin(a) * rr;
+      g.fillStyle = R() < 0.5 ? c(1.18) : c(0.8); g.globalAlpha = 0.35;
+      g.beginPath(); g.ellipse(lx, ly, leafLen * 0.55, leafLen * 0.26, R() * 6.28, 0, 7); g.fill(); g.globalAlpha = 1;
+    }
+  };
+  // broadleaf mass (oak / maple): a big rounded crown of clusters, darker and denser toward the middle and bottom
+  {
+    const items: [number, number, number, number][] = [];
+    for (let i = 0; i < 70; i++) {
+      const a = R() * 6.28, rr = Math.sqrt(R()) * 196, r = 30 + R() * 26 - rr * 0.06;
+      const x = 256 + Math.cos(a) * rr, y = 256 + Math.sin(a) * rr;
+      if (Math.hypot(x - 256, y - 256) + r > 246) continue;
+      // light: higher clusters and those toward the upper-left catch more light
+      items.push([x, y, r, clamp(0.55 - (y - 256) / 520 - (x - 256) / 1400 + (R() - 0.5) * 0.2, 0.1, 1)]);
+    }
+    items.sort((p0, p1) => p0[1] - p1[1]); // top clusters behind, lower ones in front: a rounded, stacked mass
+    for (const [x, y, r, l] of items) cluster(x, y, r, l, R() * 0.6, 13);
   }
-  // small-leaf cluster (poplar-ish, brighter)
-  for (let i = 0; i < 420; i++) {
-    const a = R() * 6.28, rr = Math.sqrt(R()) * 118;
-    leaf(640 + Math.cos(a) * rr * 0.75, 384 + Math.sin(a) * rr, 12 + R() * 12, 5 + R() * 4, a + (R() - 0.5) * 1.4, 0.3 + R() * 0.8, R() * 1.4);
+  // birch / poplar mass: smaller, lighter, looser clusters
+  {
+    const items: [number, number, number, number][] = [];
+    for (let i = 0; i < 70; i++) {
+      const a = R() * 6.28, rr = Math.sqrt(R()) * 100, r = 15 + R() * 13;
+      const x = 640 + Math.cos(a) * rr * 0.78, y = 384 + Math.sin(a) * rr;
+      if (Math.hypot((x - 640) / 0.78, y - 384) + r > 120) continue;
+      items.push([x, y, r, clamp(0.75 - (y - 384) / 300 + (R() - 0.5) * 0.25, 0.2, 1)]);
+    }
+    items.sort((p0, p1) => p0[1] - p1[1]);
+    for (const [x, y, r, l] of items) cluster(x, y, r, l, 0.8 + R() * 0.6, 9);
   }
   // pine spray: a twig with needles, side shoots
   const needles = (x0: number, y0: number, x1: number, y1: number, len: number, n: number) => {
@@ -988,20 +1009,24 @@ function makeFoliageAtlas(renderer: THREE.WebGLRenderer): THREE.CanvasTexture {
         const a = ang + sd * (0.55 + R() * 0.35);
         const l = 0.35 + R() * 0.5;
         g.strokeStyle = `rgb(${Math.round(34 + 30 * l)},${Math.round(70 + 46 * l)},${Math.round(44 + 24 * l)})`;
-        g.lineWidth = 2 + R() * 1.5;
+        g.lineWidth = 3 + R() * 2;
         g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L); g.stroke();
       }
     }
   };
   g.strokeStyle = '#4b3a29'; g.lineWidth = 6; g.beginPath(); g.moveTo(516, 128); g.quadraticCurveTo(760, 118, 1012, 134); g.stroke();
-  for (let k = 0; k < 7; k++) { const x = 560 + k * 62, sd = k % 2 ? 1 : -1; needles(x, 126, x + 70, 126 + sd * (60 + R() * 30), 30, 22); }
-  needles(516, 128, 1012, 134, 46, 150);
+  for (let k = 0; k < 7; k++) { const x = 560 + k * 62, sd = k % 2 ? 1 : -1; needles(x, 126, x + 70, 126 + sd * (60 + R() * 30), 34, 30); }
+  needles(516, 128, 1012, 134, 50, 210);
   // opaque patches (bark, dark foliage core) — big enough to survive mipmapping
   // bark: grey-brown with vertical fissures and lichen flecks
   g.fillStyle = '#4e463d'; g.fillRect(772, 262, 88, 244);
   for (let i = 0; i < 70; i++) { const x = 772 + R() * 88, w = 1 + R() * 3; g.strokeStyle = `rgba(${R() < 0.5 ? '28,22,16' : '120,108,92'},${0.35 + R() * 0.4})`; g.lineWidth = w; g.beginPath(); g.moveTo(x, 262); for (let y = 262; y < 506; y += 12) g.lineTo(x + (R() - 0.5) * 4, y); g.stroke(); }
   for (let i = 0; i < 60; i++) { g.fillStyle = `rgba(${R() < 0.5 ? '120,130,90' : '160,150,130'},0.25)`; g.beginPath(); g.ellipse(772 + R() * 88, 262 + R() * 244, 2 + R() * 4, 1 + R() * 3, 0, 0, 7); g.fill(); }
   g.fillStyle = '#56493d'; g.fillRect(784, 280, 1, 1);
+  // birch bark: chalky white with dark lenticel dashes and black knots
+  g.fillStyle = '#e4e0d6'; g.fillRect(952, 262, 68, 244);
+  for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(${R() < 0.7 ? '40,36,32' : '150,140,120'},${0.5 + R() * 0.4})`; g.fillRect(952 + R() * 60, 262 + R() * 240, 4 + R() * 12, 1 + R() * 2); }
+  for (let i = 0; i < 10; i++) { g.fillStyle = 'rgba(25,22,20,0.8)'; g.beginPath(); g.ellipse(955 + R() * 60, 270 + R() * 230, 3 + R() * 4, 2 + R() * 3, 0, 0, 7); g.fill(); }
   g.fillStyle = '#2f4a20'; g.fillRect(880, 280, 64, 64);
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -1061,29 +1086,30 @@ class CardBuf {
   }
 }
 const randUnit = (out: THREE.Vector3) => { const z = rand() * 2 - 1, a = rand() * Math.PI * 2, r = Math.sqrt(1 - z * z); return out.set(r * Math.cos(a), z, r * Math.sin(a)); };
-function branch(B: CardBuf, from: THREE.Vector3, to: THREE.Vector3, r0: number, r1: number) {
+function branch(B: CardBuf, from: THREE.Vector3, to: THREE.Vector3, r0: number, r1: number, bark = UV_BARK_RECT) {
   const len = from.distanceTo(to);
   const c = new THREE.CylinderGeometry(r1, r0, len, 6, 1, true);
   c.translate(0, len / 2, 0);
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
   c.applyQuaternion(q); c.translate(from.x, from.y, from.z);
-  B.solidRect(c, UV_BARK_RECT, len / 4, (_x, y) => 0.6 + 0.4 * clamp(y / 6, 0, 1));
+  B.solidRect(c, bark, len / 4, (_x, y) => 0.6 + 0.4 * clamp(y / 6, 0, 1));
 }
 /** leafy canopy built from lumps of cards around dark cores */
-function leafyTree(hi: boolean, trunkH: number, trunkR: number, lumps: [number, number, number, number][], sy: number, tex: [number, number, number, number], cardSize: number, density: number): THREE.BufferGeometry {
+function leafyTree(hi: boolean, trunkH: number, trunkR: number, lumps: [number, number, number, number][], sy: number, tex: [number, number, number, number], cardSize: number, density: number, bark = UV_BARK_RECT): THREE.BufferGeometry {
   const B = new CardBuf();
   const C = new THREE.Vector3(); lumps.forEach(([x, y, z]) => C.add(new THREE.Vector3(x, y, z))); C.multiplyScalar(1 / lumps.length);
   const bottom = Math.min(...lumps.map(l => l[1] - l[3] * sy)), top = Math.max(...lumps.map(l => l[1] + l[3] * sy));
   // trunk with a slight lean, forking into limbs that reach each lump; a few bare twigs poke through the gaps
   const fork = new THREE.Vector3(0.12, trunkH * 0.78, -0.05);
-  branch(B, new THREE.Vector3(0, -0.2, 0), fork, trunkR, trunkR * 0.7);
-  branch(B, fork, new THREE.Vector3(0.05, trunkH * 1.15, -0.03), trunkR * 0.62, trunkR * 0.3);
+  branch(B, new THREE.Vector3(0, -0.2, 0), fork, trunkR, trunkR * 0.7, bark);
+  branch(B, fork, new THREE.Vector3(0.05, trunkH * 1.15, -0.03), trunkR * 0.62, trunkR * 0.3, bark);
   for (const [x, y, z] of lumps.slice(1)) {
     const mid = new THREE.Vector3(x * 0.45 + fork.x * 0.55, (y - 0.4) * 0.5 + fork.y * 0.5 - 0.2, z * 0.45);
-    branch(B, fork.clone().add(new THREE.Vector3(0, -0.15, 0)), mid, trunkR * 0.5, trunkR * 0.32);
-    branch(B, mid, new THREE.Vector3(x * 0.85, y - 0.3, z * 0.85), trunkR * 0.32, trunkR * 0.12);
+    branch(B, fork.clone().add(new THREE.Vector3(0, -0.15, 0)), mid, trunkR * 0.5, trunkR * 0.32, bark);
+    branch(B, mid, new THREE.Vector3(x * 0.85, y - 0.3, z * 0.85), trunkR * 0.32, trunkR * 0.12, bark);
   }
-  if (hi) for (let i = 0; i < 5; i++) { const a = rand() * 6.28, y = trunkH * (0.55 + rand() * 0.25); branch(B, new THREE.Vector3(0.05, y, 0), new THREE.Vector3(Math.cos(a) * 1.6, y + 0.6 + rand() * 0.8, Math.sin(a) * 1.6), trunkR * 0.18, trunkR * 0.05); }
+  // a few limbs show in the gaps under and between the leaf masses
+  if (hi) for (let i = 0; i < 5; i++) { const a = rand() * 6.28, y = trunkH * (0.55 + rand() * 0.25); branch(B, new THREE.Vector3(0.05, y, 0), new THREE.Vector3(Math.cos(a) * 1.6, y + 0.6 + rand() * 0.8, Math.sin(a) * 1.6), trunkR * 0.18, trunkR * 0.05, bark); }
   const d = new THREE.Vector3(), rnd = new THREE.Vector3(), u = new THREE.Vector3(), v = new THREE.Vector3(), fN = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
   for (const [lx, ly, lz, r] of lumps) {
     const core = new THREE.IcosahedronGeometry(r * 0.5, hi ? 1 : 0); core.scale(1, sy, 1); core.translate(lx, ly, lz);
@@ -1094,32 +1120,35 @@ function leafyTree(hi: boolean, trunkH: number, trunkR: number, lumps: [number, 
       randUnit(d); d.y = d.y * 0.85 + 0.15;  d.normalize();
       const k = 0.5 + 0.5 * Math.sqrt(rand());
       c.set(lx + d.x * r * k, ly + d.y * r * k * sy, lz + d.z * r * k);
-      fN.copy(d).multiplyScalar(0.55).add(randUnit(rnd).multiplyScalar(0.75)).normalize();
+      // facing mostly out of the lump, so from any side a lump is a few overlapping painted masses
+      fN.copy(d).multiplyScalar(0.9).add(randUnit(rnd).multiplyScalar(0.55)).normalize();
       u.crossVectors(fN, randUnit(rnd)).normalize(); v.crossVectors(fN, u).normalize();
-      const sz = cardSize * (0.75 + rand() * 0.5) * (hi ? 1 : 1.35) * 0.5;
+      const sz = cardSize * (0.8 + rand() * 0.4) * (hi ? 1 : 1.3) * 0.5;
       u.multiplyScalar(sz); v.multiplyScalar(sz);
       // soft "canopy" normal: mostly away from the whole crown's centre, a little up
-      n.set(c.x - C.x, (c.y - C.y) * 0.85, c.z - C.z).normalize().multiplyScalar(0.7).addScaledVector(d, 0.3).add(new THREE.Vector3(0, 0.15, 0)).normalize();
+      // lighting normal: out of this lump, blended with out of the whole crown, a touch up
+      n.set(c.x - C.x, (c.y - C.y) * 0.85, c.z - C.z).normalize().multiplyScalar(0.4).addScaledVector(d, 0.6).add(new THREE.Vector3(0, 0.12, 0)).normalize();
       const h = clamp((c.y - bottom) / (top - bottom), 0, 1);
-      const shade = clamp(0.38 + 0.32 * h + 0.4 * (k - 0.5) * 2 * 0.5 + (rand() - 0.5) * 0.12, 0.25, 1.05);
+      const shade = clamp(0.4 + 0.3 * h + 0.3 * (k - 0.5) * 2 * 0.5 + (rand() - 0.5) * 0.05, 0.28, 1.05);
       B.quad(c, u, v, n, shade, tex);
     }
   }
   return B.build();
 }
 function broadleafCards(hi: boolean) {
-  return leafyTree(hi, 4.6, 0.3, [[0, 6.8, 0, 2.7], [1.9, 5.7, 0.6, 2.0], [-1.8, 5.9, -0.4, 2.1], [0.3, 5.5, -1.9, 1.9], [-0.4, 5.4, 1.8, 1.9], [0.6, 8.3, 0.2, 1.7]], 0.92, UV_LEAF, 1.9, 6.5);
+  return leafyTree(hi, 4.6, 0.3, [[0, 6.8, 0, 2.7], [1.9, 5.7, 0.6, 2.0], [-1.8, 5.9, -0.4, 2.1], [0.3, 5.5, -1.9, 1.9], [-0.4, 5.4, 1.8, 1.9], [0.6, 8.3, 0.2, 1.7]], 0.92, UV_LEAF, 3.0, 2.8);
 }
 function broadleafB(hi: boolean) {
   // an older, wider, flatter-topped tree with an irregular crown
-  return leafyTree(hi, 3.9, 0.36, [[0.4, 6.3, 0.2, 2.5], [2.6, 5.4, 0.9, 1.9], [-2.4, 5.6, -0.3, 2.2], [-0.8, 5.1, -2.3, 1.8], [1.1, 5.0, 2.2, 1.7], [-1.2, 7.4, 0.8, 1.6], [1.6, 7.0, -1.2, 1.5]], 0.82, UV_LEAF, 1.8, 6.8);
+  return leafyTree(hi, 3.9, 0.36, [[0.4, 6.3, 0.2, 2.5], [2.6, 5.4, 0.9, 1.9], [-2.4, 5.6, -0.3, 2.2], [-0.8, 5.1, -2.3, 1.8], [1.1, 5.0, 2.2, 1.7], [-1.2, 7.4, 0.8, 1.6], [1.6, 7.0, -1.2, 1.5]], 0.82, UV_LEAF, 2.9, 3.0);
 }
 function mapleCards(hi: boolean) {
   // a rounder, denser maple crown
-  return leafyTree(hi, 3.6, 0.27, [[0, 6.2, 0, 2.6], [1.5, 5.2, 0.4, 1.8], [-1.4, 5.3, -0.5, 1.9], [0.2, 5.0, -1.6, 1.7], [-0.3, 5.1, 1.6, 1.7], [0.3, 7.6, -0.2, 1.8]], 1.0, UV_LEAF, 1.7, 7.5);
+  return leafyTree(hi, 3.6, 0.27, [[0, 6.2, 0, 2.6], [1.5, 5.2, 0.4, 1.8], [-1.4, 5.3, -0.5, 1.9], [0.2, 5.0, -1.6, 1.7], [-0.3, 5.1, 1.6, 1.7], [0.3, 7.6, -0.2, 1.8]], 1.0, UV_LEAF, 2.8, 3.2);
 }
 function poplarCards(hi: boolean) {
-  return leafyTree(hi, 3.4, 0.24, [[0, 4.9, 0, 1.8], [0.2, 6.9, 0.1, 1.8], [-0.1, 9.0, -0.1, 1.55], [0.1, 10.8, 0, 1.15]], 1.25, UV_SMALL, 1.5, 7.5);
+  // a birch: white bark, a tall loose crown of small light leaf masses
+  return leafyTree(hi, 4.2, 0.2, [[0, 5.4, 0, 1.7], [0.5, 7.2, 0.2, 1.6], [-0.3, 9.0, -0.2, 1.4], [0.2, 10.5, 0, 1.0], [1.2, 6.2, -0.6, 1.2]], 1.2, UV_SMALL, 2.2, 3.6, UV_BIRCH_RECT);
 }
 function pineCards(hi: boolean): THREE.BufferGeometry {
   const B = new CardBuf();
@@ -1153,12 +1182,12 @@ function pineCards(hi: boolean): THREE.BufferGeometry {
   B.solidRect(core, [UV_PINE[0] + 0.05, UV_PINE[1] + 0.05, UV_PINE[2] - 0.05, UV_PINE[3] - 0.08], 1, (_x, y) => 0.24 + 0.26 * clamp(y / H, 0, 1));
   return B.build();
 }
-function foliageMaterial(atlas: THREE.Texture, U: { uSunView: { value: THREE.Vector3 }; uSunCol: { value: THREE.Color }; uTrans: { value: number }; uTime: { value: number } }) {
+function foliageMaterial(atlas: THREE.Texture, U: { uSunView: { value: THREE.Vector3 }; uSunCol: { value: THREE.Color }; uTrans: { value: number }; uTime: { value: number }; uWindS: { value: number } }) {
   const m = new THREE.MeshStandardMaterial({ map: atlas, alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true, roughness: 1, metalness: 0 });
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nvarying float vAutumn;\nvarying float vHue;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWindS;\nvarying float vAutumn;\nvarying float vHue;')
       .replace('#include <color_vertex>', `#include <color_vertex>
 vAutumn = 0.0; vHue = 0.0;
 #ifdef USE_INSTANCING_COLOR
@@ -1177,8 +1206,10 @@ float wph = instanceMatrix[3][0] * 0.21 + instanceMatrix[3][2] * 0.13;
 float wph = 0.0;
 #endif
 float wk = max(position.y - 2.5, 0.0);
-transformed.x += (sin(uTime * 1.1 + wph) * 0.6 + sin(uTime * 2.3 + wph * 1.7 + position.x) * 0.25) * 0.022 * wk;
-transformed.z += sin(uTime * 0.9 + wph * 1.3) * 0.016 * wk;`);
+// sway with the range's wind: the crown leans and breathes, the outer masses flutter a little faster
+float wamp = 0.5 + 1.3 * uWindS;
+transformed.x += (sin(uTime * 1.1 + wph) * 0.6 + sin(uTime * 2.3 + wph * 1.7 + position.x) * 0.25) * 0.022 * wk * wamp;
+transformed.z += sin(uTime * 0.9 + wph * 1.3) * 0.016 * wk * wamp;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 uSunView;\nuniform vec3 uSunCol;\nuniform float uTrans;\nvarying float vAutumn;\nvarying float vHue;')
       .replace('#include <map_fragment>', `
@@ -1202,12 +1233,15 @@ float topL = smoothstep(-0.65, 0.85, (vec4(normal, 0.0) * viewMatrix).y);
 reflectedLight.indirectDiffuse *= mix(0.42, 1.35, topL);
 reflectedLight.directDiffuse *= mix(0.7, 1.15, topL);
 float backlit = pow(max(dot(normalize(-vViewPosition), uSunView), 0.0), 3.0);
+// a soft rim where the masses turn away from us, brightest with the sun behind (clean edges for the ink finish)
+float rimL = pow(1.0 - clamp(abs(dot(normalize(vViewPosition), normal)), 0.0, 1.0), 3.0);
+reflectedLight.directDiffuse += diffuseColor.rgb * uSunCol * rimL * (0.05 + 0.2 * backlit);
 reflectedLight.directDiffuse += diffuseColor.rgb * uSunCol * uTrans * (0.03 + 0.18 * backlit);
 // leaves are matte: no sky sheen on the cards
 reflectedLight.directSpecular *= 0.15;
 reflectedLight.indirectSpecular *= 0.1;`);
   };
-  m.customProgramCacheKey = () => 'range-foliage-v5';
+  m.customProgramCacheKey = () => 'range-foliage-v6';
   return m;
 }
 
@@ -1244,7 +1278,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
   let envRT: THREE.WebGLRenderTarget | null = null;
   // things that depend on the sun (baked tree shadows) register here
   const sunListeners: (() => void)[] = [];
-  const treeUniforms = { uSunView: { value: new THREE.Vector3() }, uSunCol: { value: new THREE.Color() }, uTrans: { value: 1 }, uTime: { value: 0 } };
+  const treeUniforms = { uSunView: { value: new THREE.Vector3() }, uSunCol: { value: new THREE.Color() }, uTrans: { value: 1 }, uTime: { value: 0 }, uWindS: { value: 0.35 } };
 
   function applyTime(t: TimeOfDay) {
     tod = t;
@@ -1599,6 +1633,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       const ci = CH.findIndex(([a, b]) => z <= a && z > b); if (ci < 0) return;
       p.set(x, rawHeight(x, z, false) - 0.15, z);
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
+      q.premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler((rand() - 0.5) * 0.12, 0, (rand() - 0.5) * 0.12)));
       s.set(scl * (0.9 + rand() * 0.2), scl * (0.85 + rand() * 0.35), scl * (0.9 + rand() * 0.2));
       if (sp === 0) { const r2 = rand(); sp = r2 < 0.4 ? 0 : r2 < 0.7 ? 3 : 4; }
       buckets[ci][sp].push(m4.compose(p, q, s).clone());
@@ -1988,6 +2023,7 @@ gl_Position = projectionMatrix * mvPosition;`);
         const U = flagUniforms.uWind.value, k = 1 - Math.exp(-dt * 1.5);
         U.x += (w.x / sp - U.x) * k; U.y += (w.z / sp - U.y) * k;
         U.z += (clamp(sp / 9, 0.2, 1) - U.z) * k;
+        treeUniforms.uWindS.value = U.z;
       }
       grassUniforms.uTime.value = time;
       treeUniforms.uTime.value = time;

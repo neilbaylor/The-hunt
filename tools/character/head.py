@@ -41,6 +41,7 @@ ap.add_argument('--cheek-fill', type=float, default=0.0025, help='extra fullness
 ap.add_argument('--hair-top', type=float, default=0.125, help='top of the hair above the eyes (m)')
 ap.add_argument('--rest', default='closed', choices=['closed', 'grin'], help='rest face: a relaxed closed-mouth smile, or the portrait\'s open grin')
 ap.add_argument('--rest-smile', type=float, default=-0.6, help='smile morph baked into the rest face')
+ap.add_argument('--real-photos', default='8716142c,ee55797f,efc78715,f9637097', help='his photos the central face is projected from (name prefixes; empty = none)')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
 ap.add_argument('--debug', default=None, help='directory for debug images')
@@ -644,6 +645,16 @@ if os.path.exists(base_obj):
         print(f'  expression {name}: {int((np.linalg.norm(dv, axis=1) > 2e-4).sum())} verts move, max {np.linalg.norm(dv, axis=1).max() * 1000:.1f} mm')
 else:
     print('(no MakeHuman data at', A.mpfb, '- no expressions)')
+# the rest face: ease the generator's grin toward a relaxed smile before anything is painted on it (the low-res mesh,
+# the hi-res surface the texture is projected onto, and the landmarks all move together)
+if A.rest == 'closed' and 'smile' in morph_d and A.rest_smile:
+    d_lv = morph_d['smile'] * A.rest_smile
+    _hv = np.asarray(hm.vertices).copy(); dq_, iq_ = cKDTree(LV).query(_hv, k=4); wq_ = 1 / (dq_ + 1e-4); wq_ /= wq_.sum(1, keepdims=True)
+    _hv += (d_lv[iq_] * wq_[..., None]).sum(1); hm = trimesh.Trimesh(_hv, np.asarray(hm.faces), process=False)
+    dq_, iq_ = cKDTree(LV).query(lm_f, k=4); wq_ = 1 / (dq_ + 1e-4); wq_ /= wq_.sum(1, keepdims=True)
+    lm_f = lm_f + (d_lv[iq_] * wq_[..., None]).sum(1)
+    LV = LV + d_lv
+    print(f'  rest smile {A.rest_smile:+.2f} of the smile unit (before the bake)')
 # ───────────────────────── unwrap ─────────────────────────
 atlas = xatlas.Atlas(); atlas.add_mesh(LV.astype(np.float32), LF.astype(np.uint32))
 co = xatlas.ChartOptions(); co.max_cost = 2.0
@@ -828,6 +839,78 @@ known = wsum > 0.05
 col[known] /= wsum[known, None]
 conf = np.clip(wsum / 0.4, 0, 1)
 
+# ── the central face from his REAL photos (neutral, front-ish selfies): projected with the cameras solved in the
+#    multi-view fit, shading flattened (÷ blurred luminance), colour-matched to one reference photo, then a weighted
+#    median across photos. The unwrap keeps the sides, ears, neck and scalp, colour-transferred to the real skin. ──
+def _s2l(c): c = np.clip(c, 0, 1); return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+def _l2s(c): c = np.clip(c, 0, 1); return np.where(c <= 0.0031308, c * 12.92, 1.055 * c ** (1 / 2.4) - 0.055)
+_MX = np.array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]]); _WP = np.array([0.95047, 1.0, 1.08883])
+def rgb2lab(c255):
+    X = (_s2l(c255 / 255) @ _MX.T) / _WP; f = np.where(X > 0.008856, np.cbrt(X), 7.787 * X + 16 / 116)
+    return np.c_[116 * f[:, 1] - 16, 500 * (f[:, 0] - f[:, 1]), 200 * (f[:, 1] - f[:, 2])]
+def lab2rgb(L):
+    fy = (L[:, 0] + 16) / 116; f = np.c_[fy + L[:, 1] / 500, fy, fy - L[:, 2] / 200]
+    X = np.where(f ** 3 > 0.008856, f ** 3, (f - 16 / 116) / 7.787) * _WP
+    return _l2s(np.clip(X @ np.linalg.inv(_MX).T, 0, 1)) * 255
+def transfer(c255, mu_s, sd_s, mu_t, sd_t, k=(0.6, 1.4)):
+    return lab2rgb((rgb2lab(c255) - mu_s) * np.clip(sd_t / np.maximum(sd_s, 1e-3), *k) + mu_t)
+OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109]
+real_ok = False
+REAL = [n_ for n_ in A.real_photos.split(',') if n_] if A.real_photos else []
+if REAL and 'mv_cams' in globals():
+    face_c = lm_f[OVAL].mean(0)
+    # central-face mask on the mesh: inside the face oval seen from the front, shrunk 6 %, feathered 1.5 cm
+    ov2 = ((lm_f[OVAL][:, :2] - face_c[:2]) * 0.94 + face_c[:2])
+    sd_ = np.array([cv2.pointPolygonTest((ov2 * 1e4).astype(np.float32), (float(x_ * 1e4), float(y_ * 1e4)), True) for x_, y_ in cp[:, :2]]) / 1e4
+    cmask = np.clip(sd_ / 0.015, 0, 1) * (cp[:, 2] > face_c[2] - 0.06)
+    samples, weights = [], []
+    ref_stats = None
+    for cam in mv_cams:
+        if not any(n_ in os.path.basename(cam['photo']) for n_ in REAL): continue
+        img = np.asarray(ImageOps.exif_transpose(Image.open(cam['photo'])).convert('RGB')).astype(np.float32)
+        Hh2, Ww2 = img.shape[:2]
+        K_, R_, t_ = np.array(cam['K']), np.array(cam['R']), np.array(cam['t'])
+        def proj_(P): c_ = P @ R_.T + t_; return np.c_[K_[0, 0] * c_[:, 0] / c_[:, 2] + K_[0, 2], K_[1, 1] * c_[:, 1] / c_[:, 2] + K_[1, 2]], c_[:, 2]
+        hp2_, hz_ = proj_(np.asarray(hm.vertices)); ids_ = raster(hp2_, hz_, np.asarray(hm.faces), Ww2, Hh2); zb_ = zbuffer(hp2_, hz_, np.asarray(hm.faces), ids_)
+        p2_, z_ = proj_(cp)
+        xi_, yi_ = np.clip(np.floor(p2_[:, 0]).astype(int), 1, Ww2 - 2), np.clip(np.floor(p2_[:, 1]).astype(int), 1, Hh2 - 2)
+        zmin_ = np.minimum.reduce([zb_[yi_ + dy, xi_ + dx] for dy in (-1, 0, 1) for dx in (-1, 0, 1)])
+        vis_ = (p2_[:, 0] > 1) & (p2_[:, 0] < Ww2 - 2) & (p2_[:, 1] > 1) & (p2_[:, 1] < Hh2 - 2) & (z_ <= zmin_ + 0.004)
+        camc_ = -R_.T @ t_; vd_ = camc_ - cp; vd_ /= np.linalg.norm(vd_, axis=1, keepdims=True)
+        cosv_ = np.einsum('ij,ij->i', hiN, vd_)
+        w_ = np.clip((cosv_ - 0.35) / 0.5, 0, 1) ** 2 * vis_ * cmask
+        # flatten the photo's shading: divide by its blurred luminance (scale ~ a sixth of the face)
+        fpx = np.median(np.linalg.norm(np.diff(proj_(lm_f[[10, 152]])[0], axis=0)))
+        lum = img.mean(2); lb = cv2.GaussianBlur(lum, (0, 0), max(3.0, fpx / 6))
+        flat = img * (np.median(lum[int(np.clip(proj_(lm_f[[1]])[0][0, 1], 0, Hh2 - 1)), :]) / np.maximum(lb, 1))[..., None]
+        c_ = np.stack([map_coordinates(flat[..., k], [p2_[:, 1] - 0.5, p2_[:, 0] - 0.5], order=1, mode='nearest') for k in range(3)], 1)
+        sel_ = w_ > 0.3
+        if sel_.sum() < 1000: continue
+        lab_ = rgb2lab(c_[sel_]); st_ = (lab_.mean(0), lab_.std(0))
+        if ref_stats is None: ref_stats = st_
+        else: c_ = transfer(c_, st_[0], st_[1], ref_stats[0], ref_stats[1], (0.8, 1.25))
+        samples.append(c_); weights.append(w_)
+        print(f'  real photo {os.path.basename(cam["photo"])[:8]}: {int(sel_.sum())} texels')
+    if samples:
+        S_ = np.stack(samples, 1); Wt_ = np.stack(weights, 1)                 # (texels, photos, 3), (texels, photos)
+        # weighted median per channel (few photos: sort, cumulate)
+        rc = np.zeros((len(cp), 3))
+        for k in range(3):
+            o_ = np.argsort(S_[..., k], axis=1); sv = np.take_along_axis(S_[..., k], o_, 1); sw = np.take_along_axis(Wt_, o_, 1)
+            cw = np.cumsum(sw, 1); half = cw[:, -1:] / 2; j_ = np.argmax(cw >= half, axis=1)
+            rc[:, k] = sv[np.arange(len(cp)), j_]
+        rconf = np.clip(Wt_.sum(1) / 0.8, 0, 1)
+        m_ = rconf * cmask
+        # the unwrap (sides, ears, neck, scalp) carried onto the real skin: Lab mean/spread over the cheeks both see
+        both = (m_ > 0.5) & (conf > 0.7) & (cp[:, 1] < (lm_f[468, 1] + lm_f[473, 1]) / 2 - 0.01) & (cp[:, 1] > lm_f[152, 1] + 0.01)
+        if both.sum() > 500:
+            lu_, lr_ = rgb2lab(col[both]), rgb2lab(rc[both])
+            col = transfer(col, lu_.mean(0), lu_.std(0), lr_.mean(0), lr_.std(0), (0.7, 1.3))
+        col = col * (1 - m_[:, None]) + rc * m_[:, None]
+        conf = np.maximum(conf, m_)
+        real_ok = True
+        print(f'  central face from {len(samples)} real photos ({int((m_ > 0.5).sum())} texels)')
+
 def snoise(q):
     # smooth value noise (trilinear), q already scaled
     i = np.floor(q).astype(np.int64); f = q - i; f = f * f * (3 - 2 * f)
@@ -908,6 +991,17 @@ if hair_hex is None:
     try: hair_hex = re.search(r"hair:\s*'(#[0-9a-fA-F]{6})'", open(os.path.join(ROOT, 'src/golfer/profile.ts')).read()).group(1)
     except Exception: hair_hex = '#4a3628'
 hair_t = hexrgb(hair_hex)
+if real_ok and A.hair is None:
+    # his real hair: the band above the hairline in the reference photo (median, a touch deeper for the shading flattening)
+    for cam in mv_cams:
+        if REAL[0] in os.path.basename(cam['photo']):
+            im_ = np.asarray(ImageOps.exif_transpose(Image.open(cam['photo'])).convert('RGB')).astype(float)
+            L_ = np.array(json.load(open(cam['photo'] + '.lm.json'))['pts'], float)[:, :2]; fh_ = np.linalg.norm(L_[10] - L_[152])
+            y0_, y1_ = int(L_[10, 1] - 0.22 * fh_), int(L_[10, 1] - 0.06 * fh_); x0_, x1_ = int(L_[54, 0]), int(L_[284, 0])
+            patch = im_[max(0, y0_):y1_, x0_:x1_].reshape(-1, 3)
+            patch = patch[patch.mean(1) < np.percentile(patch.mean(1), 60)]
+            hair_t = np.median(patch, 0); hair_hex = '#%02x%02x%02x' % tuple(int(v) for v in hair_t)
+            print('  hair colour from', os.path.basename(cam['photo']), hair_hex)
 L_ = out.mean(1); skinL = skin_c.mean()
 near_eye = np.minimum(np.linalg.norm(cp - lm_f[IRIS[0]], axis=1), np.linalg.norm(cp - lm_f[IRIS[1]], axis=1)) < 0.03
 sideang = np.abs(np.arctan2(cp[:, 0] - eye_lmh[0], cp[:, 2] - (eye_lmh[2] - 0.09)))
@@ -1030,7 +1124,15 @@ for (ca, cb, up, lo_, ir) in ((33, 133, 159, 145, 468), (362, 263, 386, 374, 473
 eyes_uv = eyes_info
 # the unwrap's own irises (blue-grey, limbal ring, fibres), cropped for the shader, and its sclera tone
 iris_png = None
-if A.unwrap not in (None, 'none') and os.path.exists(A.unwrap):
+# (with his real photos in use, the irises and sclera come from his front photo instead)
+_Uiris, _Liris, _src = (U, Lu, 'the unwrap') if A.unwrap not in (None, 'none') and os.path.exists(A.unwrap) else (None, None, '')
+if real_ok:
+    for cam in mv_cams:
+        if REAL[0] in os.path.basename(cam['photo']):
+            _Uiris = np.asarray(ImageOps.exif_transpose(Image.open(cam['photo'])).convert('RGB')).astype(np.float32)
+            _Liris = np.array(json.load(open(cam['photo'] + '.lm.json'))['pts'], float)[:, :2]; _src = os.path.basename(cam['photo'])
+if _Uiris is not None:
+    U, Lu = _Uiris, _Liris
     import io
     tiles = []
     for k_, (ic_, ring_) in enumerate(((468, (469, 470, 471, 472)), (473, (474, 475, 476, 477)))):
@@ -1045,15 +1147,12 @@ if A.unwrap not in (None, 'none') and os.path.exists(A.unwrap):
     sheet_ = Image.new('RGB', (192, 96)); sheet_.paste(tiles[0], (0, 0)); sheet_.paste(tiles[1], (96, 0))
     buf_ = io.BytesIO(); sheet_.save(buf_, 'PNG'); iris_png = np.frombuffer(buf_.getvalue(), np.uint8)
     if DBG: sheet_.save(os.path.join(DBG, 'irises.png'))
-    print('  irises from the unwrap; sclera', [np.round(np.array(e_['sclera']) * 255) for e_ in eyes_uv])
+    print('  irises from', _src, '; sclera', [np.round(np.array(e_['sclera']) * 255) for e_ in eyes_uv])
 # (the body's skin colour: skin_xform above; a flat tint is kept for older loaders)
 tint = np.ones(3)   # (superseded by skinXform; kept so older loaders still read a tint)
 
 # ───────────────────────── write head.bin ─────────────────────────
 # the rest face: ease the portrait's open grin toward a relaxed smile (after the bake, so the texture rides along)
-if A.rest == 'closed' and 'smile' in morph_d:
-    VV = VV + morph_d['smile'][vmap] * A.rest_smile
-    print(f'  rest smile {A.rest_smile:+.2f} of the smile unit')
 PV = mir(VV).astype(np.float32)
 PN = mir(NN).astype(np.float32)
 IDX = UF[:, ::-1] if mirror else UF                  # mirroring flips the winding

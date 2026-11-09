@@ -28,25 +28,59 @@ function clubSize(club: string): number {
 const N_PART = 90;
 
 export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number) => number): Divots {
-  // ── the chunk: a strip of turf, grass on top, dark soil underneath and round the torn sides ──
-  const chunkGeo = new THREE.BoxGeometry(1, 1, 1, 4, 1, 6).toNonIndexed();
-  {
-    const p = chunkGeo.getAttribute('position') as THREE.BufferAttribute, n = chunkGeo.getAttribute('normal');
-    const col = new Float32Array(p.count * 3), c = new THREE.Color();
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      // ragged ends and edges, a slightly domed top
-      const rag = 0.08 * Math.sin(z * 23 + x * 7) + 0.06 * Math.sin(x * 31 - z * 11);
-      p.setXYZ(i, x * (1 + rag * (Math.abs(z) > 0.45 ? 1.5 : 0.6)), y + (y > 0 ? 0.25 * (0.25 - x * x) : 0), z * (1 + rag * 0.5));
-      const top = n.getY(i) > 0.5;
-      if (top) c.setRGB(0.12 + 0.05 * Math.sin(x * 40 + z * 13), 0.27 + 0.06 * Math.sin(z * 37), 0.07);
-      else c.setRGB(0.085, 0.055, 0.032).multiplyScalar(n.getY(i) < -0.5 ? 0.8 : 1 + 0.15 * Math.sin(z * 50));
-      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  // ── the chunk: a thin, ragged strip of sod — bright grass on top with blades standing up, a thin dark edge and
+  // soil underneath. Built in metres for each shot; it flexes as it flies (uFlex) and flops flat when it lands. ──
+  const flex = { value: 0 };
+  const chunkMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide });
+  chunkMat.onBeforeCompile = (sh) => {
+    sh.uniforms.uFlex = flex;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aBend;\nuniform float uFlex;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y += aBend * uFlex;');
+  };
+  chunkMat.customProgramCacheKey = () => 'divot-sod';
+  const sod = (L: number, W: number, T: number): THREE.BufferGeometry => {
+    const NZ = 10, NX = 4, P: number[] = [], C: number[] = [], B: number[] = [];
+    const outline = (z: number, side: number) => {
+      // rounded, torn ends; the strip narrows toward them
+      const t = z / (L / 2), w = Math.sqrt(Math.max(0.04, 1 - Math.pow(Math.abs(t), 3)));
+      return side * (W / 2) * w * (1 + 0.12 * Math.sin(z * 90 + side * 2.1) + 0.08 * Math.sin(z * 210));
+    };
+    const tri = (a: number[], b: number[], c: number[], col: number[]) => {
+      for (const v of [a, b, c]) { P.push(v[0], v[1], v[2]); C.push(col[0], col[1], col[2]); B.push(Math.pow(v[2] / (L / 2), 2) - 0.3); }
+    };
+    const grass = [0.2, 0.44, 0.11], grassD = [0.15, 0.34, 0.08], soil = [0.085, 0.065, 0.045], soilD = [0.06, 0.045, 0.03];
+    for (let k = 0; k < NZ; k++) {
+      const z0 = -L / 2 + (k / NZ) * L, z1 = -L / 2 + ((k + 1) / NZ) * L;
+      for (let i = 0; i < NX; i++) {
+        const u0 = -1 + (2 * i) / NX, u1 = -1 + (2 * (i + 1)) / NX;
+        const x00 = outline(z0, 1) * u0, x10 = outline(z0, 1) * u1, x01 = outline(z1, 1) * u0, x11 = outline(z1, 1) * u1;
+        // a slightly domed top, the soil underneath
+        const dome = (u: number) => T * (0.5 + 0.18 * (1 - u * u));
+        const g = (k + i) % 2 ? grass : grassD;
+        tri([x00, dome(u0), z0], [x01, dome(u0), z1], [x10, dome(u1), z0], g); tri([x10, dome(u1), z0], [x01, dome(u0), z1], [x11, dome(u1), z1], g);
+        tri([x00, -T * 0.5, z0], [x10, -T * 0.5, z0], [x01, -T * 0.5, z1], soilD); tri([x10, -T * 0.5, z0], [x11, -T * 0.5, z1], [x01, -T * 0.5, z1], soilD);
+      }
+      // the thin torn edges down both sides
+      for (const side of [-1, 1]) {
+        const a0 = outline(z0, side), a1 = outline(z1, side);
+        tri([a0, T * 0.5, z0], [a0, -T * 0.5, z0], [a1, T * 0.5, z1], soil); tri([a1, T * 0.5, z1], [a0, -T * 0.5, z0], [a1, -T * 0.5, z1], soil);
+      }
     }
-    chunkGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    chunkGeo.computeVertexNormals();
-  }
-  const chunk = new THREE.Mesh(chunkGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }));
+    // grass blades standing up out of the top: tiny green cards, a fuzzy edge as it tumbles
+    for (let b = 0; b < 70; b++) {
+      const z = (Math.random() - 0.5) * L * 0.95, x = outline(z, 1) * (Math.random() * 2 - 1) * 1.05, h = 0.008 + Math.random() * 0.012, a = Math.random() * Math.PI;
+      const dx = Math.cos(a) * 0.0018, dz = Math.sin(a) * 0.0018, lean = (Math.random() - 0.5) * 0.006;
+      const col = Math.random() < 0.5 ? [0.24, 0.5, 0.13] : [0.17, 0.38, 0.09];
+      tri([x - dx, T * 0.6, z - dz], [x + dx, T * 0.6, z + dz], [x + lean, T * 0.6 + h, z + lean * 0.5], col);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+    g.setAttribute('aBend', new THREE.Float32BufferAttribute(B, 1));
+    g.computeVertexNormals();
+    return g;
+  };
+  const chunk = new THREE.Mesh(new THREE.BufferGeometry(), chunkMat);
   chunk.castShadow = true; chunk.visible = false; chunk.name = 'divot';
   scene.add(chunk);
 
@@ -63,8 +97,9 @@ export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number
       }
       g.fillStyle = fill; g.fill();
     };
-    blob(1.0, 'rgba(48,36,22,0.95)');   // torn edge
-    blob(0.84, 'rgba(84,62,40,1)');     // bare soil
+    blob(1.0, 'rgba(70,112,40,0.95)');  // the torn, lifted grass lip
+    blob(0.86, 'rgba(40,30,20,1)');     // the dark cut edge
+    blob(0.76, 'rgba(78,58,38,1)');     // bare soil
     for (let i = 0; i < 70; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '40,28,16' : '120,96,64'},0.6)`; g.fillRect(10 + Math.random() * 44, 14 + Math.random() * 100, 1 + Math.random() * 2, 1 + Math.random() * 2); }
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
   })();
@@ -85,7 +120,7 @@ export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number
 
   // chunk flight state
   const vel = new THREE.Vector3(), spin = new THREE.Vector3(), q = new THREE.Quaternion(), dq = new THREE.Quaternion(), e = new THREE.Euler();
-  let flying = false, bounces = 0, half = 0.01;
+  let flying = false, bounces = 0, half = 0.01, flexT = 0;
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
   return {
@@ -102,7 +137,7 @@ export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number
       const powK = 0.6 + 0.4 * Math.max(0, Math.min(1, power));
       k *= lieK * modeK * powK;
       // a wedge's strip is ~15 x 6 cm and a couple of cm thick (a touch generous so it reads on a phone)
-      const L = 0.16 * Math.max(k, 0.25), W = 0.062 * (0.6 + 0.4 * k), T = 0.026 * thin * (0.5 + 0.5 * k);
+      const L = 0.16 * Math.max(k, 0.25), W = 0.062 * (0.6 + 0.4 * k), T = 0.015 * thin * (0.6 + 0.4 * k);
       const ang = Math.atan2(dir.x, dir.z);
       const c = at.clone().addScaledVector(dir, 0.02 + L * 0.55);
       const gy = heightAt(c.x, c.z);
@@ -110,18 +145,18 @@ export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number
       const takesChunk = !sand && k > 0.2;
       if (takesChunk) {
         chunk.visible = true;
-        chunk.scale.set(W, T, L);
+        chunk.geometry.dispose(); chunk.geometry = sod(L, W, T);
         chunk.position.set(c.x, gy + T * 0.5, c.z);
         e.set(0, ang, 0); q.setFromEuler(e); chunk.quaternion.copy(q);
         // up and forward along the clubhead path, faster for a fuller strike
         vel.copy(dir).multiplyScalar(rnd(3.2, 4.6) * (0.7 + 0.3 * k)).setY(rnd(2.4, 3.4) * (0.75 + 0.25 * k));
         vel.addScaledVector(new THREE.Vector3(dir.z, 0, -dir.x), rnd(-0.4, 0.4));
         spin.set(rnd(10, 18), rnd(-4, 4), rnd(-3, 3));
-        flying = true; bounces = 0; half = T * 0.5;
+        flying = true; bounces = 0; half = T * 0.5; flexT = 0;
       }
       if (!sand) {
         scar.visible = true;
-        scar.scale.set(W * 1.15 * (takesChunk ? 1 : 1.6), 1, L * 1.1 * (takesChunk ? 1 : 0.5));
+        scar.scale.set(W * 1.4 * (takesChunk ? 1 : 1.6), 1, L * 1.25 * (takesChunk ? 1 : 0.5));
         scar.position.set(c.x, gy + 0.003, c.z); scar.rotation.set(0, ang, 0);
         (scar.material as THREE.MeshStandardMaterial).opacity = takesChunk ? 1 : 0.55;
       }
@@ -136,11 +171,11 @@ export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number
         const fwd = sand ? rnd(0.5, 3.5) : rnd(1, 4.5), up = sand ? rnd(1.5, 4.2) : rnd(0.8, 3.2), side = rnd(-1.1, 1.1) * (sand ? 1.4 : 1);
         pVel[i * 3] = dir.x * fwd + dir.z * side; pVel[i * 3 + 1] = up; pVel[i * 3 + 2] = dir.z * fwd - dir.x * side;
         if (sand) col.setRGB(0.62, 0.53, 0.36).multiplyScalar(rnd(0.8, 1.15));
-        else if (Math.random() < 0.65) col.setRGB(0.16, 0.32, 0.08).multiplyScalar(rnd(0.8, 1.3));
-        else col.setRGB(0.2, 0.13, 0.07).multiplyScalar(rnd(0.8, 1.2));
+        else if (Math.random() < 0.85) col.setRGB(0.2, 0.42, 0.1).multiplyScalar(rnd(0.75, 1.3));
+        else col.setRGB(0.12, 0.09, 0.06).multiplyScalar(rnd(0.8, 1.2));
         pCol[i * 3] = col.r; pCol[i * 3 + 1] = col.g; pCol[i * 3 + 2] = col.b;
       }
-      (parts.material as THREE.PointsMaterial).size = sand ? 0.011 : 0.016;
+      (parts.material as THREE.PointsMaterial).size = sand ? 0.011 : 0.01;
       pGeo.attributes.position.needsUpdate = true; pGeo.attributes.color.needsUpdate = true;
       parts.visible = nParts > 0;
     },
@@ -148,6 +183,8 @@ export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number
       if (dt <= 0) return;
       const h = Math.min(dt, 1 / 30);
       if (flying) {
+        // the strip flexes and wobbles in the air
+        flexT += h; flex.value = 0.012 * Math.sin(flexT * 28) * Math.exp(-flexT * 2.5) + 0.006;
         vel.y -= 9.8 * h;
         vel.multiplyScalar(1 - 0.25 * h); // a little air drag on a flat strip
         chunk.position.addScaledVector(vel, h);
@@ -160,7 +197,9 @@ export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number
             // settle: lie flat, grass up or soil up as it fell
             flying = false;
             const up = new THREE.Vector3(0, 1, 0).applyQuaternion(chunk.quaternion);
-            e.set(up.y >= 0 ? 0 : Math.PI, Math.atan2(vel.x, vel.z) + rnd(-0.4, 0.4), 0); chunk.quaternion.setFromEuler(e);
+            // flops flat, usually grass-up
+            e.set(up.y >= -0.3 || Math.random() < 0.6 ? 0 : Math.PI, Math.atan2(vel.x, vel.z) + rnd(-0.4, 0.4), 0); chunk.quaternion.setFromEuler(e);
+            flex.value = 0.002;
           } else { vel.y *= -0.25; vel.x *= 0.45; vel.z *= 0.45; spin.multiplyScalar(0.4); }
         }
       }
