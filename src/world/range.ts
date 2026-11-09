@@ -644,7 +644,11 @@ vec3 groundColor(vec2 p) {
   float wear = smoothstep(0.62, 0.8, texture2D(uNoise, p * 0.9 + 3.1).g) * (1.0 - smoothstep(1.5, 4.0, length(p - vec2(0.3, -0.6))));
   tc = mix(tc, ${v3(COL.roughDry)} * 0.9, wear * 0.12);
   // divots: old ones filled with a pale sand-and-seed mix with green coming through, fresh ones dark soil
+#ifdef LOW_DETAIL
+  vec3 dv = vec3(0.0);
+#else
   vec3 dv = divotAt(p);
+#endif
   if (dv.x > 0.0) {
     vec3 sandSeed = mix(${v3(lin('#a39a72'))}, ${v3(COL.teeLight)}, 0.25 + 0.35 * n4) * (0.9 + 0.2 * n1);
     vec3 soil = mix(${v3(lin('#4a3a28'))}, ${v3(lin('#6b5a3c'))}, n4);
@@ -666,6 +670,7 @@ vec3 groundColor(vec2 p) {
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= groundColor(vWPos.xz);')
       // fine turf bump near the camera so close-up grass catches the light unevenly
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+#ifndef LOW_DETAIL
 {
   float fadeB = 1.0 - smoothstep(4.0, 35.0, length(vWPos - cameraPosition));
   if (fadeB > 0.0) {
@@ -675,7 +680,8 @@ vec3 groundColor(vec2 p) {
     vec3 wb = vec3(h0 - hx, 0.0, h0 - hz) * 2.2 * fadeB * gBump + gSandB;
     normal = normalize(normal + (viewMatrix * vec4(wb, 0.0)).xyz);
   }
-}`)
+}
+#endif`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = gRough;')
       // turf is a poor mirror: damp the sky sheen that makes grass look plastic at grazing angles
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular *= 0.3;\nreflectedLight.indirectSpecular *= 0.25;');
@@ -1751,6 +1757,10 @@ gl_Position = projectionMatrix * mvPosition;`);
 
   function applyDetail(d: Detail) {
     detail = d;
+    // low: skip the per-pixel turf bump and the tee divots in the ground shader (fill rate is what phones run out of)
+    const low = d === 'low';
+    const defs = (gmat.defines ??= {});
+    if (low !== ('LOW_DETAIL' in defs)) { if (low) defs.LOW_DETAIL = 1; else delete defs.LOW_DETAIL; gmat.needsUpdate = true; }
     for (const t of thin) t.im.count = Math.max(0, Math.round(t.full * t.f[d]));
     lodFar = DETAIL.lodFar[d];
     patchMax = DETAIL.patch[d]; relayPatch();
