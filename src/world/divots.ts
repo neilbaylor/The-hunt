@@ -40,7 +40,7 @@ export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number
       p.setXYZ(i, x * (1 + rag * (Math.abs(z) > 0.45 ? 1.5 : 0.6)), y + (y > 0 ? 0.25 * (0.25 - x * x) : 0), z * (1 + rag * 0.5));
       const top = n.getY(i) > 0.5;
       if (top) c.setRGB(0.12 + 0.05 * Math.sin(x * 40 + z * 13), 0.27 + 0.06 * Math.sin(z * 37), 0.07);
-      else c.setRGB(0.13, 0.085, 0.05).multiplyScalar(n.getY(i) < -0.5 ? 0.8 : 1 + 0.15 * Math.sin(z * 50));
+      else c.setRGB(0.085, 0.055, 0.032).multiplyScalar(n.getY(i) < -0.5 ? 0.8 : 1 + 0.15 * Math.sin(z * 50));
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
     chunkGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -101,7 +101,8 @@ export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number
       const thin = mode === 'flop' ? 0.45 : 1;
       const powK = 0.6 + 0.4 * Math.max(0, Math.min(1, power));
       k *= lieK * modeK * powK;
-      const L = 0.14 * Math.max(k, 0.25), W = 0.05 * (0.6 + 0.4 * k), T = 0.022 * thin * (0.5 + 0.5 * k);
+      // a wedge's strip is ~15 x 6 cm and a couple of cm thick (a touch generous so it reads on a phone)
+      const L = 0.16 * Math.max(k, 0.25), W = 0.062 * (0.6 + 0.4 * k), T = 0.026 * thin * (0.5 + 0.5 * k);
       const ang = Math.atan2(dir.x, dir.z);
       const c = at.clone().addScaledVector(dir, 0.02 + L * 0.55);
       const gy = heightAt(c.x, c.z);
@@ -139,7 +140,7 @@ export function createDivots(scene: THREE.Scene, heightAt: (x: number, z: number
         else col.setRGB(0.2, 0.13, 0.07).multiplyScalar(rnd(0.8, 1.2));
         pCol[i * 3] = col.r; pCol[i * 3 + 1] = col.g; pCol[i * 3 + 2] = col.b;
       }
-      (parts.material as THREE.PointsMaterial).size = sand ? 0.009 : 0.012;
+      (parts.material as THREE.PointsMaterial).size = sand ? 0.011 : 0.016;
       pGeo.attributes.position.needsUpdate = true; pGeo.attributes.color.needsUpdate = true;
       parts.visible = nParts > 0;
     },

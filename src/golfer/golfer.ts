@@ -600,7 +600,14 @@ export class Golfer {
         // middle finger about the palm normal before it wraps
         const mid0 = bones[E.fingers[s][2][0]].position, across = offs[0].clone().sub(mid0);
         const side = Math.sign(new THREE.Vector3().crossVectors(E.palm[s], E.handDir[s]).dot(across));
-        const qSpread = new THREE.Quaternion().setFromAxisAngle(E.palm[s], -side * [0, 0.1, 0, 0.06, 0.12][fi]);
+        // the hand lies diagonally (in line with the forearm) but the fingers hook straight across the grip, as a real
+        // hand's do (they flex obliquely): turn each finger, in the palm plane, until it points across the shaft
+        const shaftB = axisD.clone().applyQuaternion(qh.clone().invert());
+        const across = new THREE.Vector3().crossVectors(E.palm[s], shaftB).normalize();
+        if (across.dot(E.handDir[s]) < 0) across.negate();
+        const hdP = E.handDir[s].clone().addScaledVector(E.palm[s], -E.handDir[s].dot(E.palm[s])).normalize();
+        const turn = Math.atan2(new THREE.Vector3().crossVectors(hdP, across).dot(E.palm[s]), hdP.dot(across));
+        const qSpread = new THREE.Quaternion().setFromAxisAngle(E.palm[s], turn - side * [0, 0.1, 0, 0.06, 0.12][fi]);
         const qhs = qh.clone().multiply(qSpread);
         // which way round the grip these fingers wrap: the way the hand points from its knuckles
         const handDirW = E.handDir[s].clone().applyQuaternion(qh), radP = P.clone().sub(axisP).addScaledVector(axisD, -P.clone().sub(axisP).dot(axisD));

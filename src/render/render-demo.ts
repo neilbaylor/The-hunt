@@ -78,7 +78,7 @@ if (view === 'portrait') {
   focus.copy(t.pos);
 } else if (view === 'divot') {
   // impact divots, side on from the target-left: ?view=divot renders a strip (clubs x moments) into __strip
-  camera.position.set(-2.3, 0.55, -0.95); camera.lookAt(0, 0.2, -0.95); focus.set(0, 0, -1);
+  camera.position.set(-1.25, 0.42, -0.55); camera.lookAt(0, 0.12, -0.75); focus.set(0, 0, -1);
 } else if (view === 'flagcam') {
   // close on the featured flag (frame strips of the waving cloth: ?t0= seconds of simulated time before the shot)
   const t = range.featured ?? range.targets[1];
@@ -123,7 +123,11 @@ async function divotStrip() {
     let t = 0;
     times.forEach((tt, i) => {
       while (t < tt) { d.update(1 / 60); t += 1 / 60; }
+      // the last moment from above, to show the scar and where the strip came to rest
+      const last = i === times.length - 1, cp = camera.position.clone(), cq = camera.quaternion.clone();
+      if (last) { camera.position.set(0.25, 1.1, -0.35); camera.lookAt(0, 0, -0.9); }
       range.update(1 / 60, camera, focus); post.render(1 / 60);
+      if (last) { camera.position.copy(cp); camera.quaternion.copy(cq); }
       g.drawImage(renderer.domElement, i * w, r * h);
       g.fillStyle = '#fff'; g.font = `${Math.round(h / 22)}px sans-serif`; g.fillText(`${club} · ${tt.toFixed(2)} s`, i * w + 6, r * h + h / 18);
     });
