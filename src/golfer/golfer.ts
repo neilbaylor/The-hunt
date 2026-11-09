@@ -50,7 +50,7 @@ const DOWN = K({ lift: -0.04, reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestT
 const LATE = K({ lift: -0.1, reach: 1.01, hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.32, shift: 0.075, drop: 0.0, heel: 0.33, shrug: 0.0, pro: -0.02, hinge: 0.45, beta: -0.08 }, T);
 // delivery: lead arm about parallel on the way down, shaft lagging ~45° behind the hands on plane, hips already open,
 // trail elbow tucked in front of the trail hip
-const DELIV = K({ lift: -0.3, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.3, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
+const DELIV = K({ lift: -0.38, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.3, shrug: 0.04, pro: -0.04, hinge: 0.62, beta: -0.15 }, T);
 const I: Keys = { lift: 0, reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.24, shift: 0.08, drop: -0.012, heel: 0.36, shrug: -0.05, pro: -0.11, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
 const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.45, hinge: -0.08, beta: 0.08, pro: -0.02 }, I);
@@ -508,7 +508,7 @@ export class Golfer {
       // full finish target, built in the chest's frame: hands up past the lead shoulder, shaft wrapped behind the neck
       const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];
       const L = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(qChest);
-      const gripFin = neck.clone().add(L(0.13, 0.05, -0.03));   // hands by the lead ear, a little behind (Rory)
+      const gripFin = neck.clone().add(L(0.08, 0.22, -0.1));   // hands by the lead ear, a little behind (Rory)
       const shaftFin = L(-0.72, -0.48, -0.5).normalize();   // across the back of the shoulders, angled down behind            // grip → club head
       const faceFin = L(0, 0.35, -0.9).normalize();                  // where the club face points
       // club local frame: shaft runs hosel → butt along shaftDir, face looks along +X

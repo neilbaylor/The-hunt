@@ -76,6 +76,8 @@ if (view === 'portrait') {
     camera.position.set(bx * 0.55, t.pos.y + 1.7, bz + 9); camera.lookAt(bx, t.pos.y + 1.1, bz);
   }
   focus.copy(t.pos);
+} else if (view === 'photo2') { camera.position.set(4, 9, 24); camera.lookAt(-2, 1.5, -70); focus.set(0, 0, -20);
+} else if (view === 'photo3') { camera.position.set(-30, 55, -20); camera.lookAt(5, 0, -150); focus.set(0, 0, -120);
 } else if (view === 'divot') {
   // impact divots, side on from the target-left: ?view=divot renders a strip (clubs x moments) into __strip
   camera.position.set(-1.25, 0.42, -0.55); camera.lookAt(0, 0.12, -0.75); focus.set(0, 0, -1);

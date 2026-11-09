@@ -64,19 +64,21 @@ interface TimePreset {
 const TIMES: Record<TimeOfDay, TimePreset> = {
   golden: {
     elev: 12, azim: 238,
-    sky: { turbidity: 5.5, rayleigh: 1.9, mieCoefficient: 0.0036, mieDirectionalG: 0.76 },
-    clouds: 0.26, sunColor: '#ffbd7a', sunI: 5.2, hemiSky: '#b9c4d2', hemiGround: '#4d4a2c', hemiI: 0.22,
-    fog: '#d8c8aa', fogDensity: 0.00055, envI: 0.36, groundBounce: '#4a5a2c', trans: 1.0,
+    // a hazy summer evening, sun low and nearly into the camera: creamy pale sky, golden light, cool green shade
+    sky: { turbidity: 8.5, rayleigh: 1.25, mieCoefficient: 0.0062, mieDirectionalG: 0.82 },
+    clouds: 0.12, sunColor: '#ffd08a', sunI: 5.6, hemiSky: '#c4ccd2', hemiGround: '#46502c', hemiI: 0.24,
+    fog: '#e4dbc4', fogDensity: 0.0007, envI: 0.38, groundBounce: '#4e5e2c', trans: 1.15,
   },
   midday: {
     elev: 48, azim: -28,
-    sky: { turbidity: 4.2, rayleigh: 1.15, mieCoefficient: 0.0042, mieDirectionalG: 0.8 },
-    clouds: 0.34, sunColor: '#fff1de', sunI: 3.3, hemiSky: '#cfe0f2', hemiGround: '#4a5a32', hemiI: 0.34,
-    fog: '#c7d6e2', fogDensity: 0.00042, envI: 0.55, groundBounce: '#3c5a2a', trans: 0.35,
+    // a clean blue sky, crisp shadows, haze only at the horizon
+    sky: { turbidity: 3.0, rayleigh: 1.7, mieCoefficient: 0.0035, mieDirectionalG: 0.8 },
+    clouds: 0.22, sunColor: '#fff4e6', sunI: 3.6, hemiSky: '#cfe2f6', hemiGround: '#46602e', hemiI: 0.34,
+    fog: '#cbdbe8', fogDensity: 0.00038, envI: 0.55, groundBounce: '#3c5e2a', trans: 0.35,
   },
 };
 
-const TEE = { cx: 0, cz: 2, hx: 7, hz: 8, r: 1.4 }; // tee box rounded rectangle (x∈[-7,7], z∈[-6,10])
+const TEE = { cx: 0, cz: 2, hx: 7, hz: 8, r: 0.45 }; // tee box rounded rectangle (x∈[-7,7], z∈[-6,10])
 const TEE_DROP = 0.32; // how far the tee box stands above the ground around it
 const FW_START = -6.5, FW_END = -322, CAP0 = 14, CAP1 = 26, FIRST_CUT = 2.6;
 const FRINGE = 2.1;
@@ -105,6 +107,12 @@ const BUNKERS: Bunker[] = [
   { x: 4, z: -124, rx: 4.8, rz: 2.4, rot: 0.45, p: 0.7 },
   { x: -36, z: -229, rx: 5.2, rz: 3.0, rot: -0.35, p: 2.1 },
   { x: 25, z: -150, rx: 7.5, rz: 2.8, rot: 0.12, p: 3.3 },
+  // greenside: around the 50, 100 and 200 greens
+  { x: 8, z: -50, rx: 3.2, rz: 2.0, rot: 0.6, p: 1.1 },
+  { x: -8, z: -86, rx: 3.6, rz: 2.2, rot: 0.8, p: 2.6 },
+  { x: 27, z: -99, rx: 3.2, rz: 2.0, rot: -0.6, p: 5.3 },
+  { x: -7, z: -176, rx: 4.0, rz: 2.4, rot: 0.3, p: 0.4 },
+  { x: 37, z: -193, rx: 3.6, rz: 2.2, rot: -0.9, p: 3.9 },
   { x: 3, z: -248, rx: 6.2, rz: 2.2, rot: 0.05, p: 4.6 },
 ];
 
@@ -150,7 +158,12 @@ function bunkerD(b: Bunker, x: number, z: number): number {
   const dx = x - b.x, dz = z - b.z, c = Math.cos(b.rot), s = Math.sin(b.rot);
   const u = (dx * c + dz * s) / b.rx, v = (-dx * s + dz * c) / b.rz;
   const a = Math.atan2(v, u);
-  return Math.hypot(u, v) / (1 + 0.1 * Math.sin(3 * a + b.p) + 0.06 * Math.sin(5 * a + b.p * 1.7));
+  return Math.hypot(u, v) / clawK(a, b.p);
+}
+/** the outline of a claw bunker at angle a: fingers of sand reaching out, grassy noses pushing in (kept in sync with GLSL) */
+function clawK(a: number, p: number): number {
+  return 1 + 0.1 * Math.sin(3 * a + p) + 0.06 * Math.sin(5 * a + p * 1.7)
+    + 0.32 * Math.pow(0.5 + 0.5 * Math.sin(5 * a + p * 2.3), 6) - 0.2 * Math.pow(0.5 + 0.5 * Math.sin(3 * a + p * 4.1), 10);
 }
 function teeSD(x: number, z: number): number {
   const qx = Math.abs(x - TEE.cx) - (TEE.hx - TEE.r), qz = Math.abs(z - TEE.cz) - (TEE.hz - TEE.r);
@@ -170,12 +183,20 @@ function rawHeight(x: number, z: number, withCanopy = true): number {
   let h = a * (6 * fbm(x / 85, z / 85) + 2.5) + Math.max(0, out) * 0.06 * a;
   // big distant hills that frame the horizon
   const r = Math.hypot(x * 0.85, (z + 160) * 0.62);
-  h += smooth(650, 1500, r) * (55 + 120 * fbm(x / 520 + 3.1, z / 520 - 2.7, 5));
+  h += smooth(700, 1600, r) * (18 + 45 * fbm(x / 520 + 3.1, z / 520 - 2.7, 5));
   if (withCanopy && out > 60) h += canopyAt(x, z);
   // gentle movement inside the corridor, flat at the tee and on the greens
   let flat = smooth(14, 45, Math.hypot(x, z));
   for (const g of GREENS) flat = Math.min(flat, smooth(1.0, 2.2, greenD(g, x, z)));
-  h += (1 - a) * flat * (0.35 * Math.sin(x / 31 + 0.7) * Math.sin(z / 47) + 0.25 * Math.sin((x + z) / 63));
+  h += (1 - a) * flat * (0.7 * Math.sin(x / 37 + 0.7) * Math.sin(z / 53) + 0.45 * Math.sin((x + z) / 71) + 0.2 * Math.sin(z / 19 + x / 29));
+  // rough mounds and ripples along the fairway edges, the fairway a smooth carpet flowing between them
+  {
+    const fh = fwHalf(z, 0);
+    if (fh > 0) {
+      const e = Math.abs(x - fwCenter(z)) - fh;
+      h += (1 - a) * flat * smooth(-1, 7, e) * (1 - smooth(16, 30, e)) * (0.75 + 0.45 * Math.sin(z / 13 + x / 7) * Math.sin(z / 29));
+    }
+  }
   // raised greens with a soft collar
   for (const g of GREENS) {
     const d = greenD(g, x, z);
@@ -186,7 +207,8 @@ function rawHeight(x: number, z: number, withCanopy = true): number {
   // bunkers dug in
   for (const b of BUNKERS) {
     const d = bunkerD(b, x, z);
-    if (d < 1.6) h -= 0.46 * (1 - smooth(0.62, 1.03, d)) - 0.17 * smooth(0.96, 1.07, d) * (1 - smooth(1.1, 1.55, d));
+    // a flat sand floor, a steep face and a raised, ragged grass lip
+    if (d < 1.6) h -= 0.5 * (1 - smooth(0.8, 1.02, d)) - 0.2 * smooth(0.98, 1.06, d) * (1 - smooth(1.1, 1.5, d));
   }
   // the tee box stands proud of its surroundings
   h -= TEE_DROP * (1 - smooth(0, 16, Math.max(teeSD(x, z), 0)));
@@ -206,10 +228,10 @@ function surfaceAt(x: number, z: number): Surface {
 // ───────────────────────── colours ─────────────────────────
 const lin = (hex: string) => new THREE.Color(hex); // THREE.Color converts sRGB hex to linear
 const COL = {
-  rough: lin('#2f5a1d'), roughDry: lin('#6b7230'), meadow: lin('#4f6b28'), cut: lin('#3f7724'),
-  fwDark: lin('#3b7321'), fwLight: lin('#548f30'), fringe: lin('#467f28'),
-  green: lin('#4a8f2d'), greenLight: lin('#579c36'), tee: lin('#457f28'), teeLight: lin('#518d30'),
-  sand: lin('#dccb9b'), sandDark: lin('#b59f72'), lip: lin('#2f5f1c'), forest: lin('#1d3313'), forestLeaf: lin('#1b3412'), forestLeafLight: lin('#3f5f22'),
+  rough: lin('#2a5526'), roughDry: lin('#6a7334'), meadow: lin('#4a6b2c'), cut: lin('#377232'),
+  fwDark: lin('#327a31'), fwLight: lin('#5a9c3c'), fringe: lin('#3d8735'),
+  green: lin('#5ea341'), greenLight: lin('#72b04a'), tee: lin('#3c8433'), teeLight: lin('#4c943a'),
+  sand: lin('#f1e8d2'), sandDark: lin('#d2c39f'), lip: lin('#2f5f1c'), forest: lin('#1d3313'), forestLeaf: lin('#1b3412'), forestLeafLight: lin('#3f5f22'),
 };
 const v3 = (c: THREE.Color) => `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`;
 
@@ -567,9 +589,10 @@ vec3 groundColor(vec2 p) {
   gRough = 1.0;
   // fairway with mowing stripes across the line and fainter lanes along it
   float fw = inside(fwSD(p, 0.0), 0.0);
-  float across = stripes(p.y / 9.144 + 0.5 + 0.035 * sin(p.x / 11.0) + 0.02 * sin(p.x / 4.3 + p.y * 0.05)), along = stripes(p.x / 9.0 + 0.5 + 0.03 * sin(p.y / 17.0));
-  vec3 fwc = mix(${v3(COL.fwDark)}, ${v3(COL.fwLight)}, 0.5 + 0.2 * (across - 0.5));
-  fwc *= 1.0 + 0.2 * mowSheen(across, vec2(0.0, 1.0)) + 0.06 * mowSheen(along, vec2(1.0, 0.0));
+  // bold diagonal mowing stripes, with fainter straight lanes down the line
+  float across = stripes((p.y * 0.86 + p.x * 0.5) / 7.5 + 0.5 + 0.02 * sin(p.x / 4.3 + p.y * 0.05)), along = stripes(p.x / 9.0 + 0.5 + 0.03 * sin(p.y / 17.0));
+  vec3 fwc = mix(${v3(COL.fwDark)}, ${v3(COL.fwLight)}, 0.5 + 0.24 * (across - 0.5));
+  fwc *= 1.0 + 0.22 * mowSheen(across, vec2(0.5, 0.86)) + 0.06 * mowSheen(along, vec2(1.0, 0.0));
   fwc *= 0.9 + 0.18 * (0.6 * n1 + 0.4 * n2);
   col = mix(col, fwc, fw);
   gRough = mix(gRough, 0.92, fw);
@@ -654,7 +677,8 @@ vec3 groundColor(vec2 p) {
     vec2 d = p - b.xy; float c = cos(bb.x), s = sin(bb.x);
     vec2 uv = vec2((d.x * c + d.y * s) / b.z, (-d.x * s + d.y * c) / b.w);
     float a = atan(uv.y, uv.x);
-    float bd = length(uv) / (1.0 + 0.1 * sin(3.0 * a + bb.y) + 0.06 * sin(5.0 * a + bb.y * 1.7));
+    float bd = length(uv) / (1.0 + 0.1 * sin(3.0 * a + bb.y) + 0.06 * sin(5.0 * a + bb.y * 1.7)
+      + 0.32 * pow(0.5 + 0.5 * sin(5.0 * a + bb.y * 2.3), 6.0) - 0.2 * pow(0.5 + 0.5 * sin(3.0 * a + bb.y * 4.1), 10.0));
     if (bd > 1.4) continue;
     col = mix(col, ${v3(COL.lip)} * (0.9 + 0.2 * n1), inside(bd, 1.13) * 0.85);
     float sm = inside(bd + (n1 - 0.5) * 0.025, 1.0);
@@ -678,7 +702,7 @@ vec3 groundColor(vec2 p) {
   float tm = inside(teeSD(p), 0.0);
   vec3 tc = mix(${v3(COL.tee)}, ${v3(COL.teeLight)}, 0.45);
   // tee: a crisp diagonal cross-cut, each pass light one way and dark the other
-  tc *= 1.0 + 0.1 * mowSheen(stripes((p.x + p.y) / 1.5), vec2(0.7071, 0.7071)) + 0.06 * mowSheen(stripes((p.x - p.y) / 1.5), vec2(0.7071, -0.7071));
+  tc *= 1.0 + 0.1 * mowSheen(stripes(p.x / 1.75), vec2(1.0, 0.0)) + 0.035 * mowSheen(stripes(p.y / 1.75), vec2(0.0, 1.0));
   tc *= 0.95 + 0.08 * n1 + 0.04 * n2;
   // tee box wear: a few lighter scuffs and divots near the ball
   float wear = smoothstep(0.62, 0.8, texture2D(uNoise, p * 0.9 + 3.1).g) * (1.0 - smoothstep(1.5, 4.0, length(p - vec2(0.3, -0.6))));
@@ -732,7 +756,7 @@ vec3 groundColor(vec2 p) {
       // turf is a poor mirror: damp the sky sheen that makes grass look plastic at grazing angles
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n// greens keep a soft putting-surface sheen\nreflectedLight.directSpecular *= mix(0.3, 0.5, gSheen);\nreflectedLight.indirectSpecular *= mix(0.25, 0.32, gSheen);');
   };
-  m.customProgramCacheKey = () => 'range-ground-v10';
+  m.customProgramCacheKey = () => 'range-ground-v11';
   return m;
 }
 
@@ -1135,16 +1159,18 @@ function leafyTree(hi: boolean, trunkH: number, trunkR: number, lumps: [number, 
   }
   return B.build();
 }
+const lift = (l: [number, number, number, number][], dy: number) => l.map(([x, y, z, r]) => [x, y + dy, z, r] as [number, number, number, number]);
 function broadleafCards(hi: boolean) {
-  return leafyTree(hi, 4.6, 0.3, [[0, 6.8, 0, 2.7], [1.9, 5.7, 0.6, 2.0], [-1.8, 5.9, -0.4, 2.1], [0.3, 5.5, -1.9, 1.9], [-0.4, 5.4, 1.8, 1.9], [0.6, 8.3, 0.2, 1.7]], 0.92, UV_LEAF, 3.0, 2.8);
+  // a mature oak: a tall clean trunk and a broad, billowy crown of big masses lifted high
+  return leafyTree(hi, 7.2, 0.34, lift([[0, 6.8, 0, 3.0], [2.3, 5.9, 0.6, 2.3], [-2.2, 6.1, -0.4, 2.4], [0.3, 5.7, -2.3, 2.2], [-0.4, 5.6, 2.2, 2.2], [0.6, 8.6, 0.2, 2.0]], 2.8), 0.86, UV_LEAF, 3.2, 2.6);
 }
 function broadleafB(hi: boolean) {
   // an older, wider, flatter-topped tree with an irregular crown
-  return leafyTree(hi, 3.9, 0.36, [[0.4, 6.3, 0.2, 2.5], [2.6, 5.4, 0.9, 1.9], [-2.4, 5.6, -0.3, 2.2], [-0.8, 5.1, -2.3, 1.8], [1.1, 5.0, 2.2, 1.7], [-1.2, 7.4, 0.8, 1.6], [1.6, 7.0, -1.2, 1.5]], 0.82, UV_LEAF, 2.9, 3.0);
+  return leafyTree(hi, 6.4, 0.4, lift([[0.4, 6.3, 0.2, 2.8], [2.9, 5.4, 0.9, 2.2], [-2.7, 5.6, -0.3, 2.5], [-0.8, 5.1, -2.6, 2.1], [1.1, 5.0, 2.5, 2.0], [-1.2, 7.6, 0.8, 1.9], [1.6, 7.2, -1.2, 1.8]], 2.4), 0.78, UV_LEAF, 3.1, 2.8);
 }
 function mapleCards(hi: boolean) {
   // a rounder, denser maple crown
-  return leafyTree(hi, 3.6, 0.27, [[0, 6.2, 0, 2.6], [1.5, 5.2, 0.4, 1.8], [-1.4, 5.3, -0.5, 1.9], [0.2, 5.0, -1.6, 1.7], [-0.3, 5.1, 1.6, 1.7], [0.3, 7.6, -0.2, 1.8]], 1.0, UV_LEAF, 2.8, 3.2);
+  return leafyTree(hi, 5.4, 0.3, lift([[0, 6.2, 0, 2.7], [1.6, 5.2, 0.4, 2.0], [-1.5, 5.3, -0.5, 2.1], [0.2, 5.0, -1.7, 1.9], [-0.3, 5.1, 1.7, 1.9], [0.3, 7.7, -0.2, 1.9]], 1.6), 0.96, UV_LEAF, 3.0, 3.0);
 }
 function poplarCards(hi: boolean) {
   // a birch: white bark, a tall loose crown of small light leaf masses
@@ -1230,8 +1256,8 @@ if (vAutumn > 0.0) {
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
 // readable canopies: bright crowns catching the sky, dark undersides (the canopy normals point out of the crown)
 float topL = smoothstep(-0.65, 0.85, (vec4(normal, 0.0) * viewMatrix).y);
-reflectedLight.indirectDiffuse *= mix(0.42, 1.35, topL);
-reflectedLight.directDiffuse *= mix(0.7, 1.15, topL);
+reflectedLight.indirectDiffuse *= mix(vec3(0.34, 0.44, 0.52), vec3(1.4, 1.36, 1.12), topL);
+reflectedLight.directDiffuse *= mix(vec3(0.68, 0.76, 0.84), vec3(1.18, 1.14, 0.94), topL);
 float backlit = pow(max(dot(normalize(-vViewPosition), uSunView), 0.0), 3.0);
 // a soft rim where the masses turn away from us, brightest with the sun behind (clean edges for the ink finish)
 float rimL = pow(1.0 - clamp(abs(dot(normalize(vViewPosition), normal)), 0.0, 1.0), 3.0);
@@ -1338,10 +1364,10 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
   {
     const parts: THREE.BufferGeometry[] = [];
     for (const [sx, sz] of [[-3.4, -1.3], [4.3, -1.1]]) {
-      const blk = new RoundedBoxGeometry(0.3, 0.15, 0.15, 3, 0.025); blk.rotateY(0.04 * sx); blk.translate(sx, 0.06, sz);
+      const blk = new RoundedBoxGeometry(0.17, 0.09, 0.09, 3, 0.015); blk.rotateY(0.04 * sx); blk.translate(sx, 0.035, sz);
       parts.push(paint(blk, (x, y, _z, _a, ny, _c, c) => {
-        const band = Math.abs(y - 0.075) < 0.018 ? 1 : 0;
-        c.copy(band ? lin('#f2c21b') : lin('#13254a')).multiplyScalar(0.8 + 0.2 * Math.max(0, ny) + (y < 0.0 ? -0.2 : 0));
+        const band = Math.abs(y - 0.05) < 0.006 ? 1 : 0;
+        c.copy(band ? lin('#f2c21b') : lin('#1d2229')).multiplyScalar(0.8 + 0.2 * Math.max(0, ny) + (y < 0.0 ? -0.2 : 0));
         void x;
       }));
     }
@@ -1641,7 +1667,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       // a few trees have started to turn (encoded as r > 4: the leaf shader recolours them)
       if (sp !== 1 && rand() < (sp === 4 ? 0.16 : 0.05)) tc.r = 8 + Math.floor(rand() * 3) * 2 + rand() * 0.9;
       tints[ci][sp].push(tc);
-      blobs.push({ x, z, r: (sp === 1 ? 2.6 : sp === 2 ? 1.9 : sp === 3 ? 3.6 : 3.2) * s.x, h: (sp === 1 ? 10 : sp === 2 ? 11 : 9) * s.y });
+      blobs.push({ x, z, r: (sp === 1 ? 2.6 : sp === 2 ? 1.9 : sp === 3 ? 3.9 : 3.5) * s.x, h: (sp === 1 ? 10 : sp === 2 ? 11 : 12) * s.y });
     };
     // two or three loose rows down each side
     for (const side of [-1, 1]) {
@@ -1651,7 +1677,8 @@ reflectedLight.indirectSpecular *= 0.3;`);
         for (let r = 0; r < rows; r++) {
           const dx = h + 26 + r * 9 + rand() * 14 + (z > -20 ? 6 : 0);
           const x = fwCenter(z) + side * dx;
-          const sp = rand() < 0.5 ? 0 : rand() < 0.6 ? 1 : 2;
+          // mostly oaks and maples along the fairway, a few birches, the odd conifer
+          const sp = rand() < 0.78 ? 0 : rand() < 0.65 ? 2 : 1;
           place(x, z + (rand() - 0.5) * 3, sp, 0.85 + rand() * 0.6);
         }
       }
@@ -1700,19 +1727,32 @@ reflectedLight.indirectSpecular *= 0.3;`);
     });
     // soft long "baked" shadows under the corridor trees (the real shadow map only covers the focus area)
     {
-      const cv = document.createElement('canvas'); cv.width = cv.height = 128;
-      const g2 = cv.getContext('2d')!, gr = g2.createRadialGradient(64, 64, 6, 64, 64, 64);
-      gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
-      g2.fillStyle = gr; g2.fillRect(0, 0, 128, 128);
+      // a canopy's shadow: overlapping soft masses with sun flecks breaking through (dappled, like the photos)
+      const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+      const g2 = cv.getContext('2d')!;
+      const save = seed; seed = 2468;
+      for (let i = 0; i < 26; i++) {
+        const a = rand() * 6.28, rr = Math.sqrt(rand()) * 70, x = 128 + Math.cos(a) * rr * 0.8, y = 128 + Math.sin(a) * rr, r = 30 + rand() * 30;
+        const gr = g2.createRadialGradient(x, y, r * 0.3, x, y, r); gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g2.fillStyle = gr; g2.fillRect(x - r, y - r, 2 * r, 2 * r);
+      }
+      g2.globalCompositeOperation = 'destination-out';
+      for (let i = 0; i < 40; i++) {
+        const a = rand() * 6.28, rr = Math.sqrt(rand()) * 80, x = 128 + Math.cos(a) * rr * 0.8, y = 128 + Math.sin(a) * rr, r = 3 + rand() * 9;
+        const gr = g2.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g2.fillStyle = gr; g2.fillRect(x - r, y - r, 2 * r, 2 * r);
+      }
+      g2.globalCompositeOperation = 'source-over';
+      seed = save;
       const tex = new THREE.CanvasTexture(cv);
       const quad = new THREE.PlaneGeometry(1, 1); quad.rotateX(-Math.PI / 2);
-      const sm = new THREE.MeshBasicMaterial({ map: tex, color: lin('#0d1f08'), transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      const sm = new THREE.MeshBasicMaterial({ map: tex, color: lin('#0b1c10'), transparent: true, opacity: 0.62, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
       const im = new THREE.InstancedMesh(quad, sm, blobs.length);
       const bake = () => {
         const shadowDir = new THREE.Vector2(-sunDir.x, -sunDir.z).normalize();
         const reach = Math.min(4, 1 / Math.tan(Math.asin(clamp(sunDir.y, 0.05, 1))));
         const ang = Math.atan2(shadowDir.x, shadowDir.y);
-        sm.opacity = sunDir.y < 0.3 ? 0.42 : 0.5;
+        sm.opacity = sunDir.y < 0.3 ? 0.55 : 0.62;
         blobs.forEach((b, i) => {
           const len = b.r * 2 + b.h * reach * 0.55;
           const cx = b.x + shadowDir.x * (len / 2 - b.r * 0.8), cz = b.z + shadowDir.y * (len / 2 - b.r * 0.8);
