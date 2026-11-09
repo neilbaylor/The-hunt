@@ -882,7 +882,8 @@ if REAL and 'mv_cams' in globals():
         # flatten the photo's shading: divide by its blurred luminance (scale ~ a sixth of the face)
         fpx = np.median(np.linalg.norm(np.diff(proj_(lm_f[[10, 152]])[0], axis=0)))
         lum = img.mean(2); lb = cv2.GaussianBlur(lum, (0, 0), max(3.0, fpx / 6))
-        flat = img * (np.median(lum[int(np.clip(proj_(lm_f[[1]])[0][0, 1], 0, Hh2 - 1)), :]) / np.maximum(lb, 1))[..., None]
+        _fl = (w_ > 0.3); _ly = np.clip(p2_[_fl, 1].astype(int), 0, Hh2 - 1); _lx = np.clip(p2_[_fl, 0].astype(int), 0, Ww2 - 1)
+        flat = img * (np.median(lb[_ly, _lx]) / np.maximum(lb, 1))[..., None]   # keep the face's own brightness, lose the gradients
         c_ = np.stack([map_coordinates(flat[..., k], [p2_[:, 1] - 0.5, p2_[:, 0] - 0.5], order=1, mode='nearest') for k in range(3)], 1)
         sel_ = w_ > 0.3
         if sel_.sum() < 1000: continue
@@ -906,6 +907,13 @@ if REAL and 'mv_cams' in globals():
         if both.sum() > 500:
             lu_, lr_ = rgb2lab(col[both]), rgb2lab(rc[both])
             col = transfer(col, lu_.mean(0), lu_.std(0), lr_.mean(0), lr_.std(0), (0.7, 1.3))
+        # then a plain Lab shift so the sides, ears and neck sit on exactly the real face's skin (no orange collar)
+        cheeks_ = (m_ > 0.8) & (cp[:, 1] < lm_f[2, 1]) & (cp[:, 1] > lm_f[152, 1] + 0.012) & (np.abs(cp[:, 0]) > 0.025)
+        sides_ = (m_ < 0.2) & (conf > 0.5) & (cp[:, 1] < (lm_f[468, 1] + lm_f[473, 1]) / 2) & (cp[:, 1] > lm_f[152, 1] - 0.05)
+        if cheeks_.sum() > 300 and sides_.sum() > 300:
+            dlab = np.median(rgb2lab(rc[cheeks_]), 0) - np.median(rgb2lab(col[sides_]), 0)
+            col = lab2rgb(rgb2lab(col) + dlab * (1 - m_)[:, None])
+            print('  sides shifted onto the real skin by Lab', dlab.round(1))
         col = col * (1 - m_[:, None]) + rc * m_[:, None]
         conf = np.maximum(conf, m_)
         real_ok = True
@@ -937,6 +945,7 @@ skin_known = known & ~hairy & (conf > 0.8) & (lum > 120) & (cp[:, 1] < eyeY - 0.
 hair_c = np.median(col[hair_known], 0) if hair_known.sum() > 50 else np.array([92, 64, 44.])
 skin_c = np.median(col[skin_known], 0) if skin_known.sum() > 50 else np.array([215, 150, 120.])
 if skin_from_unwrap is not None: skin_c = skin_from_unwrap
+if real_ok: skin_c = np.median(rc[cheeks_], 0)   # his real cheeks
 # the neck's own tone (a touch darker than the cheeks): the fill and the fade into the body use it
 neck_sel = known & (conf > 0.8) & (cp[:, 1] < lm_f[152, 1] - 0.005) & (cp[:, 1] > lm_f[152, 1] - 0.04)
 neck_c = np.median(col[neck_sel], 0) if neck_sel.sum() > 200 else skin_c * 0.95
@@ -1142,7 +1151,7 @@ if _Uiris is not None:
         # sclera: between the iris and each corner of the eye
         crn = Lu[[33, 133] if k_ == 0 else [362, 263]]
         pts = [cxy + (c_ - cxy) * f_ for c_ in crn for f_ in (0.55, 0.65)]
-        eyes_uv[k_]['sclera'] = list(map(float, np.median(np.array([U[int(y_) - 1:int(y_) + 2, int(x_) - 1:int(x_) + 2].reshape(-1, 3) for x_, y_ in pts]).reshape(-1, 3), 0) / 255))
+        eyes_uv[k_]['sclera'] = list(map(float, np.clip(np.median(np.array([U[int(y_) - 1:int(y_) + 2, int(x_) - 1:int(x_) + 2].reshape(-1, 3) for x_, y_ in pts]).reshape(-1, 3), 0) / 255 * (1.45 if real_ok else 1.0), 0, 0.85)))
         eyes_uv[k_]['irisCrop'] = 1.25        # the tile spans ±1.25 iris radii
     sheet_ = Image.new('RGB', (192, 96)); sheet_.paste(tiles[0], (0, 0)); sheet_.paste(tiles[1], (96, 0))
     buf_ = io.BytesIO(); sheet_.save(buf_, 'PNG'); iris_png = np.frombuffer(buf_.getvalue(), np.uint8)
