@@ -804,6 +804,17 @@ if A.unwrap != 'none' and os.path.exists(A.unwrap):
     wu = np.clip(np.minimum.reduce([xy[:, 0] - 4, UW - 4 - xy[:, 0], xy[:, 1] - 4, UH - 4 - xy[:, 1]]) / 60, 0, 1) ** 1.5   # wide, soft edges
     wu *= np.clip((np.radians(UCFG.get('maxAngle', 105)) - ang) / 0.6, 0, 1) ** 1.5   # a long, soft fade round the back
     wu *= np.clip((cp[:, 1] - (lm_f[152, 1] - (0.13 if A.neck == 'loft' else 0.05))) / 0.02, 0, 1)   # the unwrap paints the neck right down
+    wu[off] = 0                                                   # the lofted neck gets a smooth skin fill, not stretched edge pixels
+    # under the jaw only skin-coloured pixels count (no drawn shirt or edge)
+    sk_lab = np.array([[0.0, 0, 0]])
+    def _lab(c):
+        c = np.clip(c / 255, 0, 1); c = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+        X = (c @ np.array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]]).T) / [0.95047, 1.0, 1.08883]
+        f = np.where(X > 0.008856, np.cbrt(X), 7.787 * X + 16 / 116); return np.c_[116 * f[:, 1] - 16, 500 * (f[:, 0] - f[:, 1]), 200 * (f[:, 1] - f[:, 2])]
+    cheek_ref = _lab(np.median(np.array([U[int(y) - 6:int(y) + 6, int(x) - 6:int(x) + 6].reshape(-1, 3) for x, y in Lu[[50, 280, 101, 330]]]).reshape(-1, 3), 0)[None])
+    below_chin = cp[:, 1] < lm_f[152, 1] - 0.005
+    dl = np.linalg.norm((_lab(cu) - cheek_ref) * [0.5, 1, 1], axis=1)
+    wu[below_chin] *= np.clip((22 - dl[below_chin]) / 10, 0, 1)
     # the unwrap's flat orange margins (round the ears, the corners) are not skin detail
     # where the unwrap sees, the portrait steps back (two lightings side by side read as seams)
     keep_p = 1 - np.clip(wu * 1.5, 0, 1)
@@ -865,10 +876,28 @@ gd -= hiN * np.einsum('ij,ij->i', gd, hiN)[:, None]; gd /= np.linalg.norm(gd, ax
 def aniso(F_perp, F_par):
     q = cp * F_perp + gd * np.einsum('ij,ij->i', cp, gd)[:, None] * (F_par - F_perp); return snoise(q)
 strand = 0.55 + 0.7 * (0.55 * aniso(2600, 70) + 0.3 * aniso(900, 30) + 0.15 * snoise(cp * 150))
+# skin with nothing painted (the lofted neck, behind the jaw, the nape): the painted skin round it, diffused across the
+# mesh (per vertex, then interpolated), so it continues the face's own tone with no flat patch or hard edge
+_vc = np.zeros((len(LV), 3)); _vn = np.zeros(len(LV))
+_good = (conf > 0.7) & (hair_amt < 0.3)
+for k_ in range(3):
+    np.add.at(_vc, vmap[UF[tt[_good], k_]], col[_good] * tw[_good, k_:k_ + 1]); np.add.at(_vn, vmap[UF[tt[_good], k_]], tw[_good, k_])
+_has = _vn > 0.5; _vc[_has] /= _vn[_has, None]
+_nb = [[] for _ in range(len(LV))]
+for a_, b_, c_ in LF: _nb[a_] += [b_, c_]; _nb[b_] += [a_, c_]; _nb[c_] += [a_, b_]
+_nb = [np.unique(n_) for n_ in _nb]
+_known = _has.copy(); _cur = _vc.copy()
+for it in range(120):
+    _new = np.array([(_cur[n_][_known[n_]].mean(0) if _known[n_].any() else _cur[i]) for i, n_ in enumerate(_nb)])
+    upd = ~_has & np.array([_known[n_].any() for n_ in _nb])
+    _cur[upd] = _new[upd]; _known |= upd
+    if _known.all(): break
+_cur[~_known] = neck_c
+diff_c = (_cur[vmap][UF[tt]] * tw[..., None]).sum(1)
 hshade = strand * (0.55 + 0.45 * relief); hshade /= np.mean(hshade[hairy]) if hairy.any() else 1   # same level as the textured hair
 # where nothing paints it, the side of the head above the ears is hair too (else a skin stripe shows behind the ear)
 hair_fill = np.maximum(hair_amt, np.clip((cp[:, 1] - (eyeY + 0.0)) / 0.012, 0, 1) * np.clip((eye_lmh[2] - 0.03 - cp[:, 2]) / 0.02, 0, 1))
-fill = hair_fill[:, None] * hair_c * hshade[:, None] + (1 - hair_fill[:, None]) * neck_c * (0.8 + 0.1 * relief[:, None])   # unpainted skin (behind the jaw, the nape) a shade down: the unwrap's skin carries soft baked shading, a flat fill reads too light
+fill = hair_fill[:, None] * hair_c * hshade[:, None] + (1 - hair_fill[:, None]) * diff_c * (0.92 + 0.08 * relief[:, None]) * (0.96 + 0.08 * snoise(cp * 900)[:, None])   # unpainted skin (behind the jaw, the nape) a shade down: the unwrap's skin carries soft baked shading, a flat fill reads too light
 # soft hair edge at the nape
 out = col * conf[:, None] + fill * (1 - conf[:, None])
 # ── hair colour: his own dark brown, whatever the textures say (the unwrap's hair is lighter and redder) ──
