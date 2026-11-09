@@ -428,8 +428,8 @@ if C.get('hang', 0) > 0:
         Vs[arm] = cc + rv / np.maximum(rl, 1e-6)[:, None] * want[:, None]
     # bridge the hollows round the seat (between the glutes, the small of the back): per 1 cm slice, the radius
     # round the torso axis is closed over ±12° so the fabric spans across instead of dipping in
-    lo_y = pelvis_y + 0.14
-    sel = tors[Vs[tors, 1] < lo_y]
+    lo_y = pelvis_y + 0.1
+    sel = tors[(Vs[tors, 1] < lo_y) & (armw_s[armw_s < 0.3] < 0.02) & (np.abs(Vs[tors, 0]) < 0.16)]   # round the seat only (never the arms)
     if len(sel):
         th2 = np.arctan2(Vs[sel, 0], Vs[sel, 2] - zc); rr2 = np.hypot(Vs[sel, 0], Vs[sel, 2] - zc)
         rb = ((Vs[sel, 1] - Vs[sel, 1].min()) / 0.01).astype(int); ab = ((th2 + math.pi) / (2 * math.pi) * 90).astype(int) % 90
@@ -438,7 +438,7 @@ if C.get('hang', 0) > 0:
         Rd = np.max(np.stack([np.roll(R, k, axis=1) for k in range(-3, 4)]), axis=0)
         d2 = np.zeros(NV)
         for k, vi in enumerate(sel):
-            d2[vi] = max(0.0, 0.985 * Rd[rb[k], ab[k]] - rr2[k])
+            d2[vi] = min(C.get('hangMax', 0.02), max(0.0, 0.985 * Rd[rb[k], ab[k]] - rr2[k]))
         d2, _ = smooth_field(d2, shirt, 4)
         for vi in sel:
             if d2[vi] > 0:
