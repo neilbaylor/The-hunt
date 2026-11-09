@@ -619,7 +619,8 @@ for (ca, cb, up, lo_, ir) in ((33, 133, 159, 145, 468), (362, 263, 386, 374, 473
     d = LV - c3
     ex, ey = d @ X / (X @ X), d @ Y / (Y @ Y)
     nrm = np.cross(X, Y); depth = np.abs(d @ nrm / np.linalg.norm(nrm))
-    near = (np.abs(ex) < 2.2) & (np.abs(ey) < 4) & (depth < 0.012)
+    # generous: every triangle touching the opening must carry true (linear) coordinates, or it smears across it
+    near = (np.abs(ex) < 3.5) & (np.abs(ey) < 9) & (depth < 0.02)
     eyeA[near, 0], eyeA[near, 1] = ex[near], ey[near]
     eyeA[near, 2] = np.linalg.norm(Y) / np.linalg.norm(X)             # up-units per across-unit
     eyeA[near, 3] = 0.0062 / np.linalg.norm(X)                        # iris radius (6.2 mm) in across-units

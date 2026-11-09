@@ -1643,14 +1643,14 @@ gl_Position = projectionMatrix * mvPosition;`);
       const nearEdge = teeSD(x, z) > -0.12 && teeSD(x, z) < 0.25; if (nearEdge) return false;
       if (surf === 'tee' && (Math.hypot(x, z) < 0.05 || (Math.abs(x - 0.9) < 0.38 && Math.abs(z) < 0.5) || (Math.abs(x + 0.9) < 0.38 && Math.abs(z) < 0.5))) return false;
       const rough = surf === 'rough';
-      const h = surf === 'tee' ? 0.011 + rand() * 0.011 : surf === 'fairway' ? 0.024 + rand() * 0.02 : 0.07 + rand() * 0.1;
+      const h = surf === 'tee' ? 0.011 + rand() * 0.011 : surf === 'fairway' ? 0.024 + rand() * 0.02 : 0.045 + rand() * 0.045;
       p.set(x, heightAt(x, z) - 0.002, z);
       const lean = rough ? 0.35 : 0.5;
       e.set((rand() - 0.5) * lean, rand() * Math.PI * 2, (rand() - 0.5) * lean); q.setFromEuler(e);
-      s.set(h * (rough ? 0.8 : 1), h * Math.max(0.05, hk), h * (rough ? 0.8 : 1));
+      s.set(h * (rough ? 0.6 : 1), h * Math.max(0.05, hk), h * (rough ? 0.6 : 1));
       target.setMatrixAt(i, m4.compose(p, q, s));
-      groundColorCPU(x, z, c).multiplyScalar((rough ? 0.68 : 0.82) + rand() * 0.3);
-      if (rand() < (rough ? 0.12 : 0.05)) c.lerp(COL.roughDry, rough ? 0.5 : 0.2);
+      groundColorCPU(x, z, c).multiplyScalar((rough ? 0.8 : 0.82) + rand() * (rough ? 0.26 : 0.3));
+      if (rand() < (rough ? 0.08 : 0.05)) c.lerp(COL.roughDry, rough ? 0.35 : 0.2);
       target.setColorAt(i, c);
       return true;
     };
@@ -1667,7 +1667,7 @@ gl_Position = projectionMatrix * mvPosition;`);
     scene.add(im);
     // a patch of blades that follows the ball once it is down the range (landing and rest cameras): rough reads
     // tall and breaks the ball's silhouette, fairway reads as cut turf. Re-laid when the ball has moved on.
-    const PATCH = 9000, PR = 4.5;
+    const PATCH = 12000, PR = 4;
     const patchMat = mat.clone(); patchMat.customProgramCacheKey = mat.customProgramCacheKey;
     patchMat.onBeforeCompile = (sh, r) => { mat.onBeforeCompile(sh, r); sh.uniforms.uFade = patchMat.userData.fade; };
     patchMat.userData.fade = { value: new THREE.Vector2(30, 46) };
@@ -1682,10 +1682,9 @@ gl_Position = projectionMatrix * mvPosition;`);
       let k = 0;
       const save = seed; seed = (Math.floor(cx * 7.1) * 7919 + Math.floor(cz * 3.3)) | 1;
       for (let t = 0; t < PATCH * 2 && k < PATCH; t++) {
-        // denser toward the middle, so the ball sits in grass and the edge fades out
-        // density ~1/r: thick right round the ball so it sits down in the rough, thinning out to nothing at the edge
-        const a = rand() * Math.PI * 2, r = PR * rand();
-        if (blade(patch, k, cx + Math.cos(a) * r, cz + Math.sin(a) * r, 1 - smooth(PR * 0.55, PR, r))) k++;
+        // thicker right round the ball so it sits down in the rough, shorter and thinner out to nothing at the edge
+        const a = rand() * Math.PI * 2, r = PR * Math.pow(rand(), 0.8);
+        if (blade(patch, k, cx + Math.cos(a) * r, cz + Math.sin(a) * r, 1 - smooth(PR * 0.35, PR, r))) k++;
       }
       seed = save;
       patch.count = k;
