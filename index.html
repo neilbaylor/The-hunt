@@ -7,18 +7,28 @@
 <title>Range Day</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@0,600;0,700;1,700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Russo+One&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:ital,wght@0,600;0,700;1,700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Russo+One&family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0e1613; touch-action: none; overscroll-behavior: none; }
   #app, #app canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
-  .intro { position: fixed; inset: 0; display: grid; align-items: end; justify-items: start; padding: max(24px, env(safe-area-inset-left)); background: linear-gradient(90deg, rgba(5,12,24,.72) 0%, rgba(5,12,24,.25) 45%, rgba(5,12,24,0) 70%); transition: opacity .6s; font-family: 'Barlow', system-ui, sans-serif; color: #fff; }
+  .intro { position: fixed; inset: 0; display: grid; align-items: end; justify-items: center; padding: 24px max(20px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: linear-gradient(180deg, rgba(11,26,51,.0) 45%, rgba(11,26,51,.55) 78%, rgba(11,26,51,.82) 100%); transition: opacity .6s; font-family: 'Nunito', system-ui, sans-serif; color: #fff; }
   .intro.gone { opacity: 0; pointer-events: none; }
-  .intro-card { display: grid; gap: 6px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
-  .intro .kick { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: #ffc72c; font-size: 14px; }
-  .intro h1 { margin: 0; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: clamp(56px, 12vw, 120px); line-height: .85; text-transform: uppercase; letter-spacing: .01em; text-shadow: 0 4px 24px rgba(0,0,0,.35); }
-  .intro p { margin: 0 0 10px; color: #d7e0ee; font-size: 17px; }
-  .intro button { justify-self: start; font: 700 18px/1 'Barlow Condensed', sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #0a1630; background: #ffc72c; border: 0; padding: 14px 22px; cursor: pointer; clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px)); }
-  .intro button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+  .intro-card { display: grid; justify-items: center; gap: 10px; text-align: center; animation: introIn .9s cubic-bezier(.2,1.4,.4,1) both; }
+  @keyframes introIn { from { opacity: 0; transform: translateY(40px) scale(.94); } to { opacity: 1; transform: none; } }
+  .intro .brand { display: inline-flex; align-items: center; gap: 10px; padding: 5px 16px 5px 5px; border-radius: 999px; background: rgba(255,250,240,.94); color: #13294b; box-shadow: 0 3px 0 #e6cd94, 0 10px 24px rgba(0,0,0,.3); }
+  .intro .brand .crest { width: 38px; height: 38px; border-radius: 50%; background: var(--crest) center/122% no-repeat, #13294b; box-shadow: 0 0 0 2px #ffd23f; }
+  .intro .brand b { font: 700 15px/1.05 'Fredoka', sans-serif; letter-spacing: .08em; text-transform: uppercase; text-align: left; }
+  .intro .brand small { display: block; font: 800 10px/1.2 'Nunito', sans-serif; letter-spacing: .18em; color: #c8102e; }
+  .intro h1 { margin: 4px 0 0; font: 700 clamp(72px, 22vw, 150px)/.86 'Fredoka', sans-serif; letter-spacing: .02em; text-transform: uppercase; color: #fffaf0; text-shadow: 0 3px 0 #f2a900, 0 6px 0 #c47f00, 0 16px 30px rgba(0,0,0,.45); }
+  .intro .kick { font: 800 13px/1 'Nunito', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: #ffd23f; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  .intro button { margin-top: 10px; display: inline-flex; align-items: center; gap: 12px; font: 700 22px/1 'Fredoka', sans-serif; letter-spacing: .03em; color: #13294b; background: linear-gradient(180deg, #ffe066, #ffc21a); border: 0; padding: 14px 28px 16px 14px; border-radius: 999px; cursor: pointer; box-shadow: 0 5px 0 #c98f00, 0 14px 30px rgba(0,0,0,.35), inset 0 2px 0 rgba(255,255,255,.6); transition: transform .12s cubic-bezier(.3,1.6,.5,1), box-shadow .12s; animation: nudge 2.6s ease-in-out 1.2s infinite; }
+  .intro button .ball { width: 34px; height: 34px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff 0 30%, #e7ebf0 70%, #c3cad4); box-shadow: inset 0 0 0 1px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.25); position: relative; }
+  .intro button .ball::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, rgba(120,132,150,.35) 1.2px, transparent 1.6px) 0 0/6px 6px; opacity: .8; }
+  .intro button:active { transform: translateY(4px) scale(.97); box-shadow: 0 1px 0 #c98f00, 0 6px 14px rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.6); }
+  .intro button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+  @keyframes nudge { 0%, 85%, 100% { transform: none; } 90% { transform: translateY(-4px) rotate(-1.5deg); } 95% { transform: translateY(0) rotate(1deg); } }
+  @media (orientation: landscape) { .intro { justify-items: start; background: linear-gradient(90deg, rgba(11,26,51,.78) 0%, rgba(11,26,51,.3) 42%, rgba(11,26,51,0) 65%); align-items: end; } .intro-card { justify-items: start; text-align: left; } }
+  @media (prefers-reduced-motion: reduce) { .intro-card, .intro button { animation: none; } }
   .rotate { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; text-align: center; background: #0e1613; color: #fff; font-family: 'Barlow', system-ui, sans-serif; padding: 24px; }
   .rotate b { display: block; font: 700 30px/1 'Barlow Condensed', sans-serif; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; color: #ffc72c; }
   .rotate svg { width: 72px; height: 72px; margin: 0 auto 16px; display: block; animation: tilt 2.4s ease-in-out infinite; }

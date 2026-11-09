@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { createRange, type Range } from './world/range';
 import { createPost } from './render/post';
 import { Golfer, PHI_TOP, PHI_FINISH, SHOT_STYLE, type SwingPhase } from './golfer/golfer';
-import { NEIL, feetInches } from './golfer/profile';
+import { NEIL } from './golfer/profile';
 import { loadNeil } from './golfer/assets';
 import { CLUB_SPECS } from './golfer/club';
 import { Ball, BALL } from './game/ball';
@@ -281,9 +281,9 @@ function updateCamera(dt: number, now: number) {
 // ── intro overlay ──
 const intro = document.createElement('div');
 intro.className = 'intro';
-intro.innerHTML = `<div class="intro-card"><span class="kick">Player 1</span><h1>${profile.name}</h1>
-  <p>${profile.handed === 'left' ? 'Left-handed' : 'Right-handed'} · ${feetInches(profile.heightM)} · ${Math.round(profile.weightKg / 0.4536)} lb</p>
-  <button type="button" id="play">Tap to hit balls</button></div>`;
+intro.innerHTML = `<div class="intro-card"><span class="brand"><i class="crest" aria-hidden="true"></i><b>The Hunt<small>Range day</small></b></span>
+  <span class="kick">Player 1</span><h1>${profile.name}</h1>
+  <button type="button" id="play"><span class="ball" aria-hidden="true"></span>Hit balls</button></div>`;
 document.body.appendChild(intro);
 intro.querySelector('#play')!.addEventListener('click', () => { sound.unlock(); startPlay(); });
 function startPlay() {

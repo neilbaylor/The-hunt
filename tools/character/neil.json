@@ -13,15 +13,16 @@
     "head/head-oval": 0.3,
     "head/head-scale-vert-incr": 0.3,
     "head/head-scale-horiz-decr": 0.12,
-    "chin/chin-height-incr": 0.25,
+    "chin/chin-height-incr": 0.45,
     "chin/chin-prominent-incr": 0.15,
     "chin/chin-width-incr": 0.25,
-    "nose/nose-scale-vert-incr": 0.35,
+    "nose/nose-scale-vert-incr": 0.75,
     "nose/nose-hump-incr": 0.1,
     "mouth/mouth-upperlip-volume-decr": 0.35,
     "mouth/mouth-lowerlip-volume-decr": 0.1,
     "ears/l-ear-wing-incr": 0.35,
-    "ears/r-ear-wing-incr": 0.35
+    "ears/r-ear-wing-incr": 0.35,
+    "mouth/mouth-trans-down": 0.8
   },
   "expressions": {
     "smile": {
