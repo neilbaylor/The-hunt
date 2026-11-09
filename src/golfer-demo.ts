@@ -50,6 +50,7 @@ const lx = golfer.lefty ? 1 : -1; // side of the ball the golfer stands on (worl
 if (view === 'game') { cam.position.set(-0.85 * lx, 1.62, 5.6); cam.lookAt(0.45 * lx, 0.92, -22); cam.fov = 42; cam.updateProjectionMatrix(); }
 else if (view === 'back') { const h = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(h); cam.position.set(h.x + lx * 0.9, h.y + 0.25, h.z + 0.5); cam.lookAt(h.x, h.y + 0.05, h.z); }
 else if (view === 'eye') { const e = golfer.body.skel.eye.clone(); golfer.body.bones[0].localToWorld(e); golfer.char.localToWorld(e.copy(golfer.body.skel.eye)); cam.position.set(e.x - lx * 0.25, e.y + 0.01, e.z); cam.lookAt(e); }
+else if (view === 'shoe') { const h = new THREE.Vector3(); golfer.body.bones[14].getWorldPosition(h); cam.position.set(h.x - 0.55, 0.32, h.z + 0.45); cam.lookAt(h.x, 0.06, h.z); }
 else if (view === 'hands') { const h = new THREE.Vector3(); golfer.body.bones[8].getWorldPosition(h); cam.position.set(h.x - lx * 0.5, h.y + 0.15, h.z + 0.35); cam.lookAt(h.x, h.y - 0.05, h.z); }
 else if (view === 'portrait') {
   cam.fov = 52; cam.updateProjectionMatrix();

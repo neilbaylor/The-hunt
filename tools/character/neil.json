@@ -4,8 +4,8 @@
   "heightM": 1.905,
   "macro": {
     "age": 0.6,
-    "muscle": 0.56,
-    "weight": 0.4,
+    "muscle": 0.62,
+    "weight": 0.52,
     "height": 1.0,
     "proportions": 0.8
   },
@@ -168,10 +168,10 @@
     "shirtGap": 0.006,
     "shirtLoose": 0.018,
     "pantsGap": 0.006,
-    "pantsLoose": 0.012,
+    "pantsLoose": 0.014,
     "shoeGap": 0.007,
-    "thighR": 0.098,
-    "kneeR": 0.082,
-    "hemR": 0.074
+    "thighR": 0.1,
+    "kneeR": 0.086,
+    "hemR": 0.08
   }
 }

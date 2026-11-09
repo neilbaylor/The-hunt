@@ -243,13 +243,15 @@ for vi in body_idx:
         if arm_r > 0.5: sleeve_ok = along(vi, 'upperarm_r', 'lowerarm_r') < C['sleeve']
         if sleeve_ok and (torso > 0.3 or arm_l > 0.3 or arm_r > 0.3):
             shirt[vi] = True
-            loose = 1 - min(1, abs(y - (pelvis_y + 0.18)) / 0.3)
-            shirt_off[vi] = C['shirtGap'] + C['shirtLoose'] * loose
+            loose = 1 - min(1, abs(y - (pelvis_y + 0.2)) / 0.3)
+            tuck = min(1.0, max(0.0, (y - (belt_y - 0.04)) / 0.08))  # tucked in: hugs the body at the waistband
+            shirt_off[vi] = C['shirtGap'] * (0.5 + 0.5 * tuck) + C['shirtLoose'] * loose * tuck
     # trousers: belt line down to just above the ankle
-    if y < belt_y + 0.004 and feet < 0.5 and legs > 0.3 and y > min(ankle_y.values()) + 0.035:
+    if y < belt_y + 0.004 and feet < 0.85 and legs > 0.3 and y > min(ankle_y.values()) - 0.012:
         pants[vi] = True
         knee = min(abs(y - joint[BONES.index('calf_l')][1]), 0.3)
         pants_off[vi] = C['pantsGap'] + C['pantsLoose'] * (0.6 + 0.4 * (1 - knee / 0.3)) * (1.2 if y < joint[BONES.index('calf_l')][1] else 1)
+        if y > belt_y - 0.06: pants_off[vi] = max(pants_off[vi], 0.013)  # waistband over the tucked shirt
     # shoes
     if feet > 0.3 or (y < min(ankle_y.values()) + 0.06 and legs > 0.2):
         if y < min(ankle_y.values()) + 0.07:
@@ -300,24 +302,139 @@ for sfx in 'lr':
     hip = joint[BONES.index(f'thigh_{sfx}')]; ank = joint[BONES.index(f'foot_{sfx}')]; knee = joint[BONES.index(f'calf_{sfx}')]
     ax = ank - hip; L2 = float(np.dot(ax, ax))
     for vi in np.nonzero(pants)[0]:
-        if wsum(vi, [f'thigh_{sfx}', f'calf_{sfx}']) < 0.5 or Vpants[vi, 1] > hip[1] - 0.06:
+        if wsum(vi, [f'thigh_{sfx}', f'calf_{sfx}']) < 0.5 or Vpants[vi, 1] > hip[1] + 0.02:
             continue
         t = float(np.clip(np.dot(Vpants[vi] - hip, ax) / L2, 0, 1)); c = hip + ax * t
         r = Vpants[vi] - c; rl = np.linalg.norm(r)
         rmin = np.interp(t, [0, 0.45, 1.0], [C['thighR'], C['kneeR'], C['hemR']])
         want = max(rl + pants_off[vi], rmin)
-        Vpants[vi] = c + r / max(rl, 1e-6) * want
+        dirv = r / max(rl, 1e-6)
+        # inner side near the crotch: don't cross the body's midline
+        inward = -np.sign(c[0]) * dirv[0]
+        if inward > 0.3:
+            lim = (abs(c[0]) - 0.004) / max(inward, 1e-3)
+            want = min(want, max(rl + 0.004, lim))
+        # blend the straight cut in below the hip so there's no ledge
+        yy = Vpants[vi, 1]; bl = float(np.clip((hip[1] + 0.02 - yy) / 0.16, 0, 1)); bl = bl * bl * (3 - 2 * bl)
+        cur = rl + pants_off[vi]
+        Vpants[vi] = c + dirv * (cur + bl * (want - cur))
         pants_off[vi] = 0.0
 Vpants = smooth_positions_from(Vpants, pants, 2) if 'smooth_positions_from' in globals() else Vpants
 
 meshes = {}
-meshes['skin'] = build_mesh(body_faces, V)
+# the feet are hidden inside the shoes: drop them from the skin so they never poke through
+feet_hidden = np.zeros(NV, bool)
+for vi in body_idx:
+    if V[vi, 1] < min(ankle_y.values()) + 0.03 and wsum(vi, ['foot_l', 'foot_r', 'ball_l', 'ball_r', 'calf_l', 'calf_r']) > 0.5: feet_hidden[vi] = True
+meshes['skin'] = build_mesh(body_faces, V, keep=~feet_hidden)
 meshes['shirt'] = build_mesh(body_faces, Vshirt, normals=N, keep=shirt, extra_offset=shirt_off)
 meshes['pants'] = build_mesh(body_faces, Vpants, normals=N, keep=pants, extra_offset=pants_off)
 meshes['glove'] = build_mesh(body_faces, V, normals=N, keep=glove, normal_out=0.0012)
 meshes['teeth'] = build_mesh(face_list({'helper-upper-teeth', 'helper-lower-teeth', 'helper-tongue'}), V)
 
-# shoes: flatten the sole and square the toe a little
+# ───────────────────────── cloth detail fields + ambient occlusion ─────────────────────────
+from scipy.spatial import cKDTree
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import dijkstra
+
+def mesh_graph(m):
+    t = m['tris']; P_ = m['pos']
+    e = np.vstack([t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]])
+    w = np.linalg.norm(P_[e[:, 0]] - P_[e[:, 1]], axis=1)
+    n = len(P_)
+    G = coo_matrix((np.r_[w, w], (np.r_[e[:, 0], e[:, 1]], np.r_[e[:, 1], e[:, 0]])), shape=(n, n)).tocsr()
+    return G, e
+def weld_ids(P_):
+    # uv seams split vertices: map each to a representative at the same position
+    key = np.round(P_ * 1e5).astype(np.int64)
+    _, rep, inv = np.unique(key, axis=0, return_index=True, return_inverse=True)
+    return rep[inv.ravel()]
+def boundary_vertices(m):
+    t = m['tris']; rep = weld_ids(m['pos'])
+    e = np.sort(np.vstack([rep[t[:, [0, 1]]], rep[t[:, [1, 2]]], rep[t[:, [2, 0]]]]), axis=1)
+    u, c = np.unique(e, axis=0, return_counts=True)
+    b = set(u[c == 1].ravel().tolist())
+    return np.array([i for i in range(len(rep)) if rep[i] in b])
+def geodesic_from(m, seeds, limit=0.3):
+    if len(seeds) == 0: return np.full(len(m['pos']), 9.0)
+    G, _ = mesh_graph(m)
+    # tie split (uv-seam) duplicates together with zero-length edges
+    rep = weld_ids(m['pos']); n = len(rep)
+    extra = coo_matrix((np.full(n, 1e-6), (np.arange(n), rep)), shape=(n, n))
+    G = (G + extra + extra.T).tocsr()
+    d = dijkstra(G, directed=False, indices=np.unique(seeds), min_only=True, limit=limit)
+    d[~np.isfinite(d)] = 9.0
+    return d
+
+def bake_ao(m, cloud_pts, cloud_n, radius=0.09):
+    tree = cKDTree(cloud_pts)
+    P_ = m['pos']; Nn = vertex_normals_tri(m)
+    ao = np.ones(len(P_), np.float32)
+    nbrs = tree.query_ball_point(P_ + Nn * 0.004, radius)
+    for i, lst in enumerate(nbrs):
+        if not lst: continue
+        q = cloud_pts[lst] - (P_[i] + Nn[i] * 0.004)
+        dist = np.linalg.norm(q, axis=1); ok = dist > 0.008
+        if not ok.any(): continue
+        q, dist = q[ok], dist[ok]
+        cosv = (q @ Nn[i]) / dist
+        facing = np.clip(-(cloud_n[lst][ok] * q).sum(1) / dist, 0, 1) * 0.5 + 0.5
+        occ = np.sum(np.clip(cosv, 0, 1) * (1 - dist / radius) ** 2 * facing)
+        ao[i] = np.exp(-occ * 0.055)
+    return ao
+def vertex_normals_tri(m):
+    P_, t = m['pos'], m['tris']
+    fn = np.cross(P_[t[:, 1]] - P_[t[:, 0]], P_[t[:, 2]] - P_[t[:, 0]])
+    n = np.zeros_like(P_)
+    for k in range(3): np.add.at(n, t[:, k], fn)
+    rep = weld_ids(P_); acc = np.zeros_like(n); np.add.at(acc, rep, n); n = acc[rep]
+    return n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+
+print('baking cloth fields + AO…')
+cloud = [meshes[k]['pos'] for k in ('skin', 'shirt', 'pants')]
+cloud_n = [vertex_normals_tri(meshes[k]) for k in ('skin', 'shirt', 'pants')]
+CP, CN = np.vstack(cloud), np.vstack(cloud_n)
+# subsample the cloud for speed
+sel = np.arange(0, len(CP), 2); CP, CN = CP[sel], CN[sel]
+for k in ('skin', 'shirt', 'pants', 'glove'):
+    meshes[k]['ao'] = bake_ao(meshes[k], CP, CN)
+    print('  ao', k, round(float(meshes[k]['ao'].min()), 2), round(float(meshes[k]['ao'].mean()), 3))
+
+def leg_angles(m):
+    # angle round each leg's hip→ankle axis (0 = front), the radius, and whether the point is on a leg
+    P_ = m['pos']; th = np.full(len(P_), np.nan); rr = np.zeros(len(P_)); tt = np.zeros(len(P_))
+    for sfx in 'lr':
+        hip = joint[BONES.index(f'thigh_{sfx}')]; ank = joint[BONES.index(f'foot_{sfx}')]
+        ax = ank - hip; L2 = float(ax @ ax); side = 1 if sfx == 'l' else -1
+        onleg = (np.sign(P_[:, 0]) == side) & (P_[:, 1] < hip[1] - 0.05)
+        t = np.clip(((P_ - hip) @ ax) / L2, 0, 1); c = hip + t[:, None] * ax
+        d = P_ - c
+        a = np.degrees(np.arctan2(d[:, 0] * side, d[:, 2]))  # + = toward the outside
+        th[onleg] = a[onleg]; rr[onleg] = np.linalg.norm(d[onleg], axis=1); tt[onleg] = t[onleg]
+    return th, rr, tt
+
+# shirt: distance to hems (bottom, sleeves, collar opening) and to the seams (sides, armholes)
+m = meshes['shirt']; P_ = m['pos']
+edge = geodesic_from(m, boundary_vertices(m))
+src = m['src']
+armw = np.array([wsum(vi, ['upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r']) for vi in src])
+torso_c = np.array([0.0, 0.0, float(np.median(P_[:, 2]))])
+theta = np.degrees(np.arctan2(P_[:, 0], P_[:, 2] - torso_c[2]))
+side_seed = np.nonzero((armw < 0.2) & (np.abs(np.abs(theta) - 90) < 5))[0]
+arm_seed = np.nonzero(np.abs(armw - 0.5) < 0.06)[0]
+seam = np.minimum(geodesic_from(m, side_seed, 0.1), geodesic_from(m, arm_seed, 0.1))
+m['cloth'] = np.c_[edge, seam, np.full(len(P_), 9.0), m['ao']].astype(np.float32)
+# pants: hems (waistband + leg hems), side seams / inseam, front and back creases
+m = meshes['pants']; P_ = m['pos']
+edge = geodesic_from(m, boundary_vertices(m))
+th, rr, tt = leg_angles(m)
+seamd = np.where(np.isnan(th), 9.0, np.radians(np.abs(np.abs(np.nan_to_num(th)) - 90)) * rr)
+crease = np.where(np.isnan(th), 9.0, np.radians(np.minimum(np.abs(np.nan_to_num(th)), 180 - np.abs(np.nan_to_num(th)))) * rr)
+crease = np.where(np.nan_to_num(th) * 0 + (np.abs(np.nan_to_num(th)) > 90), crease + 0.02, crease)  # back crease softer
+m['cloth'] = np.c_[edge, seamd, crease, m['ao']].astype(np.float32)
+m['legT'] = tt.astype(np.float32)
+meshes['skin']['cloth'] = np.c_[np.full(len(meshes['skin']['pos']), 9.0), np.full(len(meshes['skin']['pos']), 9.0), np.full(len(meshes['skin']['pos']), 9.0), meshes['skin']['ao']].astype(np.float32)
+meshes['glove']['cloth'] = np.c_[geodesic_from(meshes['glove'], boundary_vertices(meshes['glove'])), np.full(len(meshes['glove']['pos']), 9.0), np.full(len(meshes['glove']['pos']), 9.0), meshes['glove']['ao']].astype(np.float32)
 
 # ───────────────────────── hair shell + head measurements ─────────────────────────
 head_bi = BONES.index('head')
@@ -555,7 +672,7 @@ def skin_fn(p, n):
             px = np.clip(xy[:, 0], 0, img.shape[1] - 1).astype(int); py = np.clip(xy[:, 1], 0, img.shape[0] - 1).astype(int)
             col = img[py, px] * v['gain']
             # only trust pixels that look like skin (not the kitchen behind, not hair)
-            skinlike = np.exp(-np.sum((col - skin_rgb) ** 2, axis=1) / (2 * 0.2 ** 2))
+            skinlike = np.exp(-np.sum((col - skin_rgb) ** 2, axis=1) / (2 * 0.14 ** 2))
             w = facing * yband * near * inside * v['weight'] * skinlike
             acc += col * w[:, None]; wsum += w
         cov = np.clip(wsum / 0.35, 0, 1)[:, None]
@@ -608,6 +725,10 @@ for name, m in meshes.items():
             d['morph_' + mn] = put(md[m['src']], np.float32)
     if 'mask' in m:
         d['mask'] = put(m['mask'], np.float32)
+    if 'cloth' in m:
+        d['cloth'] = put(m['cloth'], np.float32)
+    if 'legT' in m:
+        d['legT'] = put(m['legT'], np.float32)
     desc[name] = d
     print(f'  {name}: {len(m["pos"])} verts, {len(m["tris"])} tris')
 meta = {
