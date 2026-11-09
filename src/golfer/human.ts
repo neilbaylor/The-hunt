@@ -166,33 +166,82 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   };
   hairMat.customProgramCacheKey = () => 'human-hair';
   add('hair', hairMat);
-  // fur-style shells over the hair cap: each layer keeps fewer, finer strands, so the hair gets depth and a soft edge
+  // hair cards: thousands of short strand strips rooted in the scalp, lying the way the hair grows
+  // (swept back on top, down and back at the sides), like modern sports games do short hair
   {
-    const base = M.meshes.hair;
-    for (let layer = 1; layer <= 4; layer++) {
-      const m = new THREE.MeshStandardMaterial({ color: hairCol.clone().multiplyScalar(0.9 + layer * 0.09), roughness: 0.55, transparent: false });
-      const L = layer;
-      m.onBeforeCompile = sh => {
-        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float mask;\nvarying float vMask;\nvarying vec3 vObj;')
-          .replace('#include <begin_vertex>', `#include <begin_vertex>\nvMask = mask; vObj = position;
-            float tus = sin(position.x * 91.0 + sin(position.z * 57.0) * 2.0) * sin(position.z * 83.0 + position.y * 40.0);
-            // longer hair: layers reach further out and drift back and down, like swept-back medium-length hair
-            float topK = smoothstep(${(0).toFixed(2)}, 0.06, position.y - ${'1.80'});
-            transformed += objectNormal * (${(0.0012 * L).toFixed(5)} + ${(0.0016 * L).toFixed(5)} * topK + 0.004 * max(0.0, tus) * topK * ${(L / 4).toFixed(2)}) * mask;
-            transformed.z -= ${(0.0018 * L).toFixed(5)} * mask; transformed.y -= ${(0.0009 * L).toFixed(5)} * mask * step(position.y, 1.78);`);
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vMask;\nvarying vec3 vObj;
-float hh(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }`)
-          .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-            // strands: cells elongated down and back (the way short hair lies)
-            vec3 q = vObj * vec3(2600.0, 900.0, 1500.0);
-            float s = hh(floor(q));
-            if (vMask < 0.55 || s < ${(0.35 + 0.15 * L).toFixed(2)}) discard;`)
-          .replace('#include <aomap_fragment>', `#include <aomap_fragment>\nreflectedLight.indirectDiffuse *= ${(0.55 + 0.11 * L).toFixed(2)};`);
-      };
-      m.customProgramCacheKey = () => 'hair-shell-' + L;
-      void base;
-      const sh = add('hair', m); if (sh) sh.name = 'hair-shell';
+    const hg = (scene_hairGeo());
+    function scene_hairGeo() { return geo('hair'); }
+    const P = hg.getAttribute('position') as THREE.BufferAttribute, Nn = hg.getAttribute('normal') as THREE.BufferAttribute, Mk = hg.getAttribute('mask') as THREE.BufferAttribute;
+    const idx = hg.getIndex()!.array;
+    const strandTex = canvasTex(256, 256, g => {
+      g.clearRect(0, 0, 256, 256);
+      for (let i = 0; i < 70; i++) {
+        const x0 = 8 + rand() * 240, w = 1 + rand() * 2.2, len = 140 + rand() * 116, bend = (rand() - 0.5) * 18;
+        const grad = g.createLinearGradient(0, 256, 0, 256 - len);
+        grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(0.75, 'rgba(255,255,255,.85)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+        g.strokeStyle = grad; g.lineWidth = w; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(x0, 256); g.quadraticCurveTo(x0 + bend, 256 - len / 2, x0 + bend * 1.6, 256 - len); g.stroke();
+      }
+    }, false, 1);
+    strandTex.wrapS = strandTex.wrapT = THREE.ClampToEdgeWrapping; strandTex.repeat.set(1, 1);
+    const tint = canvasTex(64, 64, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 64); }, true, 1);
+    // area-weighted roots
+    const tris: number[] = [], cum: number[] = []; let tot = 0;
+    const va = new THREE.Vector3(), vb = new THREE.Vector3(), vc = new THREE.Vector3();
+    for (let i = 0; i < idx.length; i += 3) {
+      const a = idx[i], b = idx[i + 1], c = idx[i + 2];
+      const m = (Mk.getX(a) + Mk.getX(b) + Mk.getX(c)) / 3; if (m < 0.45) continue;
+      va.fromBufferAttribute(P, a); vb.fromBufferAttribute(P, b); vc.fromBufferAttribute(P, c);
+      const area = vb.clone().sub(va).cross(vc.clone().sub(va)).length() / 2 * Math.min(1, (m - 0.45) / 0.3);
+      tot += area; tris.push(i); cum.push(tot);
     }
+    const crown = new THREE.Vector3(...(M.headCenter as [number, number, number]));
+    const N = 7000, SEG = 3, pos: number[] = [], uv: number[] = [], col: number[] = [], ind: number[] = [];
+    const root = new THREE.Vector3(), nrm = new THREE.Vector3(), gdir = new THREE.Vector3(), side = new THREE.Vector3(), p = new THREE.Vector3();
+    const hc = hairCol.clone();
+    const grey = new THREE.Color('#9a958e');
+    for (let k = 0; k < N; k++) {
+      const r = rand() * tot; let lo = 0, hi = cum.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < r) lo = mid + 1; else hi = mid; }
+      const i = tris[lo], a = idx[i], b = idx[i + 1], c = idx[i + 2];
+      let u = rand(), v = rand(); if (u + v > 1) { u = 1 - u; v = 1 - v; }
+      va.fromBufferAttribute(P, a); vb.fromBufferAttribute(P, b); vc.fromBufferAttribute(P, c);
+      root.copy(va).multiplyScalar(1 - u - v).addScaledVector(vb, u).addScaledVector(vc, v);
+      nrm.fromBufferAttribute(Nn, a).multiplyScalar(1 - u - v).addScaledVector(new THREE.Vector3().fromBufferAttribute(Nn, b), u).addScaledVector(new THREE.Vector3().fromBufferAttribute(Nn, c), v).normalize();
+      const rel = root.clone().sub(crown);
+      const top = THREE.MathUtils.smoothstep(rel.y, 0.02, 0.09);          // 0 at the sides, 1 on top
+      // growth: back on top (swept back), down and back at the sides and the nape, with a little noise
+      // at the front hairline the hair is pushed up and back off the forehead
+      const front = THREE.MathUtils.smoothstep(rel.z, 0.03, 0.09);
+      gdir.set((rand() - 0.5) * 0.35, -1 + top * 0.85 + front * 0.9, -0.6 - top * 0.6 - front * 0.6);
+      gdir.addScaledVector(nrm, -gdir.dot(nrm)).normalize();
+      side.crossVectors(nrm, gdir).normalize();
+      // under the visor band the hair is pressed flat
+      const vy = M.visor.center[1], underBand = (O.headwear && root.y > vy - 0.03 && root.y < vy + 0.026) ? 1 : 0;
+      const L = (0.012 + 0.04 * top) * (0.7 + 0.6 * rand()) * (underBand ? 0.55 : 1), W = 0.006 + 0.004 * rand();
+      const lift = underBand ? 0.15 : 1;
+      const base = pos.length / 3;
+      const shade = 0.75 + 0.45 * rand(); const c0 = hc.clone().multiplyScalar(shade).lerp(grey, rand() < 0.05 ? 0.3 : 0);
+      for (let s = 0; s <= SEG; s++) {
+        const t = s / SEG;
+        // rises off the scalp then lies down onto it
+        p.copy(root).addScaledVector(gdir, L * t).addScaledVector(nrm, 0.0012 + (0.004 + 0.006 * top) * lift * Math.sin(t * Math.PI * 0.8));
+        const w = W * (1 - 0.35 * t);
+        pos.push(p.x - side.x * w / 2, p.y - side.y * w / 2, p.z - side.z * w / 2, p.x + side.x * w / 2, p.y + side.y * w / 2, p.z + side.z * w / 2);
+        const ux = rand() * 0.6;
+        uv.push(ux, t, ux + 0.4, t);
+        for (let q = 0; q < 2; q++) col.push(c0.r * (0.7 + 0.3 * t), c0.g * (0.7 + 0.3 * t), c0.b * (0.7 + 0.3 * t));
+      }
+      for (let s = 0; s < SEG; s++) { const q = base + s * 2; ind.push(q, q + 2, q + 1, q + 1, q + 2, q + 3); }
+    }
+    const cg = new THREE.BufferGeometry();
+    cg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); cg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); cg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    cg.setIndex(ind); cg.computeVertexNormals();
+    const headBi0 = M.bones.indexOf('head');
+    cg.translate(-J[headBi0].x, -J[headBi0].y, -J[headBi0].z);
+    const cm = new THREE.MeshStandardMaterial({ map: tint, alphaMap: strandTex, vertexColors: true, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.6 });
+    const cards = new THREE.Mesh(cg, cm); cards.name = 'hair-shell'; cards.castShadow = true; cards.receiveShadow = true;
+    bones[headBi0].add(cards); meshes.push(cards);
+    void Mk;
   }
 
   // the rig expects these 18 driver bones first (see build.py DRIVERS)
