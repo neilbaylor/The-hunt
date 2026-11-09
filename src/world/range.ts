@@ -851,7 +851,7 @@ function finish(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   m.computeBoundingSphere();
   return m;
 }
-function farTreeGeo(kind = 0): THREE.BufferGeometry {
+function farTreeGeo(kind = 0, cheap = false): THREE.BufferGeometry {
   const trunk = (h: number) => { const t = new THREE.CylinderGeometry(0.18, 0.3, h, 5, 1, true).toNonIndexed(); t.translate(0, h / 2, 0); return paint(t, (_x, _y, _z, _a, _b, _c, c) => c.copy(lin('#3a2f24'))); };
   if (kind === 1) {
     // conifer: three stacked, slightly ragged cones, darker blue-green
@@ -869,7 +869,9 @@ function farTreeGeo(kind = 0): THREE.BufferGeometry {
   // broadleaf: four low-poly lumps around a crown, so the silhouette is ragged rather than a ball
   const leaf = lin('#3a5f28'), C = new THREE.Vector3(0, 6, 0);
   const lumps: [number, number, number, number][] = [[0, 6.3, 0, 2.7], [1.6, 5.4, 0.6, 2.1], [-1.4, 5.6, -0.8, 2.2], [0.3, 7.6, -0.5, 1.8]];
-  return finish([trunk(2.8), ...lumps.map(([x, y, z, r]) => blob(x, y, z, r, 1.05, 0, C, leaf, 3.2, 9.5))]);
+  // cheap (low detail): two bigger lumps, about half the triangles
+  const use: [number, number, number, number][] = cheap ? [[0.2, 6.2, -0.2, 3.0], [1.0, 5.0, 0.6, 2.3]] : lumps;
+  return finish([trunk(2.8), ...use.map(([x, y, z, r]) => blob(x, y, z, r, 1.05, 0, C, leaf, 3.2, 9.5))]);
 }
 
 // ───────────────────────── card trees (alpha-tested foliage cards) ─────────────────────────
@@ -1435,10 +1437,11 @@ reflectedLight.indirectSpecular *= 0.3;`);
   }
 
   // trees
-  const treeLods: { zA: number; zB: number; hi: THREE.InstancedMesh[]; lo: THREE.InstancedMesh[] }[] = [];
+  const treeLods: { zA: number; zB: number; hi: THREE.InstancedMesh[]; lo: THREE.InstancedMesh[]; box: THREE.Box3 }[] = [];
+  const frustum = new THREE.Frustum(), projView = new THREE.Matrix4();
   // instanced sets whose count follows the detail tier (their instances are in shuffled order, so a prefix is an even sample)
   const thin: { im: THREE.InstancedMesh; full: number; f: Record<Detail, number> }[] = [];
-  const DETAIL = { lodFar: { low: 55, med: 90, high: 120 } as Record<Detail, number>, shadow: { low: 1024, med: 2048, high: 2048 } as Record<Detail, number>, patch: { low: 0.45, med: 0.8, high: 1 } as Record<Detail, number> };
+  const DETAIL = { lodFar: { low: 35, med: 90, high: 120 } as Record<Detail, number>, shadow: { low: 1024, med: 2048, high: 2048 } as Record<Detail, number>, patch: { low: 0.45, med: 0.8, high: 1 } as Record<Detail, number> };
   let detail: Detail = buildDetail, lodFar = DETAIL.lodFar[detail], patchMax = 0;
   {
     const species = [broadleafCards(true), pineCards(true), poplarCards(true), broadleafB(true), mapleCards(true)];
@@ -1524,10 +1527,13 @@ reflectedLight.indirectSpecular *= 0.3;`);
           scene.add(im);
           set.push(im);
           // the far end of the range thins out on weaker tiers (a backdrop of hundreds of card trees)
-          if (zB <= -150) thin.push({ im, full: list.length, f: zB <= -260 ? { low: 0.55, med: 0.85, high: 1 } : { low: 0.8, med: 1, high: 1 } });
+          if (zB <= -150) thin.push({ im, full: list.length, f: zB <= -260 ? { low: 0.45, med: 0.85, high: 1 } : { low: 0.8, med: 1, high: 1 } });
         }
       });
-      treeLods.push({ zA, zB, hi, lo });
+      // a tight box for culling (the instanced meshes' bounding spheres are huge and always reach into view)
+      const box = new THREE.Box3();
+      for (const im of hi) { const g = im.geometry; if (!g.boundingBox) g.computeBoundingBox(); const bb = new THREE.Box3(); for (let i = 0; i < im.count; i++) { im.getMatrixAt(i, m4); box.union(bb.copy(g.boundingBox!).applyMatrix4(m4)); } }
+      treeLods.push({ zA, zB, hi, lo, box });
     });
     // soft long "baked" shadows under the corridor trees (the real shadow map only covers the focus area)
     {
@@ -1594,7 +1600,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       farTint.push(tintOf(new THREE.Color(), 1.3).multiplyScalar(0.92));
       hillN++;
     }
-    const fgeos = [farTreeGeo(0), farTreeGeo(1)];
+    const fgeos = [farTreeGeo(0, buildDetail === 'low'), farTreeGeo(1)];
     // split by species and left / right so each part can be culled
     for (const sp of [0, 1]) for (const sgn of [-1, 1]) {
       const idx = far.map((m, i) => [m, i] as const).filter(([m, i]) => Math.sign(m.elements[12] - fwCenter(m.elements[14])) === sgn && ((hash2(i, 77) < 0.3 ? 1 : 0) === sp))
@@ -1605,7 +1611,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       idx.forEach(([m, i], k) => { im.setMatrixAt(k, m); im.setColorAt(k, farTint[i]); });
       im.computeBoundingSphere();
       scene.add(im);
-      thin.push({ im, full: idx.length, f: { low: 0.35, med: 0.7, high: 1 } });
+      thin.push({ im, full: idx.length, f: { low: 0.28, med: 0.7, high: 1 } });
     }
   }
 
@@ -1698,7 +1704,7 @@ gl_Position = projectionMatrix * mvPosition;`);
     im.receiveShadow = true;
     im.name = 'grass';
     scene.add(im);
-    thin.push({ im, full: n, f: { low: 0.4, med: 0.75, high: 1 } });
+    thin.push({ im, full: n, f: { low: 0.3, med: 0.75, high: 1 } });
     // a patch of blades that follows the ball once it is down the range (landing and rest cameras): rough reads
     // tall and breaks the ball's silhouette, fairway reads as cut turf. Re-laid when the ball has moved on.
     const PATCH = 12000, PR = 4;
@@ -1832,11 +1838,13 @@ gl_Position = projectionMatrix * mvPosition;`);
       // blades round the ball when it is on the ground down the range and the camera is close to it
       if (!tight && focus.y - heightAt(focus.x, focus.z) < 2.5 && camera.position.distanceTo(focus) < 40) grassPatch(focus.x, focus.z, time);
       // tree detail by distance from the camera to each chunk's stretch of the range
+      camera.updateMatrixWorld();
+      frustum.setFromProjectionMatrix(projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
       for (const t of treeLods) {
         const cz = camera.position.z, d = Math.max(0, cz - t.zA, t.zB - cz) + Math.max(0, camera.position.y - 60);
-        const far = d > lodFar;
-        for (const m of t.hi) m.visible = !far;
-        for (const m of t.lo) m.visible = far;
+        const far = d > lodFar, seen = frustum.intersectsBox(t.box);
+        for (const m of t.hi) m.visible = seen && !far;
+        for (const m of t.lo) m.visible = seen && far;
       }
       su.time.value = time;
       flagUniforms.uTime.value = time;
