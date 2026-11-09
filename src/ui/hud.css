@@ -451,3 +451,6 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 .card.simple .sc-more dd { font-size: 15px; }
 .card.simple:focus-visible { outline: 3px solid var(--flag); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .card.simple .tempo-word, .card.simple.more .sc-more, .card.simple .sc-n b.landed { animation: none; } }
+/* player avatar: Neil's coloured-pencil portrait in a round frame */
+.who-chip .avatar { display: inline-block; width: 34px; height: 34px; border-radius: 50%; flex: none; align-self: center; background: var(--portrait) center/cover no-repeat, #fffaf0; box-shadow: 0 0 0 2px #13294b, 0 0 0 4px #ffd23f; margin: 2px 2px 2px 3px; }
+@media (orientation: portrait) { .hud.skin-f .who-chip .avatar { width: 30px; height: 30px; } }

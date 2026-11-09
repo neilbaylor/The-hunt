@@ -8,6 +8,7 @@ import type { ShotMode } from '../golfer/golfer';
 import { CLUB_DATA, LIES, MODES, type ShotPlan } from '../game/shot';
 import type { GolferProfile } from '../golfer/profile';
 import crestUrl from '../assets/brand/toronto-hunt-crest.png';
+import portraitUrl from '../assets/neil/portrait.jpg';
 import css from './hud.css?inline';
 
 export type Skin = 'f' | 'a' | 'b' | 'c';
@@ -274,6 +275,7 @@ export class Hud {
         <div class="sp-btns"><button type="button" class="sp-btn ghost" data-act="strike-centre">Centre</button><button type="button" class="sp-btn" data-act="strike-done">Done</button></div>
       </div></div>`;
     document.documentElement.style.setProperty('--crest', `url("${crestUrl}")`);
+    document.documentElement.style.setProperty('--portrait', `url("${portraitUrl}")`);
     parent.appendChild(this.el);
     this.pad = this.el.querySelector('#pad')!;
     this.spinCv = this.el.querySelector('#spin canvas')!;
@@ -344,7 +346,7 @@ export class Hud {
       <span class="lie-top">${lieRing(L.pct)}<span><span class="big" style="display:block">${L.name}</span><span class="sub">${L.pct}% distance</span></span></span>
       <span class="slope">${slopeIcon(L.slope, L.side)}<span class="deg">${L.slope}°</span><span class="sub">${L.txt}</span></span></button>`;
     const p = this.profile;
-    this.q('#who').innerHTML = `<button type="button" class="hud-panel who-chip" data-act="skin" aria-label="Player: ${p.name}"><i class="crest" aria-hidden="true"></i><b>${p.name}</b></button>`;
+    this.q('#who').innerHTML = `<button type="button" class="hud-panel who-chip" data-act="skin" aria-label="Player: ${p.name}"><i class="avatar" aria-hidden="true"></i><b>${p.name}</b></button>`;
     if (card !== undefined) this.card(card);
     else if (!this.cardInit) this.card(null);
     const cp = this.q('#clubPop'), mp = this.q('#modePop');
