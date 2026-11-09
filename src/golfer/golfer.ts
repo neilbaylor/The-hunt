@@ -264,10 +264,11 @@ export class Golfer {
       v.applyAxisAngle(Yv, yaw); up.applyAxisAngle(Yv, yaw);
       this.trailToeFlat.applyAxisAngle(Yv, yaw);
       // inside-edge roll early on (the top of the foot tips toward the lead foot), gone by the finish
-      const roll = 0.32 * smooth(0, 0.35, heel) * (1 - smooth(0.55, 0.95, heel));
+      const roll = 0.2 * smooth(0, 0.35, heel) * (1 - smooth(0.55, 0.95, heel));
       up.applyAxisAngle(this.trailToeFlat, -roll);
       const lat = new THREE.Vector3().crossVectors(Yv, v).normalize();
-      const lift = 1.35 * smooth(0, 0.85, heel);         // sole near vertical in a full finish
+      // heel ~1 cm up at impact, 5-6 cm at the release, sole near vertical in a full finish
+      const lift = 1.35 * smooth(0.25, 1, heel);
       const sgn = v.clone().applyAxisAngle(lat, 0.3).y > v.y ? 1 : -1;
       v.applyAxisAngle(lat, sgn * lift); up.applyAxisAngle(lat, sgn * lift);
       p.ankleR.copy(ballJ).add(v);
@@ -278,7 +279,7 @@ export class Golfer {
     // never twists against the shoe
     const toeDir = p.toeR.clone().sub(p.ankleR).setY(0);
     if (toeDir.lengthSq() < 1e-6) toeDir.set(0, 0, 1);
-    toeDir.normalize().lerp(new THREE.Vector3(1, 0, 0), 0.35 * heel).normalize();
+    toeDir.normalize().lerp(new THREE.Vector3(1, 0, 0), Math.min(0.85, 0.7 * heel)).normalize();
     p.kneePoleR.copy(p.ankleR).addScaledVector(toeDir, 1.0).setY(0.5);
   }
 
