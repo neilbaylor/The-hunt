@@ -100,7 +100,38 @@
         ],
         "weight": 0.9,
         "mirrorToo": true,
-        "mirrorWeight": 0.55
+        "mirrorWeight": 0.3
+      },
+      {
+        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/09b0fb75-image.png",
+        "eyeR": [
+          255,
+          288
+        ],
+        "eyeL": [
+          380,
+          280
+        ],
+        "nose": [
+          320,
+          340
+        ],
+        "mouth": [
+          320,
+          440
+        ],
+        "chin": [
+          318,
+          540
+        ],
+        "skinSample": [
+          230,
+          180,
+          330,
+          230
+        ],
+        "weight": 0.75,
+        "excludeMouth": true
       }
     ],
     "faceHalfWidth": 0.07,

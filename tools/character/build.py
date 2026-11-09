@@ -713,7 +713,7 @@ if F:
                 q = rot(src3, yaw, pitch); proj2 = np.c_[q[:, 0], q[:, 1], np.ones(len(q))] @ aff
                 warp = RBFInterpolator(q[:, :2], dst - proj2, kernel='thin_plate_spline', smoothing=0.5, neighbors=60)
             print(f"view {os.path.basename(vdef['photo'])}{' (mirrored)' if mirror else ''}: yaw {math.degrees(yaw):.0f}°, pitch {math.degrees(pitch):.0f}°, residual {r:.1f}px")
-            views.append({'warp': warp, 'img': np.asarray(img).astype(np.float32) / 255.0, 'yaw': yaw, 'pitch': pitch, 'aff': aff,
+            views.append({'noMouth': vdef.get('excludeMouth', False), 'warp': warp, 'img': np.asarray(img).astype(np.float32) / 255.0, 'yaw': yaw, 'pitch': pitch, 'aff': aff,
                           'weight': vdef.get('weight', 1.0) * (vdef.get('mirrorWeight', 0.6) if mirror else 1.0), 'skin': sk})
             samples.append(sk)
     skin_rgb = np.mean([v['skin'] for v in views[:1]], axis=0)  # the main (first) photo sets the tone
@@ -752,6 +752,8 @@ def skin_fn(p, n):
             sig = np.where(p[:, 1] < hc[1] - 0.03, 0.26, 0.15)
             skinlike = np.exp(-np.sum((col - skin_rgb) ** 2, axis=1) / (2 * sig ** 2))
             w = facing * yband * near * inside * v['weight'] * skinlike
+            if v['noMouth']:  # a smiling photo: use its cheeks, temples and jaw, not its mouth
+                w *= np.clip((np.linalg.norm((p - mouth_c) * [1.0, 1.3, 1.0], axis=1) - 0.03) / 0.02, 0, 1)
             acc += col * w[:, None]; wsum += w
         cov = np.clip(wsum / 0.35, 0, 1)[:, None]
         ph = acc / np.maximum(wsum, 1e-6)[:, None]
