@@ -98,15 +98,15 @@ function drawPrint(g: CanvasRenderingContext2D, align: boolean) {
   g.save();
   g.translate(cx + 4, cy + 62); g.scale(1, 1.3);
   g.fillStyle = '#c8102e'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = '400 40px "Barlow", "Arial", sans-serif';
+  g.font = '500 40px "Barlow", "Arial", sans-serif';
   g.fillText('1', 0, 0);
-  g.globalCompositeOperation = 'destination-out'; g.lineWidth = 1.6; g.strokeText('1', 0, 0); g.globalCompositeOperation = 'source-over';
+  g.globalCompositeOperation = 'destination-out'; g.lineWidth = 0.9; g.strokeText('1', 0, 0); g.globalCompositeOperation = 'source-over';
   g.restore();
   // back: the model mark with a thin alignment line under it
   const bx = 0.75 * BT_W;
-  proV1x(g, bx, cy, 1);
+  proV1x(g, bx, cy, 0.82);
   g.fillStyle = '#16161a';
-  g.fillRect(bx - 74, cy + 36, 148, 2.2);
+  g.fillRect(bx - 62, cy + 30, 124, 1.8);
   if (align) { g.fillRect(bx - 150, cy + 36, 300, 2.2); }
 }
 
