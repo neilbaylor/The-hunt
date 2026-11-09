@@ -227,7 +227,7 @@ hairish = np.maximum(hairish, np.clip(((eye_lmh[2] - 0.08) - LV[:, 2]) / 0.02, 0
 nbr = [[] for _ in range(len(LV))]
 for a_, b_, c_ in LF: nbr[a_] += [b_, c_]; nbr[b_] += [a_, c_]; nbr[c_] += [a_, b_]
 nbr = [np.unique(n_) for n_ in nbr]
-for it in range(6):
+for it in range(14):
     lap = np.array([LV[n_].mean(0) - LV[i] if len(n_) else np.zeros(3) for i, n_ in enumerate(nbr)])
     LV += (0.5 if it % 2 == 0 else -0.53) * lap * hairish[:, None]   # Taubin: smooth without shrinking
 # a bit more length on top (his hair is longer on top, swept back), most at the front of the crown
@@ -320,7 +320,7 @@ print('flipped', int(flip.sum()), 'folded faces')
 EXPR = {
     'blink': {'eye-left-closure': 1.0, 'eye-right-closure': 1.0},
     'smile': {'mouth-corner-puller': 0.8, 'mouth-upward-retraction': 0.35, 'eye-left-slit': 0.25, 'eye-right-slit': 0.25},
-    'grimace': {'mouth-depression-retraction': 0.8, 'mouth-retraction': 0.4, 'neck-platysma': 0.6, 'eyebrows-left-down': 0.5, 'eyebrows-right-down': 0.5, 'eye-left-slit': 0.4, 'eye-right-slit': 0.4},
+    'grimace': {'mouth-depression-retraction': 0.6, 'mouth-retraction': 0.3, 'neck-platysma': 0.5, 'eyebrows-left-down': 0.5, 'eyebrows-right-down': 0.5, 'eye-left-slit': 0.4, 'eye-right-slit': 0.4},
     'browUp': {'eyebrows-left-up': 1.0, 'eyebrows-right-up': 1.0},
     'browDown': {'eyebrows-left-down': 0.8, 'eyebrows-right-down': 0.8, 'eyebrows-left-inner-up': 0.2, 'eyebrows-right-inner-up': 0.2},
     'jawOpen': {'mouth-open': 0.6},
@@ -569,7 +569,7 @@ gd = np.c_[np.zeros(len(cp)), -1 + 1.0 * topk, -0.6 - 0.6 * topk]
 gd -= hiN * np.einsum('ij,ij->i', gd, hiN)[:, None]; gd /= np.linalg.norm(gd, axis=1, keepdims=True) + 1e-9
 def aniso(F_perp, F_par):
     q = cp * F_perp + gd * np.einsum('ij,ij->i', cp, gd)[:, None] * (F_par - F_perp); return snoise(q)
-strand = 0.62 + 0.55 * (0.55 * aniso(2600, 70) + 0.3 * aniso(900, 30) + 0.15 * snoise(cp * 150))
+strand = 0.55 + 0.7 * (0.55 * aniso(2600, 70) + 0.3 * aniso(900, 30) + 0.15 * snoise(cp * 150))
 fill = hair_amt[:, None] * hair_c * strand[:, None] * (0.55 + 0.45 * relief[:, None]) + (1 - hair_amt[:, None]) * skin_c * (0.92 + 0.08 * relief[:, None])
 # soft hair edge at the nape
 out = col * conf[:, None] + fill * (1 - conf[:, None])
@@ -623,7 +623,7 @@ for (ca, cb, up, lo_, ir) in ((33, 133, 159, 145, 468), (362, 263, 386, 374, 473
     near = (np.abs(ex) < 3.5) & (np.abs(ey) < 9) & (depth < 0.02)
     eyeA[near, 0], eyeA[near, 1] = ex[near], ey[near]
     eyeA[near, 2] = np.linalg.norm(Y) / np.linalg.norm(X)             # up-units per across-unit
-    eyeA[near, 3] = 0.0062 / np.linalg.norm(X)                        # iris radius (6.2 mm) in across-units
+    eyeA[near, 3] = (d @ (nrm / np.linalg.norm(nrm)))[near]           # signed distance off the eye's plane (the shader keeps to |d| < 5 mm)
     di = lm_f[ir] - c3; eyeB[near] = [di @ X / (X @ X), di @ Y / (Y @ Y)]
     eyes_info.append({'halfWidthMM': float(np.linalg.norm(X) * 1000), 'halfOpenMM': float(np.linalg.norm(Y) * 1000), 'iris': [float(di @ X / (X @ X)), float(di @ Y / (Y @ Y))]})
     print(f"  eye: half-width {np.linalg.norm(X) * 1000:.1f} mm, half-opening {np.linalg.norm(Y) * 1000:.1f} mm, iris at {np.round(eyeB[near][0], 2) if near.any() else '-'}, {int(near.sum())} verts")

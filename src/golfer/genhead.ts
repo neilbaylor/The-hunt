@@ -88,7 +88,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     });
     g.morphTargetsRelative = true;
   }
-  // eyes: per-vertex eye coordinates (across, up, up-per-across, iris radius) + resting iris centre
+  // eyes: per-vertex eye coordinates (across, up, up-per-across, distance off the eye's plane) + resting iris centre
   const eyeA = new Float32Array(nv * 4).fill(9), eyeB = new Float32Array(nv * 2);
   if (G.arrays.eye_i) {
     const ii = arr('eye_i'), vv = arr('eye_v') as Float32Array;
@@ -112,11 +112,11 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
         // the eye opening, drawn here so it can look around and blink: e = (across, up), |e| < 1 inside
         vec2 e = vEyeA.xy; float asp = vEyeA.z;
         float rr = length(e);
-        float inside = 1.0 - smoothstep(0.78, 1.0, rr);
+        float inside = (1.0 - smoothstep(0.78, 1.0, rr)) * (1.0 - smoothstep(0.004, 0.007, abs(vEyeA.w)));
         if (inside > 0.0) {
           vec2 ic = vEyeB + uGaze * vec2(0.32, 0.22);
           vec2 q = vec2(e.x - ic.x, (e.y - ic.y) * asp);          // in across-units, round
-          float d = length(q) / vEyeA.w;                          // 1 at the iris edge
+          float d = length(q) / 0.475;                            // 1 at the iris edge (6.2 mm on a 13 mm half-eye)
           float corner = smoothstep(0.55, 1.0, abs(e.x));
           vec3 sclera = mix(vec3(0.80, 0.74, 0.70), vec3(0.62, 0.42, 0.38), corner);
           vec3 iris = uIris * (0.55 + 0.45 * smoothstep(1.0, 0.35, d)) * (0.9 + 0.2 * fract(sin(atan(q.y, q.x) * 23.0) * 43758.5));
@@ -124,7 +124,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
           iris = mix(iris, uIris * 0.35, smoothstep(0.8, 1.0, d));                      // limbal ring
           vec3 eye = mix(iris, sclera, smoothstep(0.98, 1.04, d));
           eye *= 1.0 - 0.55 * smoothstep(-0.1, 0.9, e.y);                              // the upper lid's shadow
-          eye += vec3(0.5) * smoothstep(0.12, 0.0, length(q - vec2(0.12, 0.10) * vEyeA.w)); // catchlight
+          eye += vec3(0.5) * smoothstep(0.12, 0.0, length(q - vec2(0.12, 0.10) * 0.475)); // catchlight
           // blink: the upper lid comes down to the lower; a lash line at its edge
           float lidY = 1.0 - 2.05 * uBlink;
           float lid = smoothstep(lidY - 0.06, lidY + 0.06, e.y + 0.15 * e.x * e.x);
