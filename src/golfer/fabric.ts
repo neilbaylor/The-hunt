@@ -80,8 +80,8 @@ const BODY: Record<FabricKind, string> = {
   `,
   skin: /* glsl */ `
     float fine = 1.0 - smoothstep(0.0004, 0.002, fwidth(vB.y));
-    h += 0.00012 * fn3(vB * 1800.0) * fine;  // pores
-    h += 0.0003 * fbm3(vB * 220.0);
+    h += 0.00002 * fn3(vB * 1800.0) * fine;  // pores (subtle)
+    h += 0.00008 * fbm3(vB * 160.0);
   `,
   glove: /* glsl */ `
     float fine = 1.0 - smoothstep(0.0005, 0.002, fwidth(vB.y));

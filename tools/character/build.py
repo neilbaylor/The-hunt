@@ -125,6 +125,47 @@ for k in morphs:
     morphs[k] *= s
 print('height scale', round(s, 4), '→', round((V[body_idx, 1].max()), 3), 'm skin top')
 
+# ───────────────────────── fit the face to the player's own 3D landmarks (MediaPipe) ─────────────────────────
+from scipy.spatial import cKDTree
+from scipy.interpolate import RBFInterpolator
+FS = P.get('faceShape'); lm_idx = None
+def lm_file(photo, flip): return photo + ('.mirror' if flip else '') + '.lm.json'
+def umeyama(B, A):
+    """similarity transform taking point set B onto A: returns aligned B"""
+    ma, mb = A.mean(0), B.mean(0); A0, B0 = A - ma, B - mb
+    U, S, Vt = np.linalg.svd(A0.T @ B0 / len(A))
+    d = np.sign(np.linalg.det(U @ Vt)); Dm = np.diag([1, 1, d]); R = U @ Dm @ Vt
+    sc = np.trace(np.diag(S) @ Dm) / ((B0 ** 2).sum() / len(B))
+    return (sc * (R @ B0.T)).T + ma
+if FS:
+    mh_lm = json.load(open(os.path.join(os.path.dirname(__file__), 'data', 'mh_landmarks3d.json')))
+    MH = np.array([q if q is not None else [0, 0, 0] for q in mh_lm]); ok = np.array([q is not None for q in mh_lm])
+    top_y = V[body_idx, 1].max()
+    headish = np.array([vi for vi in body_idx if V[vi, 1] > top_y - 0.33])
+    dd, jj = cKDTree(V[headish]).query(MH)
+    lm_idx = np.where(ok & (dd < 0.012), headish[jj], -1)
+    use = lm_idx >= 0
+    shapes, wts = [], []
+    for v in FS['photos']:
+        L = json.load(open(lm_file(v['photo'], P['handed'] == 'left')))
+        Q = np.array(L["pts"], float); Q = np.c_[Q[:, 0], -Q[:, 1], Q[:, 2]]   # y up; MediaPipe z already points toward the camera here
+        al = umeyama(Q[use], V[lm_idx[use]])
+        shapes.append(al); wts.append(v['weight'])
+    Navg = np.average(np.array(shapes), axis=0, weights=wts)
+    disp = (Navg - V[lm_idx[use]])
+    disp[:, 2] *= FS['depth']
+    disp *= FS['strength']
+    mag = np.linalg.norm(disp, axis=1, keepdims=True); disp *= np.minimum(1, FS['maxMove'] / np.maximum(mag, 1e-9))
+    print(f'face fit: {use.sum()} landmarks, mean move {np.linalg.norm(disp, axis=1).mean() * 1000:.1f} mm, max {np.linalg.norm(disp, axis=1).max() * 1000:.1f} mm')
+    src_pts = V[lm_idx[use]]
+    # anchors that stay put: the rest of the head and the neck, away from the face landmarks
+    region = np.nonzero(V[:, 1] > top_y - 0.36)[0]
+    dl, _ = cKDTree(src_pts).query(V[region])
+    anc = region[dl > 0.04][::3]
+    rbf = RBFInterpolator(np.r_[src_pts, V[anc]], np.r_[disp, np.zeros((len(anc), 3))], kernel='thin_plate_spline', smoothing=2e-6)
+    fall = np.clip(1 - (dl - 0.02) / 0.03, 0, 1)[:, None]
+    V[region] += rbf(V[region]) * fall
+
 # ───────────────────────── skeleton ─────────────────────────
 rig = json.load(open(f'{D}/rigs/standard/rig.game_engine.json'))
 def cube(name):
@@ -621,6 +662,11 @@ if F:
         lm = {k: list(vdef[k]) for k in ('eyeR', 'eyeL', 'nose', 'mouth', 'chin')}
         for mirror in ([False, True] if vdef.get('mirrorToo') else [False]):
             img, L = im, {k: list(v) for k, v in lm.items()}
+            dense = None
+            flip0 = (P['handed'] == 'left') != mirror
+            if lm_idx is not None and os.path.exists(lm_file(vdef['photo'], flip0)):
+                Ld = np.array(json.load(open(lm_file(vdef['photo'], flip0)))['pts'], float)
+                dense = (V[lm_idx[lm_idx >= 0]], Ld[lm_idx >= 0, :2])
             # a left-hander is drawn mirrored, so project mirrored photos (the render then reads true);
             # 'mirrorToo' adds the flipped photo as a view of the other side of the face
             flip = (P['handed'] == 'left') != mirror
@@ -629,17 +675,23 @@ if F:
                 for k in L: L[k] = [W0 - L[k][0], L[k][1]]
                 L['eyeR'], L['eyeL'] = L['eyeL'], L['eyeR']
             dst = np.array([L['eyeR'], L['eyeL'], L['nose'], L['mouth'], L['chin']], dtype=np.float64)
+            src3 = L3
+            if dense is not None: src3, dst = dense
             best = None
             for yaw in np.radians(np.arange(-55, 55.1, 1.0)):
                 for pitch in np.radians(np.arange(-20, 20.1, 2.0)):
-                    q = rot(L3, yaw, pitch)
-                    A = np.c_[q[:, 0], q[:, 1], np.ones(5)]
+                    q = rot(src3, yaw, pitch)
+                    A = np.c_[q[:, 0], q[:, 1], np.ones(len(q))]
                     aff, *_ = np.linalg.lstsq(A, dst, rcond=None)
                     r = np.linalg.norm(A @ aff - dst, axis=1).mean()
                     if best is None or r < best[0]: best = (r, yaw, pitch, aff)
             r, yaw, pitch, aff = best
+            warp = None
+            if dense is not None:
+                q = rot(src3, yaw, pitch); proj2 = np.c_[q[:, 0], q[:, 1], np.ones(len(q))] @ aff
+                warp = RBFInterpolator(q[:, :2], dst - proj2, kernel='thin_plate_spline', smoothing=0.5, neighbors=60)
             print(f"view {os.path.basename(vdef['photo'])}{' (mirrored)' if mirror else ''}: yaw {math.degrees(yaw):.0f}°, pitch {math.degrees(pitch):.0f}°, residual {r:.1f}px")
-            views.append({'img': np.asarray(img).astype(np.float32) / 255.0, 'yaw': yaw, 'pitch': pitch, 'aff': aff,
+            views.append({'warp': warp, 'img': np.asarray(img).astype(np.float32) / 255.0, 'yaw': yaw, 'pitch': pitch, 'aff': aff,
                           'weight': vdef.get('weight', 1.0) * (vdef.get('mirrorWeight', 0.6) if mirror else 1.0), 'skin': sk})
             samples.append(sk)
     skin_rgb = np.mean([v['skin'] for v in views[:1]], axis=0)  # the main (first) photo sets the tone
@@ -667,6 +719,8 @@ def skin_fn(p, n):
             camdir = np.array([-sy * cp, sp, cy * cp]); camdir /= np.linalg.norm(camdir)
             facing = np.clip((n @ camdir - 0.3) / 0.5, 0, 1) ** 2
             xy = np.c_[q[:, 0], q[:, 1], np.ones(len(p))] @ v['aff']
+            if v['warp'] is not None and near.any():
+                xy[near] += v['warp'](q[near, :2])
             img = v['img']
             inside = (xy[:, 0] > 2) & (xy[:, 0] < img.shape[1] - 3) & (xy[:, 1] > 2) & (xy[:, 1] < img.shape[0] - 3)
             px = np.clip(xy[:, 0], 0, img.shape[1] - 1).astype(int); py = np.clip(xy[:, 1], 0, img.shape[0] - 1).astype(int)

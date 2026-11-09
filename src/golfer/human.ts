@@ -324,9 +324,9 @@ float hh(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * 
     const eyeMat = new THREE.MeshPhysicalMaterial({ map: eyeTex, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.03 });
     for (const sfx of ['l', 'r'] as const) {
       const e = M.eyeballs[sfx];
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(e.r * 1.02, 32, 20), eyeMat);
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(e.r * 0.98, 32, 20), eyeMat);
       ball.name = 'eye';
-      ball.position.set(e.c[0], e.c[1], e.c[2]).sub(J[headBi]);
+      ball.position.set(e.c[0], e.c[1], e.c[2] - 0.0015).sub(J[headBi]);
       bones[headBi].add(ball); meshes.push(ball);
     }
   }
@@ -358,7 +358,8 @@ float hh(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * 
     extras.handDir[s].copy(dir);
   }
 
-  const setSmile = (v: number) => {
+  const setSmile = (v0: number) => {
+    const v = 0.14 + 0.86 * v0; // a relaxed resting face, not the photo's frown
     if (skin.morphTargetInfluences) skin.morphTargetInfluences[0] = v;
     if (teeth?.morphTargetInfluences) teeth.morphTargetInfluences[0] = v;
   };

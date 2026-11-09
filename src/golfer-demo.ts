@@ -37,6 +37,7 @@ const poses: Record<string, any> = {
   impact: { phase: 'down', phi: 0 },
   through: { phase: 'follow', phi: PHI_FINISH * 0.3 },
   finish: { phase: 'follow', phi: PHI_FINISH },
+  b25: { phase: 'back', phi: PHI_TOP * 0.25 }, b70: { phase: 'back', phi: PHI_TOP * 0.7 }, d70: { phase: 'down', phi: PHI_TOP * 0.7 }, d20: { phase: 'down', phi: PHI_TOP * 0.2 }, t30: { phase: 'follow', phi: PHI_FINISH * 0.3 }, t80: { phase: 'follow', phi: PHI_FINISH * 0.8 },
   t10: { phase: 'follow', phi: PHI_FINISH * 0.1 }, t20: { phase: 'follow', phi: PHI_FINISH * 0.2 }, t45: { phase: 'follow', phi: PHI_FINISH * 0.45 }, t60: { phase: 'follow', phi: PHI_FINISH * 0.6 },
 };
 golfer.body.setSmile(+(q.get('smile') ?? 0));
@@ -59,6 +60,11 @@ else if (view === 'portrait') {
   const c = (q.get('cam') ?? '2.6,1.5,3.4,-0.4,0.95,-8').split(',').map(Number);
   cam.position.set(c[0] * lx, c[1], c[2]); cam.lookAt(c[3] * lx, c[4], c[5]);
 }
+else if (view === 'pgame') {
+  // the game's portrait swing cam, lens shifted up 20%
+  cam.fov = 52; cam.position.set(0.7 * lx, 1.75, 3.6); cam.lookAt(0.45 * lx, 0.35, -6);
+  cam.setViewOffset(innerWidth, innerHeight, 0, innerHeight * 0.2, innerWidth, innerHeight); cam.updateProjectionMatrix();
+}
 else if (view === 'gameclose') { cam.position.set(-0.2 * lx, 1.5, 3.2); cam.lookAt(0.7 * lx, 1.0, -1); }
 else if (view === 'behind') { cam.position.set(0.2, 1.75, 4.2); cam.lookAt(0, 0.9, -2); }
 else if (view === 'face') { cam.position.set(-lx * 3.6, 1.2, 0); cam.lookAt(lx * 0.6, 0.95, 0); }
@@ -73,4 +79,26 @@ else if (view === 'close' || view === 'three') {
   cam.position.copy(c).addScaledVector(f, 0.9).add(new THREE.Vector3(0, 0.03, 0)); cam.lookAt(c);
 }
 renderer.render(scene, cam);
-(window as any).__g = golfer; (window as any).__ready = true;
+(window as any).__g = golfer;
+if (view === 'probe') {
+  // bare head, flat front light, narrow lens: for face-landmark detection on our own mesh
+  golfer.body.root.traverse(o => { if (o.name === 'visor' || o.name === 'hair-shell') o.visible = false; });
+  const skin = golfer.body.meshes.find(m => m.name === 'skin') as THREE.SkinnedMesh;
+  if (q.has('plain')) { const m = skin.material as THREE.MeshPhysicalMaterial; m.map = null; m.color.set('#d2a48c'); m.needsUpdate = true; }
+  const e = new THREE.Vector3(); golfer.char.localToWorld(e.copy(golfer.body.skel.eye));
+  const toward = new THREE.Vector3(); golfer.char.localToWorld(toward.set(golfer.body.skel.eye.x, golfer.body.skel.eye.y, golfer.body.skel.eye.z + 1)); toward.sub(e).normalize();
+  cam.fov = 14; cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix();
+  cam.position.copy(e).addScaledVector(toward, 1.25).add(new THREE.Vector3(0, -0.035, 0)); cam.lookAt(e.clone().add(new THREE.Vector3(0, -0.035, 0)));
+  sun.position.copy(cam.position).add(new THREE.Vector3(0.3, 0.6, 0)); 
+  renderer.render(scene, cam);
+  (window as any).__probe = (px: number[][]) => {
+    const rc = new THREE.Raycaster(); const out: (number[] | null)[] = [];
+    for (const [x, y] of px) {
+      rc.setFromCamera(new THREE.Vector2((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1), cam);
+      const hit = rc.intersectObject(skin, false)[0];
+      out.push(hit ? golfer.body.root.worldToLocal(hit.point.clone()).toArray() : null);
+    }
+    return out;
+  };
+}
+(window as any).__ready = true;

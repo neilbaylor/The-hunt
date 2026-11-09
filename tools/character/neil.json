@@ -101,9 +101,9 @@
     "foreheadTop": 0.075
   },
   "eyes": [
-    118,
-    140,
-    152
+    104,
+    120,
+    128
   ],
   "hair": {
     "front": 0.62,
@@ -174,5 +174,28 @@
     "thighR": 0.1,
     "kneeR": 0.086,
     "hemR": 0.08
+  },
+  "faceShape": {
+    "photos": [
+      {
+        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/8716142c-image.jpg",
+        "weight": 1.0
+      },
+      {
+        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/ee55797f-image.jpg",
+        "weight": 0.7
+      },
+      {
+        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/efc78715-image.jpg",
+        "weight": 0.5
+      },
+      {
+        "photo": "/root/.claude/uploads/2315be70-f187-593e-a2dc-f420a899e84c/f9637097-image.jpg",
+        "weight": 0.4
+      }
+    ],
+    "depth": 0.15,
+    "strength": 0.85,
+    "maxMove": 0.012
   }
 }
