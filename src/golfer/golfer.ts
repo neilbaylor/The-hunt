@@ -42,18 +42,24 @@ const T: Keys = { hipTurn: -0.78, hipTilt: 0.2, hipSide: -0.02, chestTurn: -1.62
 // downswing: the hips lead (they're already unwinding while the chest is still turned), the trail side drops
 const TRANS = K({ hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
 const DOWN = K({ hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 1, beta: -0.16 }, T);
-const LATE = K({ hipTurn: 0.32, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.38, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.08, hinge: 0.62, beta: -0.12 }, T);
+const LATE = K({ hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.38, shift: 0.075, drop: 0.0, heel: 0.1, shrug: 0.0, pro: -0.08, hinge: 0.5, beta: -0.08 }, T);
+// delivery: lead arm about parallel on the way down, shaft still lagging (wrists fully set), hips already open,
+// trail elbow tucked in front of the trail hip
+const DELIV = K({ hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.74, chestTilt: 0.62, chestSide: 0.34, shift: 0.07, drop: 0.0, heel: 0.04, shrug: 0.04, pro: -0.04, hinge: 0.95, beta: -0.15 }, T);
 const I: Keys = { hipTurn: 0.7, hipTilt: 0.16, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.4, shift: 0.08, drop: -0.012, heel: 0.28, shrug: -0.05, pro: -0.13, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
 const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.5, hinge: -0.08, beta: 0.08, pro: -0.12 }, I);
 const THRU = K({ hipTurn: 1.25, hipTilt: 0.1, hipSide: 0.05, chestTurn: 1.35, chestTilt: 0.14, chestSide: 0.28, shift: 0.13, drop: -0.035, heel: 0.8, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
 const T3Q = K({ hipTurn: 1.5, hipTilt: 0.06, hipSide: 0.02, chestTurn: 1.75, chestTilt: 0.03, chestSide: 0.2, shift: 0.16, drop: -0.04, heel: 0.95, shrug: -0.12, pro: -0.02, hinge: -0.85, beta: 0.42 }, I);
 // full finish: belt buckle and chest past the target, weight on the lead leg, upright with a slight reverse-C
-const F: Keys = { hipTurn: 1.62, hipTilt: 0.04, hipSide: 0.0, chestTurn: 1.95, chestTilt: 0.0, chestSide: 0.18, shift: 0.17, drop: -0.04, heel: 1, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.55 };
+const F: Keys = { hipTurn: 1.58, hipTilt: 0.04, hipSide: 0.0, chestTurn: 1.9, chestTilt: 0.02, chestSide: 0.18, shift: 0.17, drop: -0.04, heel: 0.98, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.52 };
+// held finish: fully rotated (buckle and chest a little past the target), all the weight on a straight lead leg,
+// trail foot up on its toe with the knee against the lead knee, upright with a slight reverse-C, hands by the head
+const HOLD: Keys = { hipTurn: 1.72, hipTilt: 0.02, hipSide: -0.02, chestTurn: 2.05, chestTilt: -0.04, chestSide: 0.24, shift: 0.19, drop: -0.045, heel: 1, shrug: -0.12, pro: 0, hinge: -1.0, beta: 0.6 };
 // where each key sits: back/follow by the hands' angle as a fraction of a full top/finish, down by fraction of this top
 const KF_BACK: [number, Keys][] = [[0, A], [0.3, TAKE], [0.55, HALF], [0.8, B3Q], [1, T]];
-const KF_DOWN: [number, Keys][] = [[0, T], [0.15, TRANS], [0.45, DOWN], [0.75, LATE], [1, I]];
-const KF_FOLLOW: [number, Keys][] = [[0, I], [0.12, REL], [0.35, THRU], [0.6, T3Q], [1, F]];
+const KF_DOWN: [number, Keys][] = [[0, T], [0.15, TRANS], [0.45, DOWN], [0.62, DELIV], [0.8, LATE], [1, I]];
+const KF_FOLLOW: [number, Keys][] = [[0, I], [0.12, REL], [0.33, THRU], [0.55, T3Q], [0.8, F], [1, HOLD]];
 const KEY_NAMES = Object.keys(A) as (keyof Keys)[];
 /** monotone cubic (Fritsch–Carlson) through the keys of one channel: smooth, never overshoots a key */
 function keysAt(kf: [number, Keys][], u: number, o: Keys) {
@@ -320,6 +326,7 @@ export class Golfer {
     const down = new THREE.Vector3(0, -1, 0);
     p.poleL.copy(this.pelvisBase).add(new THREE.Vector3(0.25, -0.6, 0.15)).addScaledVector(down, 0.2);
     p.poleR.copy(this.pelvisBase).add(new THREE.Vector3(-0.35, -0.5, 0.05));
+    if (s.phase === 'down') p.poleR.lerp(this.pelvisBase.clone().add(new THREE.Vector3(-0.15, -0.65, 0.4)), smooth(0.2, 0.6, 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi)));
     if (s.phase === 'follow') p.poleR.set(this.pelvisBase.x + 0.6, -0.4, this.pelvisBase.z + 0.6);
     // eyes: on the ball until well after impact, then down the target line
     let watch = s.phase === 'follow' ? smooth(0.25, 0.75, -phi / Math.abs(PHI_FINISH)) : 0;
