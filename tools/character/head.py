@@ -32,7 +32,9 @@ ap.add_argument('--unwrap-weight', type=float, default=4.0, help='how strongly t
 ap.add_argument('--mpfb', default='/tmp/mh/mpfb2/src/mpfb/data', help='MakeHuman (MPFB2) data, for the expression targets')
 ap.add_argument('--neck', default='cap', choices=['cap', 'loft'], help="cap: keep the generator's cap, the body's neck shows below; loft: grow a neck down into the collar")
 ap.add_argument('--head-scale', type=float, default=1.0)
-ap.add_argument('--head-width', type=float, default=1.04)
+ap.add_argument('--head-width', type=float, default=1.0, help='overall width of the whole head (the face reshape sets the face itself)')
+ap.add_argument('--head-width-face', type=float, default=0.96, help='starting face width for the reshape fit')
+ap.add_argument('--no-reshape', dest='reshape', action='store_false')
 ap.add_argument('--hair-top', type=float, default=0.125, help='top of the hair above the eyes (m)')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
@@ -173,7 +175,18 @@ IRIS = (468, 473)
 ok = ~np.isnan(lm_g).any(1) & ~np.isnan(lm_mh).any(1)
 nose_y = lm_mh[4, 1]
 upper = ok & (lm_mh[:, 1] > nose_y - 0.004)
+# a landmark can land on something behind the face (lashes, an inner surface): drop points far off the face's
+# own depth before fitting, then trim the worst fits and refit
+for L_ in (lm_mh, lm_g):
+    zz = L_[upper, 2]; med = np.median(zz); spread = np.median(np.abs(zz - med)) * 6 + 1e-6
+    upper &= ~(np.abs(L_[:, 2] - med) > spread) | ~upper
+print('  upper-face landmarks used:', int(upper.sum()), ' MakeHuman depth range', np.round(np.ptp(lm_mh[upper, 2]), 3))
 R = umeyama_R(lm_g[upper], lm_mh[upper])
+for _ in range(2):
+    Bm = (R @ (lm_g[upper] - lm_g[upper].mean(0)).T).T; Am = lm_mh[upper] - lm_mh[upper].mean(0)
+    sc_ = (Am * Bm).sum() / (Bm ** 2).sum(); e_ = np.linalg.norm(Am - sc_ * Bm, axis=1)
+    keep_ = e_ < np.percentile(e_, 85); idx_ = np.nonzero(upper)[0]; upper[idx_[~keep_]] = False
+    R = umeyama_R(lm_g[upper], lm_mh[upper])
 ipd_g = np.linalg.norm(lm_g[IRIS[0]] - lm_g[IRIS[1]]); ipd_lm_mh = np.linalg.norm(lm_mh[IRIS[0]] - lm_mh[IRIS[1]])
 # scale: the eye spacing and the eye-to-chin length both measured the same way (landmarks on a grey render) on
 # both heads; their geometric mean keeps the face proportions of the photo while matching the body's head size
@@ -209,6 +222,68 @@ def flatten(P):
     P[:, [0, 2]] -= d_ / r_ * (0.004 * w_)[:, None]
     return P
 FV = flatten(FV); lm_f = flatten(lm_f)
+
+# ── face shape: the generator (and the unwrap) make the face rounder and wider than he is. Fit a landmark-guided
+#    reshape (overall width, temples, cheeks/jaw below the cheekbones, chin, length below the nose) so the face's
+#    proportions, seen from the portrait's own camera, match the portrait's (same MediaPipe landmarks both sides) ──
+RAT = {  # name: (pair a, pair b, normaliser)
+    'cheek width / face height': ((234, 454), 'FH'),
+    'jaw width / cheek width': ((172, 397), 'BZ'),
+    'chin width / cheek width': ((148, 377), 'BZ'),
+    'nose→chin / face height': ((2, 152), 'FH'),
+    'temple width / cheek width': ((54, 284), 'BZ'),
+}
+def ratios(p2):
+    FH = np.linalg.norm(p2[10] - p2[152]); BZ = np.linalg.norm(p2[234] - p2[454])
+    return np.array([np.linalg.norm(p2[a] - p2[b]) / (FH if n == 'FH' else BZ) for (a, b), n in RAT.values()])
+ref_img = np.asarray(Image.open(photos[0]).convert('RGB'))
+lm_ref = landmarks(ref_img); r_ref = ratios(lm_ref)
+okr = ~np.isnan(lm_f).any(1)
+Hh_, Ww_ = ref_img.shape[:2]
+def cam_fit(L3):
+    best = None
+    for fm in (1.2, 1.6, 2.0, 2.6, 3.4):
+        K = np.array([[fm * Ww_, 0, Ww_ / 2], [0, fm * Ww_, Hh_ / 2], [0, 0, 1]])
+        okp, rv, tv = cv2.solvePnP(L3[okr], lm_ref[okr], K, None, flags=cv2.SOLVEPNP_EPNP)
+        rv, tv = cv2.solvePnPRefineLM(L3[okr], lm_ref[okr], K, None, rv, tv)
+        pr = cv2.projectPoints(L3, rv, tv, K, None)[0][:, 0]; err = np.median(np.linalg.norm(pr[okr] - lm_ref[okr], axis=1))
+        if best is None or err < best[0]: best = (err, pr)
+    return best[1]
+yN, yC, yZ = lm_f[2, 1], lm_f[152, 1], (lm_f[234, 1] + lm_f[454, 1]) / 2
+ear_zf = min(lm_f[234, 2], lm_f[454, 2])
+def sstep(a, b, x): t = np.clip((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t)
+def reshape(P, q):
+    wid, temple, jaw, chin, lower = q
+    P = P.copy(); x, y, z = P[:, 0], P[:, 1], P[:, 2]
+    front = sstep(ear_zf - 0.03, ear_zf + 0.01, z)                       # the face, not the back of the head
+    tj = sstep(yZ, yC + 0.012, y)                                        # 0 at the cheekbones, 1 at the jaw line
+    tc = sstep(yC + 0.035, yC, y) * np.exp(-(x / 0.03) ** 2 * 0.5)      # the chin
+    tt = np.exp(-((y - (eyeYf + 0.035)) / 0.022) ** 2) * front           # the temples
+    S = wid * (1 + (temple - 1) * tt) * (1 + (jaw - 1) * tj * (0.4 + 0.6 * front)) * (1 + (chin - 1) * tc)
+    P[:, 0] = x * S
+    # a slight hollow under the cheekbones, in front of the jaw muscle (the portrait's lean cheeks)
+    hol = np.exp(-(((np.abs(x) - 0.042) / 0.016) ** 2 + ((y - (yZ - 0.03)) / 0.018) ** 2)) * front
+    P[:, 0] -= np.sign(x) * 0.0025 * hol
+    below = y < yN
+    P[below, 1] = yN - (yN - y[below]) * lower
+    return P
+from scipy.optimize import least_squares
+r0 = ratios(cam_fit(lm_f))
+if A.reshape:
+    q0 = np.array([A.head_width_face, 1.0, 1.0, 1.0, 1.0])
+    def resid(q): return np.r_[np.log(ratios(cam_fit(reshape(lm_f, q))) / r_ref), 0.15 * np.log(q)]
+    # the face reads round next to the portrait: keep it 2-5 % leaner overall and never shorten the lower face
+    # (the landmarks put ours already a little long there); the rest is fitted to the portrait's proportions
+    fit = least_squares(resid, q0, bounds=([0.95, 0.88, 0.8, 0.75, 1.0], [0.98, 1.06, 1.06, 1.06, 1.08]), diff_step=1e-3)
+    qf = fit.x
+    FV = reshape(FV, qf); lm_f = reshape(lm_f, qf)
+    r1 = ratios(cam_fit(lm_f))
+    print('face reshape: width %.3f, temples %.3f, jaw %.3f, chin %.3f, length below the nose %.3f' % tuple(qf))
+else:
+    qf = None; r1 = r0
+ratio_table = {k: {'portrait': float(a), 'before': float(b), 'after': float(c)} for k, a, b, c in zip(RAT, r_ref, r0, r1)}
+for k, v in ratio_table.items():
+    print(f"  {k:28s} portrait {v['portrait']:.3f}  ours before {v['before']:.3f} ({(v['before'] / v['portrait'] - 1) * 100:+.1f}%)  after {v['after']:.3f} ({(v['after'] / v['portrait'] - 1) * 100:+.1f}%)")
 print(f'hair: top {top_now - eyeYf:.3f} m above the eyes → {top_want - eyeYf:.3f} (above-band scale {kq:.2f})')
 res = np.linalg.norm(lm_f[upper] - lm_mh[upper], axis=1)
 ang = np.degrees(np.arctan2(R[2, 1], R[1, 1]))
@@ -748,6 +823,7 @@ for name, dv in morph_d.items():
     put('morph_' + name + '_i', nz.astype(np.uint16 if len(UV) < 65536 else np.uint32)); put('morph_' + name + '_d', np.round(d[nz] / 1e-5).astype(np.int16).ravel())
     mnames.append(name)
 meta = {
+    'faceShape': {'params': (list(map(float, qf)) if qf is not None else None), 'ratios': ratio_table},
     'arrays': desc, 'bones': [B[i] for i in bones_used],
     'eye': list(map(float, eye_mh)), 'ipd': float(ipd_mh),
     'seam': {'point': list(map(float, mir(cen))), 'normal': list(map(float, mir(pn))), 'band': BAND},
