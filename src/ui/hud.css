@@ -467,11 +467,11 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 @keyframes spinPulse { 0% { box-shadow: 0 0 0 0 rgba(255,210,63,.75); } 100% { box-shadow: 0 0 0 26px rgba(255,210,63,0); } }
 .hud .spin-label:empty { display: none; }
 .hud.skin-f .spin-label { max-width: 190px; white-space: normal; text-align: center; }
-/* the strike-point button: smaller */
-.hud.skin-f .strike-btn { left: -54px; bottom: 30px; width: 44px; }
-.hud.skin-f .strike-btn canvas { width: 38px; height: 38px; box-shadow: 0 0 0 2px #fffaf0, 0 3px 0 2px var(--edge), 0 6px 12px rgba(0,0,0,.28); }
-.hud.skin-f .strike-btn .dot { top: calc(19px + var(--sy, 0) * 14px - 5px); left: calc(22px + var(--sx, 0) * 14px - 5px); width: 10px; height: 10px; border-width: 2px; }
-.hud.skin-f .strike-btn span { font-size: 8.5px; padding: 2px 6px; }
+/* the strike-point button: a proper Pro V1x you can tap; its red dot is the high/low + draw/fade indicator */
+.hud.skin-f .strike-btn { left: -74px; bottom: 34px; width: 62px; }
+.hud.skin-f .strike-btn canvas { width: 56px; height: 56px; box-shadow: 0 0 0 3px #fffaf0, 0 4px 0 3px var(--edge), 0 8px 16px rgba(0,0,0,.3); }
+.hud.skin-f .strike-btn .dot { top: calc(28px + var(--sy, 0) * 21px - 7px); left: calc(31px + var(--sx, 0) * 21px - 7px); width: 14px; height: 14px; border-width: 2.5px; }
+.hud.skin-f .strike-btn span { font-size: 9.5px; padding: 3px 7px; }
 /* lie: a tiny pill (the turf picture) that opens on tap */
 .hud.skin-f .lie-card.lie-w.mini { width: auto; height: auto; padding: 4px; grid-template-columns: 40px; gap: 0; border-radius: 16px; }
 .lie-w.mini .lie-txt { display: none; }
