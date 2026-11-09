@@ -285,16 +285,16 @@ export class Golfer {
       const Yv = new THREE.Vector3(0, 1, 0);
       const ballJ = p.toeR.clone();
       const v = p.ankleR.clone().sub(p.toeR), up = Yv.clone();
-      const yaw = 1.5 * smooth(0.6, 1, heel);              // + about Y swings the heel toward -X (away from the target), late;
+      const yaw = 1.5 * smooth(0.45, 1, heel);              // + about Y swings the heel toward -X (away from the target), late;
                                                           // by the finish the toe points nearly at the target
       v.applyAxisAngle(Yv, yaw); up.applyAxisAngle(Yv, yaw);
       this.trailToeFlat.applyAxisAngle(Yv, yaw);
       // inside-edge roll early on (the top of the foot tips toward the lead foot), gone by the finish
-      const roll = 0.2 * smooth(0, 0.35, heel) * (1 - smooth(0.55, 0.95, heel));
+      const roll = 0.26 * smooth(0, 0.35, heel) * (1 - smooth(0.7, 1, heel));
       up.applyAxisAngle(this.trailToeFlat, -roll);
       const lat = new THREE.Vector3().crossVectors(Yv, v).normalize();
       // heel ~1 cm up at impact, 5-6 cm at the release, sole near vertical in a full finish
-      const lift = 1.35 * smooth(0.25, 1, heel);
+      const lift = 1.35 * smooth(0.25, 1.08, heel);
       const sgn = v.clone().applyAxisAngle(lat, 0.3).y > v.y ? 1 : -1;
       v.applyAxisAngle(lat, sgn * lift); up.applyAxisAngle(lat, sgn * lift);
       p.ankleR.copy(ballJ).add(v);
