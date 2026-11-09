@@ -271,7 +271,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     na.needsUpdate = true;
   };
   weldNormals(shirtMesh);
-  const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.82, sheen: 0.3, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.6), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.85, sheen: 0.15, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.8), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   applyFabric(pantsMat, 'chino', fu);
   const pantsMesh = add('pants', pantsMat); weldNormals(pantsMesh);
   const glove = new THREE.MeshPhysicalMaterial({ color: O.glove, roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color('#ffffff'), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
@@ -589,9 +589,9 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       parts.push(new THREE.Mesh(g, mat({ color: '#673722' }))); }
     // buckle: a square brushed-silver frame with a single prong
     { const { p: bp, n: bn } = at(0); const fr = new THREE.Matrix4().compose(bp.clone().addScaledVector(bn, 0.0055), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), bn), new THREE.Vector3(1, 1, 1));
-      const bw = 0.046, bh = 0.044, t = 0.0045, silver = mat({ color: '#c3c6ca' });
+      const bw = 0.046, bh = 0.044, t = 0.0055, silver = mat({ color: '#cfd2d6' });
       for (const [x, y, w, h] of [[0, bh / 2 - t / 2, bw, t], [0, -bh / 2 + t / 2, bw, t], [-bw / 2 + t / 2, 0, t, bh], [bw / 2 - t / 2, 0, t, bh], [-0.004, 0, bw * 0.55, 0.0025]] as number[][]) {
-        const g = new THREE.BoxGeometry(w, h, 0.004); g.translate(x, y, 0); g.applyMatrix4(fr); parts.push(new THREE.Mesh(g, silver));
+        const g = new THREE.BoxGeometry(w, h, 0.006); g.translate(x, y, 0.001); g.applyMatrix4(fr); parts.push(new THREE.Mesh(g, silver));
       } }
     // belt loops: khaki strips over the belt
     const khaki = mat({ color: O.pants });
@@ -600,7 +600,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const { p: lp, n: ln } = at(a), pos: number[] = [], idx: number[] = [];
       const prof: [number, number][] = [[-H / 2 - 0.008, 0.0005], [-H / 2 - 0.001, 0.0045], [H / 2 + 0.001, 0.0045], [H / 2 + 0.006, 0.0005]];
       const tang = new THREE.Vector3(0, 1, 0).cross(ln).normalize();
-      for (const [y, o] of prof) for (const s2 of [-1, 1]) { const q = lp.clone().addScaledVector(ln, o).addScaledVector(tang, s2 * 0.0055); pos.push(q.x, q.y + y, q.z); }
+      for (const [y, o] of prof) for (const s2 of [-1, 1]) { const q = lp.clone().addScaledVector(ln, o).addScaledVector(tang, s2 * 0.006); pos.push(q.x, q.y + y, q.z); }
       for (let k = 0; k < prof.length - 1; k++) { const b = k * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
       parts.push(new THREE.Mesh(g, khaki));
@@ -613,7 +613,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
     const baked = bakeAtlas(parts, 2048);
     baked.texture.anisotropy = 8;
-    const beltMesh = skinned(baked.geometry, new THREE.MeshPhysicalMaterial({ map: baked.texture, bumpMap: baked.texture, bumpScale: 0.4, roughness: 0.5, clearcoat: 0.25, clearcoatRoughness: 0.4, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    const beltMesh = skinned(baked.geometry, new THREE.MeshPhysicalMaterial({ map: baked.texture, bumpMap: baked.texture, bumpScale: 0.25, roughness: 0.45, clearcoat: 0.45, clearcoatRoughness: 0.3, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
     beltMesh.name = 'belt'; beltMesh.castShadow = false;
     parts.forEach(m => m.geometry.dispose());
   }

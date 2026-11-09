@@ -7,8 +7,8 @@
   "muscle": 0.66,
   "weight": 0.62,
   "bodyWeight": 0.68,
-  "height": 0.85,
-  "proportions": 0.55
+  "height": 0.5,
+  "proportions": 0.5
  },
  "details": {
   "hip/hip-scale-horiz-incr": 0.35,
@@ -26,6 +26,7 @@
   "torso/measure-bust-circ-incr": 0.15,
   "stomach/stomach-pregnant-decr": 1.0,
   "stomach/stomach-tone-incr": 0.35,
+  "legs/upperlegs-height-decr": 0.5,
   "hands/l-hand-fingers-length-incr": 0.3,
   "hands/r-hand-fingers-length-incr": 0.3,
   "chin/chin-prominent-incr": 0.3,
