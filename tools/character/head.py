@@ -649,7 +649,7 @@ if os.path.exists(base_obj):
     for name, parts in EXPR.items():
         d = sum(w * tgt(k) for k, w in parts.items()) * kunit
         dv = (d[headv][iq] * wq[..., None]).sum(1) * reach[:, None]
-        if name in ('grimace', 'jawOpen', 'smile'): dv *= (1 - teeth_m)[:, None]   # the painted teeth stay rigid; only the lips move
+        if A.rest == 'grin' and name in ('grimace', 'jawOpen', 'smile'): dv *= (1 - teeth_m)[:, None]   # painted teeth stay rigid (only with the open-grin texture)
         morph_d[name] = dv
         print(f'  expression {name}: {int((np.linalg.norm(dv, axis=1) > 2e-4).sum())} verts move, max {np.linalg.norm(dv, axis=1).max() * 1000:.1f} mm')
 else:
