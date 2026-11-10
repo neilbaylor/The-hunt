@@ -31,9 +31,10 @@ export class AimPreview {
           float p = exp(-pow((fract(vS - t * 0.35) - 0.5) * 9.0, 2.0)) * 0.45;
           gl_FragColor = vec4(mix(vec3(0.72, 0.93, 1.0), vec3(1.0), p), (a + p * a) * op);
         }`,
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     });
-    this.mesh = new THREE.Mesh(this.geo, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = 6; this.mesh.visible = false;
+    // drawn before the other transparent things (hair cards, visor) so the golfer always hides it
+    this.mesh = new THREE.Mesh(this.geo, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = -5; this.mesh.visible = false;
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 48), new THREE.MeshBasicMaterial({ color: '#cdf2ff', transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
     this.ring.rotation.x = -Math.PI / 2; this.ring.visible = false; this.ring.renderOrder = 6;
     scene.add(this.mesh, this.ring);
@@ -61,7 +62,8 @@ export class AimPreview {
       const p = this.pts[i];
       tg.subVectors(this.pts[Math.min(n - 1, i + 1)], this.pts[Math.max(0, i - 1)]).normalize();
       v.subVectors(p, cp); const d = v.length(); v.multiplyScalar(1 / d);
-      sd.crossVectors(tg, v).normalize().multiplyScalar(Math.max(0.012, d * 0.0021));   // ~2-3 px wide at any distance
+      const lift = Math.min(1, Math.max(0, (p.y - this.pts[0].y) / 18));   // a touch bolder as it climbs, so it reads in the sky
+      sd.crossVectors(tg, v).normalize().multiplyScalar(Math.max(0.012, d * 0.0021) * (1 + 0.9 * lift));
       this.pos.set([p.x + sd.x, p.y + sd.y, p.z + sd.z, p.x - sd.x, p.y - sd.y, p.z - sd.z], i * 6);
       this.along[i * 2] = this.along[i * 2 + 1] = acc[i] / Math.max(1e-3, total);
     }
@@ -72,7 +74,9 @@ export class AimPreview {
     this.ring.scale.setScalar(Math.max(0.8, dl * 0.018));
     // the yardage tag above the landing spot
     const q = L.clone().add(new THREE.Vector3(0, 1.2 + dl * 0.012, 0)).project(cam), r = canvas.getBoundingClientRect();
-    if (q.z > 1) { this.tag.hidden = true; return; }
-    this.tag.style.transform = `translate(${(r.left + (q.x * 0.5 + 0.5) * r.width).toFixed(1)}px, ${(r.top + (-q.y * 0.5 + 0.5) * r.height).toFixed(1)}px) translate(-50%, -100%)`;
+    const sy = r.top + (-q.y * 0.5 + 0.5) * r.height;
+    // only where the landing is actually in view, below the top HUD (never under the big distance number)
+    if (q.z > 1 || sy < 230 || Math.abs(q.x) > 0.95) { this.tag.hidden = true; return; }
+    this.tag.style.transform = `translate(${(r.left + (q.x * 0.5 + 0.5) * r.width).toFixed(1)}px, ${sy.toFixed(1)}px) translate(-50%, -100%)`;
   }
 }

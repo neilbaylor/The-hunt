@@ -298,8 +298,8 @@ function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
     // phone held upright: from behind, down the line, with the golfer near the centre of the frame (camera between
     // the ball and his hips, looking straight down the target line) and pulled back so the club at the top and the
     // finish fit. side: +1 for a left-hander (he stands on +x of the ball), -1 for a right-hander
-    out.set(0.48 * side, 1.95, 4.3);
-    look.set(0.48 * side, 0.5, -6);
+    out.set(0.62 * side, 2.1, 4.3);   // a touch to his side and up, so the flight preview reads as an arc going away
+    look.set(0.42 * side, 0.5, -6);
   } else {
     out.set(-0.85 * side, 1.62, 5.6);
     look.set(0.45 * side, 0.92, -22);
