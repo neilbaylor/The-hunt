@@ -247,9 +247,9 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g2.setIndex(idx); g2.computeVertexNormals();
       return new THREE.Mesh(g2, teethMat);
     };
-    rig.add(arc(U.y + 0.001, 0.0078, 0.007, 0.72));                         // upper teeth, behind the upper lip
+    rig.add(arc(U.y + 0.001, 0.0078, 0.0105, 0.7));                         // upper teeth, recessed behind the upper lip (and its inner strip)
     const lower = new THREE.Group();
-    lower.add(arc(Lo.y - 0.0008, 0.0068, 0.0085, 0.62));                    // lower teeth, a little further back
+    lower.add(arc(Lo.y - 0.0008, 0.0068, 0.012, 0.6));                      // lower teeth, a little further back
     const tongue = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshStandardMaterial({ color: '#a85a55', roughness: 0.5 }));
     tongue.scale.set(w * 0.32, 0.006, 0.02); tongue.position.set(c.x, Lo.y - 0.004, c.z - 0.02); lower.add(tongue);
     rig.add(lower);
@@ -345,8 +345,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     const tgt: Partial<Record<MK, number>> = {};
     if (speech.length && now < speechEnd && now >= speechT0) {
       const st = now - speechT0; let k = 0; while (k < speech.length - 1 && speech[k + 1].t <= st) k++;
-      // (the lip split is still coarse: talking keeps the jaw drop small so the teeth don't show through a ragged gap)
-      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.16, w_ * talkK * 0.25) : Math.min(1.2, w_ * talkK);
+      // the lips part along a smooth cut (head.py): the jaw drops for real while talking (jawOpen 1 ≈ 14 mm at the lower lip)
+      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.55, w_ * talkK * 0.5) : Math.min(1.2, w_ * talkK);
       nodV += ((speech[k].v === 'A' || speech[k].v === 'O' ? 0.035 : 0) - nodV) * (1 - Math.exp(-dt * 6));
     } else nodV += (0 - nodV) * (1 - Math.exp(-dt * 4));
     {
@@ -376,7 +376,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     face.teeth.value = Math.min(1, 0.4 + face.mouthOpen.value);
     // (the eyelid geometry from the transferred blink closes one eye more than the other: the drawn lids alone blink, evenly)
     if (dict.blink !== undefined) infl[dict.blink] = 0;
-    if (mouthParts) { const jo = expr.jawOpen + vis.jawOpen; mouthParts.lower.parent!.visible = jo > 0.22 || expr.smile > 0.85; }
+    if (mouthParts) { const jo = expr.jawOpen + vis.jawOpen; mouthParts.lower.parent!.visible = jo > 0.02 || expr.smile > 0.85 || vis.wide > 0.05; }
     if (mouthParts) mouthParts.lower.position.copy(mouthParts.lowerBase).addScaledVector(mouthParts.jaw, Math.max(0, expr.jawOpen + vis.jawOpen) + 0.25 * vis.pucker);
   };
   const ctl: FaceController = {

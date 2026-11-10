@@ -300,8 +300,8 @@ function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
     // phone held upright: from behind, down the line, with the golfer near the centre of the frame (camera between
     // the ball and his hips, looking straight down the target line) and pulled back so the club at the top and the
     // finish fit. side: +1 for a left-hander (he stands on +x of the ball), -1 for a right-hander
-    out.set(0.62 * side, 2.1, 4.3);   // a touch to his side and up, so the flight preview reads as an arc going away
-    look.set(0.42 * side, 0.5, -6);
+    out.set(0.95 * side, 2.4, 4.4);   // off to his side and up, so the flight preview reads as an arc curving away
+    look.set(0.5 * side, 0.55, -6);
   } else {
     out.set(-0.85 * side, 1.62, 5.6);
     look.set(0.45 * side, 0.92, -22);
@@ -413,8 +413,11 @@ function updateWind(now: number) {
 
 // swing view ⇄ aim view camera flight
 const CAM_FLY_S = 0.75;
-const camFly = { aim: false, t0: -1e9, pos: new THREE.Vector3(), look: new THREE.Vector3() };
+const camFly = { aim: false, t0: -1e9, pos: new THREE.Vector3(), look: new THREE.Vector3(), shift: 0, done: true };
 let camFlying = false;
+/** wall-clock seconds since the last camera update (not the 50 ms-clamped frame dt): the swing/aim camera settles in
+ *  real time even when the frame rate drops to a few fps, instead of creeping a fixed fraction per frame */
+let camLastNow = -1, camFollow = false, lensFly = false;
 /** tap during the flight: fast-forward (sim and cameras together) to just before the ball lands — a quick flight, not a jump */
 const skip = { on: false };
 function skipToLanding() { if (state === 'flight' && ball.phase === 'flight') skip.on = true; }
@@ -430,6 +433,7 @@ function skipToLandingNow() {
 }
 
 function updateCamera(dt: number, now: number) {
+  const rdt = camLastNow < 0 ? dt : clamp((now - camLastNow) / 1000, 0, 1); camLastNow = now;
   const k = 1 - Math.pow(0.0025, dt);
   if (camMode === 'cine') {
     golfer.body.bones[5].getWorldPosition(shotCtx.head);
@@ -465,9 +469,13 @@ function updateCamera(dt: number, now: number) {
   } else if (camMode === 'address') {
     if (aimCtl.active) aimCtl.cameraWant(want, wantLook); else addressCam(want, wantLook);
     // swing view ⇄ aim view: a timed camera flight through the world (ease in-out), not an exponential snap
-    if (aimCtl.active !== camFly.aim) { camFly.aim = aimCtl.active; camFly.t0 = now; camFly.pos.copy(camPos); camFly.look.copy(camLook); }
+    // Time-based end to end: the flight's progress is wall-clock, the last frame of it lands exactly on the target
+    // (however few frames there were), and after it the camera follows its target with a real-time ease.
+    if (aimCtl.active !== camFly.aim) { camFly.aim = aimCtl.active; camFly.t0 = now; camFly.pos.copy(camPos); camFly.look.copy(camLook); camFly.shift = lensShift; camFly.done = false; }
     const fk = (now - camFly.t0) / 1000 / CAM_FLY_S;
-    if (fk < 1) { const e = fk * fk * (3 - 2 * fk); want.lerpVectors(camFly.pos, want, e); wantLook.lerpVectors(camFly.look, wantLook, e); camFlying = true; }
+    if (fk < 1) { const e = fk * fk * (3 - 2 * fk); want.lerpVectors(camFly.pos, want, e); wantLook.lerpVectors(camFly.look, wantLook, e); camFlying = lensFly = true; }
+    else if (!camFly.done) { camFly.done = true; camFlying = lensFly = true; }   // the flight's last frame: snap onto the target
+    else camFollow = true;
   } else if (camMode === 'chase' || camMode === 'landing' || camMode === 'rest') {
     const b = ball.pos;
     const vh = new THREE.Vector3(ball.vel.x, 0, ball.vel.z);
@@ -505,9 +513,13 @@ function updateCamera(dt: number, now: number) {
     }
   }
   const wantShift = portrait() && !aimCtl.active && (camMode === 'address' || camMode === 'intro' || camMode === 'introFly' || (camMode === 'chase' && (now - chaseT0) < 550)) ? (camMode === 'intro' ? 0.0 : camMode === 'introFly' ? addressShift() * Math.min(1, (now - introFly.t0) / 1000 / INTRO_FLY_S) : addressShift()) : 0;
-  if (Math.abs(wantShift - lensShift) > 0.002) { lensShift += (wantShift - lensShift) * (1 - Math.pow(0.02, dt)); fitCamera(); }
-  const kk = camFlying ? 1 : camMode === 'landing' || camMode === 'rest' ? 1 - Math.pow(0.02, dt) : k;
-  camFlying = false;
+  if (lensFly) {
+    // the lens shift rides the swing ⇄ aim flight (same clock, same ease), so the golfer lands framed
+    const fk = clamp((now - camFly.t0) / 1000 / CAM_FLY_S, 0, 1), e = fk * fk * (3 - 2 * fk);
+    lensShift = camFly.shift + (wantShift - camFly.shift) * e; fitCamera();
+  } else if (Math.abs(wantShift - lensShift) > 0.002) { lensShift += (wantShift - lensShift) * (1 - Math.pow(0.02, camMode === 'address' ? rdt : dt)); fitCamera(); }
+  const kk = camFlying ? 1 : camMode === 'landing' || camMode === 'rest' ? 1 - Math.pow(0.02, dt) : camFollow ? 1 - Math.pow(0.0025, rdt) : k;
+  camFlying = false; camFollow = false; lensFly = false;
   camPos.lerp(want, camMode === 'chase' ? 1 - Math.pow(0.04, dt) : kk);
   camLook.lerp(wantLook, camMode === 'landing' ? 1 - Math.pow(0.0005, dt) : kk);
   camera.position.copy(camPos);

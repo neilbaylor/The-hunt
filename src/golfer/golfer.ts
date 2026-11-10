@@ -97,6 +97,9 @@ export const PHI_FINISH = -3.2; // hands angle at a full finish
 const ROLL_TOP = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('roll') ?? 1.2 : 1.2); const ROLL_SIGN = -1; // forearm rotation (radians of club roll at the top)
 const ADDRESS_TOE_UP = { driver: +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('toeup') ?? 10 : 10), wood: 6, hybrid: 3 };
 const HA_DRV = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('ha') ?? 0.06 : 0.06);
+const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search) : null, _fv = (n: string, d: number[]) => _fq?.get(n)?.split(',').map(Number) ?? d;
+const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.5, 0.55]), pl: _fv('fpl', [0.45, -0.35, 0.55]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
+const GRIP_B = _fv('gb', [0.65, 0.32]);
 const LEAN = 0.075;             // shaft lean at impact, radians (hands ~6 cm ahead of the ball)
 
 export class Golfer {
@@ -266,7 +269,7 @@ export class Golfer {
   /** one hand's frame on the grip, in club space: its long axis, palm normal and wrist position */
   private gripFrame(side: 'L' | 'R', grip: THREE.Vector3) {
         const k = this.k, sd = this.club.shaftDir.clone().normalize();
-        const beta = side === 'L' ? 0.65 : 0.32, alpha = side === 'L' ? 0.8 : 0.85;   // strong grip: lead ~37° on top (2.5-3 knuckles), trail ~18° under
+        const beta = side === 'L' ? GRIP_B[0] : GRIP_B[1], alpha = side === 'L' ? 0.8 : 0.85;   // strong grip: lead ~37° on top (2.5-3 knuckles), trail ~18° under
         const palm = (side === 'L' ? new THREE.Vector3(-Math.cos(beta), 0, Math.sin(beta)) : new THREE.Vector3(Math.cos(beta), 0, -Math.sin(beta)));
         palm.addScaledVector(sd, -palm.dot(sd)).normalize();
         const under = new THREE.Vector3().crossVectors(palm, sd).normalize();
@@ -560,11 +563,11 @@ export class Golfer {
       // full finish target, built in the chest's frame: hands up past the lead shoulder, shaft wrapped behind the neck
       const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];
       const L = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(qChest);
-      const gripFin = neck.clone().add(L(0.07, 0.15, 0.0));   // hands just above and behind the lead ear, face clear under the arms (Rory)
+      const gripFin = neck.clone().add(L(...FIN.g as [number, number, number]));   // hands just above and behind the lead ear, face clear under the arms (Rory)
       // the club wraps round: the shaft runs behind the neck about parallel to the shoulder line, the head out past the
       // trail shoulder, angled a little down and back (Rory)
       const shLine = this.rig.P[BONE.upperR].clone().sub(this.rig.P[BONE.upperL]).setY(0).normalize();
-      const shaftFin = shLine.add(L(0, 0, -0.6)).add(new THREE.Vector3(0, -0.28, 0)).normalize();   // grip → club head, behind the neck
+      const shaftFin = shLine.add(L(0, 0, -FIN.s[0])).add(new THREE.Vector3(0, -FIN.s[1], 0)).normalize();   // grip → club head, behind the neck
       const faceFin = L(0, 0.35, -0.9).normalize();                  // where the club face points
       // club local frame: shaft runs hosel → butt along shaftDir, face looks along +X
       const mLocal = new THREE.Matrix4(), mFin = new THREE.Matrix4();
@@ -583,8 +586,8 @@ export class Golfer {
       p.wristL.copy(this.hands.wristLead.clone().applyQuaternion(qB).add(g.position));
       p.wristR.copy(this.hands.wristTrail.clone().applyQuaternion(qB).add(g.position));
       // elbows: lead elbow folds down toward the target, trail elbow points down in front of the chest
-      p.poleL.lerp(neck.clone().add(L(-0.05, -0.9, 0.5)), finW);   // lead elbow folded in front of the chin, its tip pointing down (Rory)
-      p.poleR.lerp(neck.clone().add(L(-0.05, -0.4, 0.8)), finW);   // trail arm across the face, elbow forward
+      p.poleL.lerp(neck.clone().add(L(...FIN.pl as [number, number, number])), finW);   // lead elbow folded in front of the chin, its tip pointing down (Rory)
+      p.poleR.lerp(neck.clone().add(L(...FIN.pr as [number, number, number])), finW);   // trail arm across the face, elbow forward
       this.rig.apply(p);
     }
     for (let pass = 0; pass < 2; pass++) {

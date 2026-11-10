@@ -47,6 +47,7 @@ ap.add_argument('--ear-back', type=float, default=0.3, help='ears swung back abo
 ap.add_argument('--ear-out', type=float, default=0.7, help='ear protrusion scale')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
+ap.add_argument('--nose-mirror', default='+', choices=['+', '-', 'none'], help="the side of the nose base (pre-mirror x) whose dark blotches are lifted to match the other side")
 ap.add_argument('--debug', default=None, help='directory for debug images')
 A = ap.parse_args()
 photos = A.photo or [os.path.join(ROOT, 'src/assets/neil/portrait.jpg')]
@@ -684,63 +685,122 @@ if A.rest == 'closed' and 'smile' in morph_d and A.rest_smile:
 # ── the lips part: split the mesh along the lip seam (a mesh path from corner to corner hugging the seam), so the
 #    lower lip separates as the jaw opens and the mouth's inside (cavity, teeth, tongue: built in genhead.ts) shows ──
 mouth_rig = None
+STRIP_F0 = None
+LIPIN = np.zeros(len(LV))            # inner-lip strips: 0 = face surface, >0 = depth into the mouth (0..1)
 if 'jawOpen' in morph_d:
-    import heapq
-    seam_pts = (lm_f[[78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308]] + lm_f[[78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308]]) / 2
-    seg_d = lambda P: np.min(np.stack([np.linalg.norm(np.cross(P - a, b - a), axis=1) / np.linalg.norm(b - a) + np.maximum(0, -((P - a) @ (b - a)) / np.linalg.norm(b - a)) + np.maximum(0, ((P - b) @ (b - a)) / np.linalg.norm(b - a)) for a, b in zip(seam_pts[:-1], seam_pts[1:])]), 0)
-    vd = seg_d(LV)
-    nbr2 = [set() for _ in range(len(LV))]
-    for a_, b_, c_ in LF: nbr2[a_] |= {b_, c_}; nbr2[b_] |= {a_, c_}; nbr2[c_] |= {a_, b_}
-    s0 = int(np.argmin(np.linalg.norm(LV - lm_f[78], axis=1))); s1 = int(np.argmin(np.linalg.norm(LV - lm_f[308], axis=1)))
-    dist = {s0: 0.0}; prev = {}; pq = [(0.0, s0)]
-    while pq:
-        d0, u = heapq.heappop(pq)
-        if u == s1: break
-        if d0 > dist.get(u, 1e9): continue
-        for v in nbr2[u]:
-            if vd[v] > 0.006: continue
-            nd = d0 + np.linalg.norm(LV[v] - LV[u]) + 8 * vd[v]
-            if nd < dist.get(v, 1e9): dist[v] = nd; prev[v] = u; heapq.heappush(pq, (nd, v))
-    if s1 in prev:
-        path = [s1]
-        while path[-1] != s0: path.append(prev[path[-1]])
-        path = path[::-1]
-        inner_v = path[1:-1]                                         # the corners stay joined
-        # which side of the seam a face lies on: its centre against the seam line at that x (y up)
-        sx_, sy_ = seam_pts[:, 0], seam_pts[:, 1]; o_ = np.argsort(sx_)
-        seam_y_at = lambda x: np.interp(x, sx_[o_], sy_[o_])
-        on = set(inner_v); newid = {}
-        LVl, LFl = list(LV), LF.copy()
-        for fi, f in enumerate(LF):
-            if not (set(f) & on): continue
-            c3 = LV[f].mean(0)
-            if c3[1] < seam_y_at(c3[0]):                             # a lower-lip face: it takes the copies
-                for k_, v in enumerate(f):
-                    if v in on:
-                        if v not in newid: newid[v] = len(LVl); LVl.append(LV[v].copy())
-                        LFl[fi, k_] = newid[v]
-        LV2 = np.array(LVl); nnew = len(LV2) - len(LV)
-        # morphs: an upper copy moves like the upper lip next to it, a lower copy like the lower lip
-        upper_n = {v: [n for n in nbr2[v] if n not in on and LV[n][1] >= seam_y_at(LV[n][0])] for v in on}
-        lower_n = {v: [n for n in nbr2[v] if n not in on and LV[n][1] < seam_y_at(LV[n][0])] for v in on}
-        for k_, dv in list(morph_d.items()):
-            d2 = np.r_[dv, np.zeros((nnew, 3))]
-            for v, nv in newid.items():
-                d2[nv] = dv[v]
-                if k_ not in ('jawOpen', 'wide', 'pucker', 'grimace'): continue   # the rest shapes (and the rest smile) keep the lips together
-                if upper_n[v]: d2[v] = dv[upper_n[v]].mean(0)
-                if lower_n[v]: d2[nv] = dv[lower_n[v]].mean(0)
-            morph_d[k_] = d2
-        wts = wts + [wts[v] for v in sorted(newid, key=lambda v: newid[v])]
-        LV, LF = LV2, LFl
-        jaw_lo = np.array([morph_d['jawOpen'][newid[v]] for v in newid]).mean(0)
-        jaw_chin = morph_d['jawOpen'][np.argsort(np.linalg.norm(LV - lm_f[152], axis=1))[:6]].mean(0)
-        mc_c = (lm_f[13] + lm_f[14]) / 2
-        mouth_rig = {'center': mc_c, 'left': lm_f[61], 'right': lm_f[291], 'upper': lm_f[13], 'lower': lm_f[14],
-                     'chin': lm_f[152], 'nose': lm_f[2], 'jawLip': jaw_lo, 'jawChin': jaw_chin}
-        print(f'  lips split along {len(inner_v)} seam verts; jaw opens the lower lip {np.linalg.norm(jaw_lo) * 1000:.1f} mm at jawOpen 1')
-    else:
-        print('  (no lip seam path found: lips stay joined)')
+    # ── the lips part along a smooth curve across the full mouth width (a symmetric even polynomial through the
+    #    landmark seam and its mirror, so the opening is centred). The lip region is subdivided twice first
+    #    (red-green, crack-free) so the cut runs through ~40 fresh vertices placed exactly on the curve; the lower lip
+    #    takes copies of them. Inner-lip strips run back from each cut edge, so an open mouth shows lip, not a hole. ──
+    UPIN, LOIN = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308], [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308]
+    seam_pts = (lm_f[UPIN] + lm_f[LOIN]) / 2
+    cL_, cR_ = lm_f[78], lm_f[308]
+    mcx = float((cL_[0] + cR_[0]) / 2); half = float(abs(cR_[0] - cL_[0]) / 2)
+    u_ = (seam_pts[:, 0] - mcx) / half; uu_ = np.r_[u_, -u_]; yy_ = np.r_[seam_pts[:, 1], seam_pts[:, 1]]
+    co_ = np.linalg.lstsq(np.c_[np.ones_like(uu_), uu_ ** 2, uu_ ** 4], yy_, rcond=None)[0]
+    def seam_y_at(x):
+        u = np.clip((np.asarray(x) - mcx) / half, -1.3, 1.3); return co_[0] + co_[1] * u ** 2 + co_[2] * u ** 4
+    zlip = float(max(lm_f[13, 2], lm_f[14, 2]))
+    print(f'  lip curve: centre x {mcx * 1000:.1f} mm, half-width {half * 1000:.1f} mm, sag {co_[1] * 1000:+.2f}/{co_[2] * 1000:+.2f} mm')
+    def split_faces(LF_, emid):
+        # red-green: each face re-triangulated by how many of its edges carry a new vertex (emid[(a, b)] -> id)
+        out = []
+        for f in LF_:
+            f = [int(f[0]), int(f[1]), int(f[2])]
+            m = [emid.get((min(f[i], f[(i + 1) % 3]), max(f[i], f[(i + 1) % 3]))) for i in range(3)]
+            n = sum(x is not None for x in m)
+            if n == 0: out.append(f); continue
+            if n == 3:
+                out += [[f[0], m[0], m[2]], [f[1], m[1], m[0]], [f[2], m[2], m[1]], [m[0], m[1], m[2]]]; continue
+            if n == 1:
+                k = [i for i in range(3) if m[i] is not None][0]
+                w = [f[k], f[(k + 1) % 3], f[(k + 2) % 3]]; out += [[w[0], m[k], w[2]], [m[k], w[1], w[2]]]; continue
+            k = [i for i in range(3) if m[i] is None][0]; r = (k + 1) % 3      # the unsplit edge goes to w[2]→w[0]
+            w = [f[r], f[(r + 1) % 3], f[(r + 2) % 3]]; m01, m12 = m[r], m[(r + 1) % 3]
+            out += [[m01, w[1], m12], [w[0], m01, m12], [w[0], m12, w[2]]]
+        return np.array(out, np.int64)
+    def add_verts(P, pa, pb, t):
+        # new vertices on edges (pa→pb at t): positions given, weights from the nearer end, morphs interpolated
+        global LV, wts
+        n0 = len(LV); LV = np.r_[LV, P]
+        wts = wts + [wts[a if tt_ < 0.5 else b] for a, b, tt_ in zip(pa, pb, t)]
+        for k_ in morph_d: morph_d[k_] = np.r_[morph_d[k_], morph_d[k_][pa] * (1 - t)[:, None] + morph_d[k_][pb] * t[:, None]]
+        return np.arange(n0, n0 + len(P))
+    hi_q = trimesh.proximity.ProximityQuery(hm)
+    for rnd in range(2):
+        reg = (np.abs(LV[:, 0] - mcx) < half + 0.007) & (np.abs(LV[:, 1] - seam_y_at(LV[:, 0])) < 0.009 - 0.002 * rnd) & (LV[:, 2] > zlip - 0.016)
+        fsel = reg[LF].all(1)
+        keys = np.unique(np.sort(np.r_[LF[fsel][:, [0, 1]], LF[fsel][:, [1, 2]], LF[fsel][:, [2, 0]]], 1), axis=0)
+        P = (LV[keys[:, 0]] + LV[keys[:, 1]]) / 2
+        # onto the hi-res surface where it lies close (never into the generator's teeth behind the lips)
+        cpt, cd, _ = hi_q.on_surface(P); ok = cd < 0.0006; P[ok] = cpt[ok]
+        ids = add_verts(P, keys[:, 0], keys[:, 1], np.full(len(keys), 0.5))
+        LF = split_faces(LF, {(int(a), int(b)): int(i) for (a, b), i in zip(keys, ids)})
+        print(f'  lip region subdivided: {int(fsel.sum())} faces → +{len(keys)} verts')
+    # the cut: where the curve crosses an edge of the front lip surface, within the corners
+    fv = LV[:, 1] - seam_y_at(LV[:, 0]); fv[np.abs(fv) < 1e-7] = 1e-7
+    front = (LV[:, 2] > zlip - 0.010) & (np.abs(LV[:, 0] - mcx) < half + 0.004)
+    E_ = np.unique(np.sort(np.r_[LF[:, [0, 1]], LF[:, [1, 2]], LF[:, [2, 0]]], 1), axis=0)
+    E_ = E_[front[E_].all(1) & (np.sign(fv[E_[:, 0]]) != np.sign(fv[E_[:, 1]]))]
+    tq = fv[E_[:, 0]] / (fv[E_[:, 0]] - fv[E_[:, 1]])
+    Pc = LV[E_[:, 0]] + (LV[E_[:, 1]] - LV[E_[:, 0]]) * tq[:, None]
+    inside = np.abs(Pc[:, 0] - mcx) < half * 0.99
+    E_, tq, Pc = E_[inside], tq[inside], Pc[inside]
+    Pc[:, 1] = seam_y_at(Pc[:, 0])                                   # exactly on the curve
+    up_end = np.where(fv[E_[:, 0]] > 0, E_[:, 0], E_[:, 1]); lo_end = np.where(fv[E_[:, 0]] > 0, E_[:, 1], E_[:, 0])
+    cut = add_verts(Pc, E_[:, 0], E_[:, 1], tq)
+    LF = split_faces(LF, {(int(a), int(b)): int(i) for (a, b), i in zip(E_, cut)})
+    # the chain from corner to corner (by x); its two ends stay joined (the mouth corners)
+    o_ = np.argsort(LV[cut, 0]); cut, up_end, lo_end = cut[o_], up_end[o_], lo_end[o_]
+    inner_v = cut[1:-1]
+    fc = LV[LF].mean(1); below = fc[:, 1] < seam_y_at(fc[:, 0])
+    on = set(int(v) for v in inner_v); newid = {}
+    n_before = len(LV)
+    dup_src = []
+    for fi in np.nonzero(below)[0]:
+        for k_ in range(3):
+            v = int(LF[fi, k_])
+            if v in on:
+                if v not in newid: newid[v] = n_before + len(dup_src); dup_src.append(v)
+                LF[fi, k_] = newid[v]
+    LV = np.r_[LV, LV[dup_src]]; wts = wts + [wts[v] for v in dup_src]
+    ue = {int(c): int(u) for c, u in zip(cut, up_end)}; le = {int(c): int(l) for c, l in zip(cut, lo_end)}
+    for k_ in list(morph_d):
+        d2 = np.r_[morph_d[k_], morph_d[k_][dup_src]]
+        if k_ in ('jawOpen', 'wide', 'pucker', 'grimace'):      # the rest shapes (and the rest smile) keep the lips together
+            for v in dup_src:
+                d2[v] = morph_d[k_][ue[v]]; d2[newid[v]] = morph_d[k_][le[v]]
+        morph_d[k_] = d2
+    LIPIN = np.zeros(len(LV))
+    # inner-lip strips: two rows back into the mouth from each lip edge (upper rises toward the gum, lower drops)
+    chU = [int(cut[0])] + [int(v) for v in inner_v] + [int(cut[-1])]
+    chL = [int(cut[0])] + [newid[int(v)] for v in inner_v] + [int(cut[-1])]
+    sx = (LV[chU, 0] - mcx) / half; taper = np.clip(1 - sx ** 2, 0, 1) ** 0.5
+    newF = []
+    for chain, dy, sgn in ((chU, 0.0022, 1), (chL, -0.0022, -1)):
+        prev = chain
+        for row, (back, d_y) in enumerate(((0.0035, dy), (0.0075, dy * 1.8))):
+            P = LV[chain] + np.c_[np.zeros(len(chain)), d_y * taper, -back * taper]
+            ids = np.arange(len(LV), len(LV) + len(chain))
+            LV = np.r_[LV, P]; wts = wts + [wts[v] for v in chain]
+            for k_ in morph_d: morph_d[k_] = np.r_[morph_d[k_], morph_d[k_][chain]]
+            LIPIN = np.r_[LIPIN, np.full(len(chain), 0.5 + 0.5 * row)]
+            for i in range(len(chain) - 1):
+                a, b, c, d = prev[i], prev[i + 1], ids[i], ids[i + 1]
+                for tri in ([a, c, b], [b, c, d]):
+                    n_ = np.cross(LV[tri[1]] - LV[tri[0]], LV[tri[2]] - LV[tri[0]])
+                    # facing out of the opening: the upper strip looks down and forward, the lower up and forward
+                    if n_ @ np.array([0, -sgn, 0.4]) < 0: tri = tri[::-1]
+                    newF.append(tri)
+            prev = ids
+    STRIP_F0 = len(LF); LF = np.r_[LF, np.array(newF, np.int64)]
+    # (degenerate triangles at the corners, where the strips taper to nothing, are harmless)
+    jaw_lo = np.array([morph_d['jawOpen'][newid[v]] for v in newid]).mean(0)
+    jaw_chin = morph_d['jawOpen'][np.argsort(np.linalg.norm(LV - lm_f[152], axis=1))[:6]].mean(0)
+    mc_c = (lm_f[13] + lm_f[14]) / 2
+    mouth_rig = {'center': np.array([mcx, seam_y_at(mcx), mc_c[2]]), 'left': lm_f[61], 'right': lm_f[291], 'upper': lm_f[13], 'lower': lm_f[14],
+                 'chin': lm_f[152], 'nose': lm_f[2], 'jawLip': jaw_lo, 'jawChin': jaw_chin}
+    print(f'  lips cut along a smooth curve: {len(cut)} verts ({len(inner_v)} split); jaw opens the lower lip {np.linalg.norm(jaw_lo) * 1000:.1f} mm at jawOpen 1; {len(newF)} inner-lip tris')
 # ───────────────────────── unwrap ─────────────────────────
 atlas = xatlas.Atlas(); atlas.add_mesh(LV.astype(np.float32), LF.astype(np.uint32))
 co = xatlas.ChartOptions(); co.max_cost = 2.0
@@ -1190,6 +1250,7 @@ nts[:, 2] = np.maximum(nts[:, 2], 0.25); nts /= np.linalg.norm(nts, axis=1, keep
 mouth_c = (lm_f[61] + lm_f[291]) / 2
 mfl = np.exp(-(((cp[:, 0] - mouth_c[0]) / 0.04) ** 2 + ((cp[:, 1] - mouth_c[1] - 0.008) / 0.025) ** 2)) * (cp[:, 2] > mouth_c[2] - 0.04)
 nts = nts * (1 - mfl[:, None]) + np.array([0, 0, 1.0]) * mfl[:, None]; nts /= np.linalg.norm(nts, axis=1, keepdims=True)
+if STRIP_F0 is not None: nts[tt >= STRIP_F0] = [0, 0, 1.0]             # the inner-lip strips: no photo relief
 nmap = np.zeros((T, T, 3), np.float32); nmap[..., 2] = 1.0
 nmap[ty, tx] = nts
 nimg = ((nmap * 0.5 + 0.5) * 255).astype(np.uint8)
@@ -1207,6 +1268,14 @@ out = out * ao[:, None]
 tex = np.zeros((T, T, 3), np.float32); have = np.zeros((T, T), np.uint8)
 tex[ty, tx] = out; have[ty, tx] = 255
 # dilate into the gutters so mips don't bleed black
+# first grow each chart's own colours outward a few texels (so bilinear/mip samples at a chart's edge, and sliver
+# triangles with no texel centre of their own, read their own chart, not a neighbour's hair), then fill the rest
+_hv = (have > 0).astype(np.float32); _tx = tex * _hv[..., None]
+for _ in range(10):
+    _cs = cv2.blur(_tx, (3, 3)); _cn = cv2.blur(_hv, (3, 3))
+    _new = (_hv == 0) & (_cn > 0)
+    _tx[_new] = _cs[_new] / _cn[_new][:, None]; _hv[_new] = 1
+tex = _tx; have = np.where(_hv > 0, 255, 0).astype(np.uint8)
 tex = cv2.inpaint(np.clip(tex, 0, 255).astype(np.uint8), 255 - have, 3, cv2.INPAINT_TELEA)
 # clean-up of the photo-built face: a light edge-preserving smoothing over the face, a stronger despeckle on the lips,
 # nose and brows (the selfies' compression noise and stray pixels read as artifacts up close)
@@ -1233,6 +1302,127 @@ w_brow = _near([70, 63, 105, 66, 107, 336, 296, 334, 293, 300, 46, 53, 52, 65, 5
 Mb = np.zeros((T, T), np.float32); Mb[ty, tx] = w_brow; Mb = cv2.GaussianBlur(Mb, (0, 0), 3)[..., None]
 soft = cv2.GaussianBlur(tex.astype(np.float32), (0, 0), 2.2) * 0.85 + np.array(skin_c, np.float32) * 0.15
 tex = np.clip(tex * (1 - 0.7 * Mb) + soft * 0.7 * Mb, 0, 255).astype(np.uint8)
+# the nose wings: the photos bake a dark blotch along each alar crease (it read as a second nostril on one side).
+# Lift texels darker than the wing's own skin to a soft, subtle crease; the nostril openings themselves stay dark.
+_texF = tex.astype(np.float32); _texL = _texF.mean(2)[ty, tx]
+# his nose base is drawn from the photos better on one side (the side away from the selfie light): on the other
+# side, a texel darker than its mirror image on the good side (same place on the face) is lifted to the mirror's
+# lightness, keeping its own hue. Exactly two nostrils, where the good side has its one; a soft alar crease kept.
+_cx = float(np.median(lm_f[[1, 2, 4, 5, 6, 168, 164, 0], 0]))
+_alaL, _alaR = lm_f[[129, 64, 48, 102, 98]].mean(0), lm_f[[358, 294, 278, 331, 327]].mean(0)
+_reg = lambda P, ac: np.clip(1 - (np.linalg.norm((P - ac) * [0.8, 1, 0.6], axis=1) - 0.012) / 0.006, 0, 1) * (P[:, 2] > lm_f[2, 2] - 0.035)
+_nb_y0, _nb_y1 = lm_f[2, 1] - 0.008, lm_f[2, 1] + 0.016
+_nb = lambda P: (P[:, 1] > _nb_y0) & (P[:, 1] < _nb_y1) & (P[:, 2] > lm_f[2, 2] - 0.035)
+_lumL = [np.median(_texL[_nb(cp) & (_reg(cp, ac) > 0.5)]) for ac in (_alaL, _alaR)]
+# the bad side: the one with more dark texels round its wing (relative to its own ring of skin)
+_dark = [float(((_texL < 0.55 * np.percentile(_texL[_nb(cp) & (_reg(cp, ac) > 0.5)], 75)) & _nb(cp) & (_reg(cp, ac) > 0.5)).sum()) for ac in (_alaL, _alaR)]
+_sgn = {'+': 1.0, '-': -1.0}.get(A.nose_mirror, 0.0); _bad = int(np.sign(_alaR[0] - _cx) == _sgn)
+print(f'  nose base: dark texels by side {_dark}, fixing side {_bad} (x {"+" if _sgn > 0 else "-"})')
+_good = np.nonzero(_nb(cp) & ((cp[:, 0] - _cx) * _sgn < 0) & (w_face > 0.1))[0]
+_sel = np.nonzero(_nb(cp) & ((cp[:, 0] - _cx) * _sgn > 0.0005))[0]
+_mir = cp[_sel].copy(); _mir[:, 0] = 2 * _cx - _mir[:, 0]
+_dm, _im = cKDTree(cp[_good]).query(_mir, k=6)
+_Lm = _texL[_good][_im].mean(1)
+_w = np.clip(((cp[_sel, 0] - _cx) * _sgn - 0.0005) / 0.002, 0, 1) * np.clip(1 - (_dm[:, 0] - 0.0015) / 0.002, 0, 1)
+_w *= np.clip(1 - (np.abs(cp[_sel, 1] - (_nb_y0 + _nb_y1) / 2) - 0.008) / 0.004, 0, 1)
+# lifted toward the mirror everywhere; inside the nostril zone (under the nose, round where the good side's nostril
+# lands) also darkened toward it, so this side gets its one nostril where the other side has its own
+_nosA, _nosB = lm_f[[79, 166, 60, 75, 20, 238]].mean(0), lm_f[[309, 392, 290, 305, 250, 458]].mean(0)
+_nosG = _nosA if (_nosA[0] - _cx) * _sgn < 0 else _nosB                  # the good side's nostril
+_nz = np.clip(1 - (np.linalg.norm((_mir - _nosG) * [1, 1.4, 0.8], axis=1) - 0.004) / 0.002, 0, 1)
+_gain = np.clip(_Lm * 0.95 / np.maximum(_texL[_sel], 1), 1, 4) * (1 - _nz) + np.clip(_Lm / np.maximum(_texL[_sel], 1), 0.3, 4) * _nz
+_ala_f = np.zeros(len(cp)); _ala_f[_sel] = (_gain - 1) * _w * (_sgn != 0)
+print(f'  nose base: {int(((_gain > 1.15) & (_w > 0.5)).sum())} texels lifted toward the mirrored side')
+Mn = np.zeros((T, T), np.float32); Mn[ty, tx] = _ala_f; Mn = cv2.GaussianBlur(Mn, (0, 0), 1.0)[..., None]
+tex = np.clip(_texF * (1 + Mn), 0, 255)
+Mn2 = np.clip(Mn * 2, 0, 1)
+tex = np.clip(tex * (1 - Mn2) + cv2.GaussianBlur(tex, (0, 0), 1.2) * Mn2, 0, 255).astype(np.uint8)
+# ── systematic clean-up of the photo-built face: dark outliers (the selfies' shadows and compression blotches) are
+#    found against a local median and inpainted toward the surrounding skin, outside protected features (nostrils,
+#    eye openings and lash lines, the lip line, the brow hair). Then the brows: a clean band of brow hair with soft
+#    edges, the shadowed skin round them (orbital shadows) lifted toward neutral, and both sides matched in tone. ──
+def _poly_d(P, pts):
+    d = np.full(len(P), 9.0)
+    for a3, b3 in zip(pts[:-1], pts[1:]):
+        ab = b3 - a3; t_ = np.clip(((P - a3) @ ab) / max(ab @ ab, 1e-12), 0, 1)
+        d = np.minimum(d, np.linalg.norm(P - (a3 + t_[:, None] * ab), axis=1))
+    return d
+def _tex_map(vals, blur=0):
+    m_ = np.zeros((T, T), np.float32); m_[ty, tx] = vals
+    return cv2.GaussianBlur(m_, (0, 0), blur) if blur else m_
+_hair_t = H_ if 'H_' in globals() else np.zeros(len(cp))
+_faceF = (w_face > 0.15) & (_hair_t < 0.3)
+# protected features
+_prot = np.zeros(len(cp))
+for _nos in ([79, 166, 60, 75, 20, 238], [309, 392, 290, 305, 250, 458]):     # the nostrils
+    _prot = np.maximum(_prot, np.clip(1 - (np.linalg.norm((cp - lm_f[_nos].mean(0)) * [1, 1.4, 0.8], axis=1) - 0.004) / 0.002, 0, 1))
+_EYEC = ([33, 246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153, 145, 144, 163, 7, 33], [362, 398, 384, 385, 386, 387, 388, 466, 263, 249, 390, 373, 374, 380, 381, 382, 362])
+for _ec in _EYEC:                                                             # eye openings and lash lines (1.5 mm round)
+    _prot = np.maximum(_prot, np.clip(1 - (_poly_d(cp, lm_f[_ec]) - 0.0015) / 0.001, 0, 1))
+    _o = lm_f[_ec]; _cc = _o.mean(0)
+    _inside = np.linalg.norm((cp - _cc)[:, :2] / [np.ptp(_o[:, 0]) / 2 + 1e-6, np.ptp(_o[:, 1]) / 2 + 1e-6], axis=1) < 1.05
+    _prot = np.maximum(_prot, _inside * (np.abs(cp[:, 2] - _cc[2]) < 0.012))
+_LIPL = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308]; _LIPL2 = [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308]
+_lipline = (lm_f[_LIPL] + lm_f[_LIPL2]) / 2
+_prot = np.maximum(_prot, np.clip(1 - (_poly_d(cp, _lipline) - 0.0012) / 0.001, 0, 1))
+_BROW_U = ([70, 63, 105, 66, 107], [300, 293, 334, 296, 336]); _BROW_L = ([46, 53, 52, 65, 55], [276, 283, 282, 295, 285])
+_brow_core = np.zeros(len(cp)); _brow_near = np.zeros(len(cp))
+for _bu, _bl in zip(_BROW_U, _BROW_L):
+    _cl = (lm_f[_bu] + lm_f[_bl]) / 2                                       # centre line, lateral (tail) → medial (head)
+    _hh = np.linalg.norm(lm_f[_bu] - lm_f[_bl], axis=1) / 2                  # half-height along it
+    _db = _poly_d(cp, _cl)
+    # the half-height at each texel's nearest point along the line (interpolated by the param along the brow)
+    _ax = _cl[-1] - _cl[0]; _s = np.clip(((cp - _cl[0]) @ _ax) / (_ax @ _ax), 0, 1)
+    _hs = np.interp(_s, np.linspace(0, 1, len(_hh)), np.clip(_hh, 0.0016, 0.0035) * np.linspace(0.75, 1.0, len(_hh)))
+    _brow_core = np.maximum(_brow_core, np.clip(1 - (_db - _hs) / 0.0012, 0, 1))
+    _brow_near = np.maximum(_brow_near, np.clip(1 - (_db - _hs) / 0.010, 0, 1))
+_prot = np.maximum(_prot, _brow_core)
+_texF = tex.astype(np.float32); _Lt = _texF.mean(2)
+_med = cv2.medianBlur(np.clip(_Lt, 0, 255).astype(np.uint8), 15).astype(np.float32)
+_rat = _Lt[ty, tx] / np.maximum(_med[ty, tx], 1)
+_out = np.clip((0.75 - _rat) / 0.08, 0, 1) * _faceF * (1 - _prot)
+_om = (_tex_map(_out) > 0.3).astype(np.uint8) * 255
+_om = cv2.dilate(_om, np.ones((3, 3), np.uint8))
+_inp = cv2.inpaint(np.clip(_texF, 0, 255).astype(np.uint8), _om, 6, cv2.INPAINT_TELEA).astype(np.float32)
+_ow = cv2.GaussianBlur(_om.astype(np.float32) / 255, (0, 0), 1.2)[..., None]
+_texF = _texF * (1 - _ow) + _inp * _ow
+print(f'  clean-up: {int((_out > 0.3).sum())} dark outlier texels inpainted')
+# the brows and the orbits: the skin round the brow band (and the upper lids, the sockets) lifted toward the
+# cheek/forehead skin's lightness; the brow band itself kept, its edges softened, both brows matched in tone
+_Lt = _texF.mean(2)[ty, tx]
+_ref = np.median(_Lt[_faceF & (_prot == 0) & (_brow_near == 0) & (cp[:, 1] < lm_f[168, 1]) & (cp[:, 1] > lm_f[164, 1])])   # cheeks and nose, between the brow root and the lip
+_orb = np.zeros(len(cp))
+for _ec, _bu in zip(_EYEC, _BROW_U):
+    _o = lm_f[_ec]; _cc = _o.mean(0); _bc = lm_f[_bu].mean(0)
+    # from just under the eye up to the brow: an ellipse over the socket
+    _c2 = np.array([_cc[0], (_cc[1] + _bc[1]) / 2 - 0.002, _cc[2]]); _rx = np.ptp(_o[:, 0]) / 2 + 0.008; _ry = (_bc[1] - _cc[1]) / 2 + 0.012
+    _orb = np.maximum(_orb, np.clip(1.2 - np.linalg.norm((cp - _c2)[:, :2] / [_rx, _ry], axis=1), 0, 1) * (cp[:, 2] > _cc[2] - 0.02))
+_skinz = np.maximum(_orb, _brow_near) * (1 - _prot) * _faceF          # (_prot includes the brow core)
+_gain = np.clip((_ref * 0.93) / np.maximum(_Lt, 1), 1, 1.8)
+_lift = (_gain - 1) * _skinz * 0.85
+# brows: one tone for both (the mean of their medians), applied as a gain inside the band only
+_bg = np.ones(len(cp))
+_sideL = cp[:, 0] < lm_f[168, 0]
+_bm = [np.median(_Lt[(_brow_core > 0.7) & (_sideL == sd)]) if ((_brow_core > 0.7) & (_sideL == sd)).sum() > 30 else np.nan for sd in (True, False)]
+if not np.isnan(_bm).any():
+    _bt = (_bm[0] + _bm[1]) / 2
+    _bg = np.where(_sideL, _bt / _bm[0], _bt / _bm[1])
+    print(f'  brows: tone {np.round(_bm, 1)} → {_bt:.1f}; orbital/brow skin lifted toward L {_ref:.0f}')
+_gmap = _tex_map((1 + _lift) * (1 + (_bg - 1) * _brow_core) - 1, 1.5)[..., None]
+_texF = _texF * (1 + _gmap)
+# soften the brow band's edges (a gentle blur where core falls off), leaving the hair texture in the middle
+_edge = _tex_map(np.clip(_brow_core * (1 - _brow_core) * 4, 0, 1) * _faceF, 1.0)[..., None]
+_texF = _texF * (1 - 0.6 * _edge) + cv2.GaussianBlur(_texF, (0, 0), 1.6) * 0.6 * _edge
+tex = np.clip(_texF, 0, 255).astype(np.uint8)
+# the inner-lip strips: wet lip colour at the lip edge, darker and redder going back into the mouth
+if STRIP_F0 is not None:
+    _st = tt >= STRIP_F0
+    _lw = (LIPIN[vmap][UF[tt]] * tw[..., None]).sum(1)
+    _lipc = np.median(tex[ty, tx][(np.linalg.norm(cp - lm_f[14], axis=1) < 0.003) | (np.linalg.norm(cp - lm_f[13], axis=1) < 0.003)].astype(np.float32), 0)
+    _inn = np.clip(_lipc[None] * np.array([1.0, 0.86, 0.86]) * (0.92 - 0.55 * _lw[_st])[:, None], 0, 255)
+    _tf = tex.astype(np.float32); _tf[ty[_st], tx[_st]] = _inn
+    tex = np.clip(_tf, 0, 255).astype(np.uint8)
+    print(f'  inner lips: {int(_st.sum())} texels, lip colour {_lipc.round()}')
 Image.fromarray(tex).save(os.path.join(A.out, 'head.jpg'), quality=88, optimize=True)
 dbg('head_tex.png', tex)
 

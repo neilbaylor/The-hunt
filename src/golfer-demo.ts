@@ -1,4 +1,4 @@
-// Dev page: look at the golfer in fixed poses. ?pose=address|top|impact|finish|half|down &view=behind|face|dtl|close &club=6 &mode=full
+// Dev page: look at the golfer in fixed poses. ?pose=address|top|impact|finish|held|half|down|b0.3|d0.38|f0.33 &view=behind|face|dtl|close|pgame|finishfront|gripfront|gripeye &club=6 &mode=full
 import * as THREE from 'three';
 import { Golfer, PHI_TOP, PHI_FINISH, type ShotMode } from './golfer/golfer';
 import { NEIL } from './golfer/profile';
@@ -57,6 +57,7 @@ if (q.has('novisor')) golfer.body.root.traverse(o => { if (o.name === 'visor') o
 // generic poses: b0.3 = backswing at 30% of a full top, d0.38 = downswing with the hands at 38% of the top, f0.12 = 12% of the follow-through
 const pm = /^([bdf])([\d.]+)$/.exec(q.get('pose') ?? '');
 if (pm) poses[pm[0]] = pm[1] === 'b' ? { phase: 'back', phi: PHI_TOP * +pm[2] } : pm[1] === 'd' ? { phase: 'down', phi: PHI_TOP * +pm[2] } : { phase: 'follow', phi: PHI_FINISH * +pm[2] };
+poses.held = poses.finish;
 const ps = poses[q.get('pose') ?? 'address'];
 if (ps) golfer.update({ topPhi: PHI_TOP, idleT: 0, ...ps });
 else { golfer.body.bones.forEach((b, i) => { b.quaternion.identity(); if (i === 1) b.position.copy(golfer.body.skel.joint[1]); }); golfer.club.group.visible = false; golfer.root.updateMatrixWorld(true); }
@@ -79,6 +80,13 @@ else if (view === 'gripfront' || view === 'gripeye' || view === 'gripdtl') {
   const eye = view === 'gripeye' ? head.lerp(mid, 0.33) : view === 'gripdtl' ? mid.clone().add(new THREE.Vector3(-0.42, 0.06, 0.06)) : mid.clone().add(new THREE.Vector3(0.04, 0.03, 0.42));
   const pw = golfer.char.localToWorld(eye.clone()), tw = golfer.char.localToWorld(mid.clone());
   cam.fov = view === 'gripeye' ? 26 : 30; cam.updateProjectionMatrix(); cam.position.copy(pw); cam.lookAt(tw);
+}
+else if (view === 'finishfront') {
+  // in front of the finished chest (the Rory finish photo's camera): along the chest's facing, at chest height
+  const qc = golfer.rig.Q[3], fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(qc).setY(0).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), +(q.get('turn') ?? 0));
+  const c = golfer.rig.P[3].clone().add(new THREE.Vector3(0, 0.05, 0));
+  const pw = golfer.char.localToWorld(c.clone().addScaledVector(fwd, 5).add(new THREE.Vector3(0, 0.1, 0))), tw = golfer.char.localToWorld(c.clone().add(new THREE.Vector3(0, -0.15, 0)));
+  cam.fov = 27; cam.updateProjectionMatrix(); cam.position.copy(pw); cam.lookAt(tw);
 }
 else if (view === 'hands') { const h = new THREE.Vector3(); golfer.club.group.localToWorld(h.copy(golfer.club.gripLead)); cam.position.set(h.x + lx * 0.15, h.y + 0.12, h.z + 0.45); cam.lookAt(h); }
 else if (view === 'portrait') {

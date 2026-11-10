@@ -26,7 +26,7 @@ class Ribbon {
   private pos: Float32Array; private along: Float32Array; private across: Float32Array;
   private geo = new THREE.BufferGeometry();
   readonly mat: THREE.ShaderMaterial;
-  constructor(private max: number, color: THREE.Color, opts: { dash?: number; fadeStart?: number; fadeEnd?: number; opacity?: number; edge?: THREE.Color } = {}) {
+  constructor(private max: number, color: THREE.Color, opts: { dash?: number; fadeStart?: number; fadeEnd?: number; opacity?: number; edge?: THREE.Color; glow?: boolean } = {}) {
     this.pos = new Float32Array(max * 2 * 3); this.along = new Float32Array(max * 2); this.across = new Float32Array(max * 2);
     this.geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
     this.geo.setAttribute('along', new THREE.BufferAttribute(this.along, 1));
@@ -36,16 +36,20 @@ class Ribbon {
     this.mat = new THREE.ShaderMaterial({
       uniforms: {
         color: { value: color.clone() }, edge: { value: (opts.edge ?? NAVY).clone() }, opacity: { value: opts.opacity ?? 1 },
-        dash: { value: opts.dash ?? 0 }, fadeStart: { value: opts.fadeStart ?? 1e6 }, fadeEnd: { value: opts.fadeEnd ?? 2e6 }, flow: { value: 0 },
+        dash: { value: opts.dash ?? 0 }, glow: { value: opts.glow ? 1 : 0 }, fadeStart: { value: opts.fadeStart ?? 1e6 }, fadeEnd: { value: opts.fadeEnd ?? 2e6 }, flow: { value: 0 },
       },
       vertexShader: 'attribute float along; attribute float across; varying float vA; varying float vX; void main(){ vA = along; vX = across; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: `uniform vec3 color; uniform vec3 edge; uniform float opacity, dash, fadeStart, fadeEnd, flow; varying float vA; varying float vX;
+      fragmentShader: `uniform vec3 color; uniform vec3 edge; uniform float opacity, dash, glow, fadeStart, fadeEnd, flow; varying float vA; varying float vX;
         void main(){
           float x = abs(vX - 0.5) * 2.0;                       // 0 centre .. 1 edge
           float body = 1.0 - smoothstep(0.55, 0.7, x);
           float rim = 1.0 - smoothstep(0.88, 1.0, x);
           vec3 c = mix(edge, color, body);
           float a = rim * opacity;
+          if (glow > 0.5) {                                    // the preview tracer's look: a solid core with a soft glow
+            float core = 1.0 - smoothstep(0.36, 0.46, x);
+            c = color; a = (core + (1.0 - core) * pow(1.0 - x, 2.2) * 0.55) * opacity;
+          }
           if (dash > 0.0) { float d = fract((vA - flow) / dash); a *= smoothstep(0.0, 0.06, d) * (1.0 - smoothstep(0.38, 0.46, d)); }
           a *= 1.0 - smoothstep(fadeStart, fadeEnd, vA);
           if (a < 0.01) discard;
@@ -147,8 +151,8 @@ export class AimController {
   private enabled = false;
   private guide = new Ribbon(80, GOLD, { dash: 1.1, fadeStart: 10, fadeEnd: 34, opacity: 0.8 });
   private marker = makeRing();
-  private aimLine = new Ribbon(80, GOLD, { opacity: 0.95 });
-  private pathLine = new Ribbon(96, new THREE.Color('#bfefff'), { opacity: 0.85 });   // same soft glow as the swing-view flight preview
+  private aimLine = new Ribbon(80, CREAM, { opacity: 0.75, dash: 5 });   // the straight start line: quiet cream dashes under the yellow shape
+  private pathLine = new Ribbon(96, new THREE.Color('#ffd23f'), { opacity: 0.8, glow: true });   // same pin-yellow glow as the swing-view flight preview
   private ring = makeRing();
   private handle = makeHandle();
   private windArrow = makeWindArrow();
@@ -333,9 +337,9 @@ export class AimController {
       const w = clamp(camD * 0.012, 0.25, 2.2);
       const sp: THREE.Vector3[] = [];
       for (let i = 0; i <= 60; i++) { const p = b.clone().lerp(T, i / 60); p.y = this.ground(p.x, p.z) + 0.04; sp.push(p); }
-      this.aimLine.set(sp, w * 0.42);
+      this.aimLine.set(sp, w * 0.22);
       const cp: THREE.Vector3[] = []; for (let i = 0; i <= 90; i++) cp.push(this.shapePoint(i / 90, new THREE.Vector3()));
-      this.pathLine.set(cp, w * 0.34);
+      this.pathLine.set(cp, w * 0.75);
       this.ring.group.position.set(T.x, T.y + 0.06, T.z); this.ring.group.scale.setScalar(disp);
       this.ring.chevron.rotation.y = -aim.dir; this.ring.chevron.children[0].scale.setScalar(clamp(w * 4.2 / disp, 0.3, 1.1));
       this.shapePoint(0.5, this.handle.position); this.handle.position.y += 0.1; this.handle.scale.setScalar(w * 2.1);

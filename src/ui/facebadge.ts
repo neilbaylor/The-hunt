@@ -114,16 +114,18 @@ export class FaceBadge {
     const R = this.renderer;
     if ((this.frame++ & 1) === 0) {
       const h = this.head(); if (!h) return;
-      // a face camera in the head's own frame: along the face's forward axis, with the head's up as the camera's up,
-      // so the badge is always front-on and level (bowed over the ball, at the top, at the finish) whatever the pose
+      // stopgap until the separate badge head lands: a face camera along the head's forward axis with the head's
+      // pitch and roll cancelled (forward flattened onto the ground, world up), so bowed over the ball, at the top
+      // or at the finish the badge looks him in the face, level, instead of at the top of his head or the visor
       const eye = h.localToWorld(new THREE.Vector3(0, 0.085, 0.06));
-      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(h.matrixWorld).normalize();
-      const up = new THREE.Vector3(0, 1, 0).transformDirection(h.matrixWorld).normalize();
-      if (this.fwdInit) { this.fwd.lerp(fwd, 0.5).normalize(); this.up.lerp(up, 0.5).normalize(); } else { this.fwd.copy(fwd); this.up.copy(up); this.fwdInit = true; }
+      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(h.matrixWorld); fwd.y = 0;
+      if (fwd.lengthSq() < 1e-4) fwd.copy(this.fwd); fwd.normalize();
+      if (this.fwdInit) this.fwd.lerp(fwd, 0.5).normalize(); else { this.fwd.copy(fwd); this.fwdInit = true; }
+      this.up.set(0, 1, 0);
       const right = new THREE.Vector3().crossVectors(this.up, this.fwd).normalize();
       const sway = this.shake > 0 ? Math.sin(this.t * 22) * 0.1 * this.shake : 0;
-      const look = eye.clone().addScaledVector(this.up, -0.035);                    // just below the nose bridge: face + a little shoulder
-      this.cam.position.copy(look).addScaledVector(this.fwd, 0.97).addScaledVector(right, 0.2 + sway).addScaledVector(this.up, 0.32);   // from a little above: arms raised under the chin (top, impact) drop below the face   // slight ¾
+      const look = eye.clone().addScaledVector(this.up, -0.05);                     // nose height: face + a little shoulder
+      this.cam.position.copy(look).addScaledVector(this.fwd, 0.98).addScaledVector(right, 0.16 + sway).addScaledVector(this.up, -0.04);   // level, slight ¾, a touch low to see under the visor
       this.cam.up.copy(this.up); this.cam.lookAt(look);
       // its own key and fill, riding with the camera, so it's never dark
       this.key.position.copy(this.cam.position).addScaledVector(this.up, 0.5).addScaledVector(right, -0.4); this.key.target.position.copy(look);
