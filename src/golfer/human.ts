@@ -260,7 +260,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const chest = J[M.bones.indexOf('spine_02')];
     const side = p.handed === 'left' ? -1 : 1;
     const cz = M.collar.reduce((a, c) => Math.max(a, c[2]), -9) - 0.01;
-    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.088, M.collar.reduce((a, c) => (c[2] > a[2] ? c : a))[1] - 0.092, cz)   /* as on the shirt: ~9 cm out, its foot level with the foot of the placket */ : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.05 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
+    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.088, M.collar.reduce((a, c) => (c[2] > a[2] ? c : a))[1] - 0.092, cz)   /* as on the shirt: ~9 cm out, its foot level with the foot of the placket */ : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.04 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
   }
   const shirtMesh = add('shirt', shirtMat);
   // the shells are split along their UV seams; average the normals across those splits so the fabric shades
@@ -509,7 +509,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const s = i / COLS, a = open + s * (2 * Math.PI - 2 * open);   // a = 0 at the front, PI at the back
       const endw = Math.max(0, 1 - Math.min(s, 1 - s) / 0.17), fr = Math.max(0, Math.cos(a));
       // stand: 3 cm at the back, a little lower round the front of the neck, down to ~8 mm where the ends meet
-      const sh = 0.026 - 0.004 * fr - 0.016 * Math.pow(endw, 1.4);
+      const sh = 0.026 - 0.004 * fr - 0.0045 * Math.abs(Math.sin(a)) - 0.014 * Math.pow(endw, 1.4);
       A.push(a); EW.push(endw); SH.push(sh);
       S.push(neck(a, -0.004, -0.006));                               // the foot of the stand, tucked into the neckline
       // the top of the stand: hugging the neck 4.5 mm clear of it (the neck narrows above the shirt's opening)
@@ -626,7 +626,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
     const pos: number[] = [], uv: number[] = [], idx: number[] = [];
     for (let i = 0; i <= COLS; i++) for (let r = 0; r < ROWS; r++) { const v = sec[i][r]; pos.push(v.x, v.y, v.z); uv.push(i / COLS, vs[r]); }
-    for (let i = 0; i < COLS; i++) for (let r = 0; r < ROWS - 1; r++) { const a = i * ROWS + r, b = a + ROWS; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+    for (let i = 0; i < COLS; i++) for (let r = 0; r < ROWS - 1; r++) { const a = i * ROWS + r, b = a + ROWS; idx.push(a, a + 1, b, a + 1, b + 1, b); }   // wound so the outer faces are front faces
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
     // end caps: close the cross-section at the two front ends (the points' front edges show their thickness);
     // their own vertices, so their normals don't bend the leaf's
@@ -702,7 +702,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
     // one skinned mesh, one atlas: one draw call; too small to need a shadow of its own
     const baked = bakeAtlas(bits, 512);
-    const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.95, specularIntensity: 0.7, sheen: 0.18, sheenColor: collarMat.sheenColor, sheenRoughness: 0.8, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.95, specularIntensity: 0.7, envMapIntensity: 0.35, sheen: 0.18, sheenColor: collarMat.sheenColor, sheenRoughness: 0.8, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const cm = skinned(baked.geometry, bitsMat); cm.name = 'collar'; cm.castShadow = false;
     // the collar rides on the shoulders more than the shirt's neckline does (40% of the neck's weight), so the
     // lead point isn't dragged round by the chin at the top
