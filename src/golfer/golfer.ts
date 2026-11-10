@@ -459,7 +459,7 @@ export class Golfer {
       // owner's 4 cm / 2.5 cm), then back up to impact
       const uD = s.phase === 'down' ? 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi) : 0, uB = s.phase === 'back' ? Math.max(0, phi) / PHI_TOP : s.phase === 'down' ? 1 : 0;
       const dip = smooth(0.15, 0.55, uD) * (1 - smooth(0.7, 1, uD));
-      headOff[0] = -0.012 * smooth(0, 0.6, uB) * (1 - smooth(0.6, 1, uD)); headOff[1] = -0.018 * dip;
+      headOff[0] = -0.012 * smooth(0, 0.6, uB) * (1 - smooth(0.6, 1, uD)) - 0.026 * dip; headOff[1] = -0.012 * dip;
       this.steadyHead(p, headW, headOff[0], headOff[1]);
     }
 

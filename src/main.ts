@@ -339,7 +339,7 @@ function fitCamera() {
   const { w: vw, h: vh } = viewport();
   camera.aspect = vw / vh;
   camera.fov = portrait() ? (vh / vw < 1.62 ? 56 : 52) : 42;
-  if (introLensK > 0) camera.fov += (26 - camera.fov) * introLensK;   // intro A: a long portrait lens, eased back out on the fly to the swing cam
+  if (introLensK > 0) camera.fov += (23 - camera.fov) * introLensK;   // intro A: a long portrait lens, eased back out on the fly to the swing cam
   // portrait: shift the lens so the golfer sits above the swing stick without tilting the camera
   if (portrait() && lensShift > 0.001) camera.setViewOffset(vw, vh, 0, vh * lensShift, vw, vh);
   else camera.clearViewOffset();
@@ -611,7 +611,7 @@ function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
     pos.y = Math.max(pos.y, (range?.heightAt(pos.x, pos.z) ?? 0) + 1.0);
     if (INTRO === 'a') {
       if (camMode === 'intro' && introLensK !== 1) { introLensK = 1; fitCamera(); }
-      look.set(head.x, head.y - 0.2, head.z);   // a tight ¾ head and shoulders: the face in the upper half, the lockup under the chin
+      look.set(head.x, head.y - 0.15, head.z);   // a tight ¾ head and shoulders: the face in the upper half, the lockup under the chin
       // the rim light sits behind him, opposite the camera and off to one side, a little high
       introRim.position.set(head.x - Math.cos(th + 0.6) * 4, head.y + 1.6, head.z - Math.sin(th + 0.6) * 4); introRim.target.position.copy(head); introRim.target.updateMatrixWorld();
     }

@@ -335,7 +335,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   const mirroredX = (G as any).mirrored ? -1 : 1;
   let lastChange = -9, gazeLeft = 0;
   const tick = () => {
-    const now = faceNow(); if (now === last) return; const dt = last < 0 ? 0 : Math.max(0, Math.min(0.1, now - last)); last = now;
+    const now = faceNow(); const dt = last < 0 ? 0 : Math.max(0, Math.min(0.1, now - last)); last = now;
     // blink
     // natural blinks: every 2-6 s, sometimes twice in a row
     if (blinkT < 0 && now > nextBlink) { blinkT = 0; blinkTwice = Math.random() < 0.2; nextBlink = now + 2 + Math.random() * 4; }

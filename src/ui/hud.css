@@ -684,3 +684,7 @@ body[data-coin="d"] .hud .pop .seg button[aria-pressed="true"] { background: lin
 .hud .pop .seg.view-seg { padding: 4px 8px 8px; align-items: center; }
 .hud .pop .seg.view-seg span { flex: none; padding: 0 6px 0 4px; font: 800 10px/1 'Nunito', sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #6f7b93; }
 .hud .pop .seg.view-seg button { padding: 6px; font-size: 13px; }
+/* the swing dial's turf follows the lie (hud.ts dialLayers): a quick crossfade between mown, first cut, rough and sand */
+.pad-f .dial-l { opacity: 0; transition: opacity .3s ease; }
+.pad-f:not([data-dial]) .dial-l[data-k="mown"], .pad-f[data-dial="mown"] .dial-l[data-k="mown"], .pad-f[data-dial="cut"] .dial-l[data-k="cut"], .pad-f[data-dial="rough"] .dial-l[data-k="rough"], .pad-f[data-dial="sand"] .dial-l[data-k="sand"] { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .pad-f .dial-l { transition: none; } }

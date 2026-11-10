@@ -128,6 +128,34 @@ function puckURL() {
 }
 onBallTexUpdate(() => { puckCache = ''; const u = puckURL(); document.querySelectorAll('.puck-img').forEach(i => i.setAttribute('href', u)); });
 
+/** the swing dial's turf, by lie: mown stripes (tee, fairway), a longer darker first cut, long wispy rough, raked sand.
+ *  All five sit stacked inside the dial's clip; the current one is shown (svg[data-dial]) with a quick crossfade. */
+const DIAL_KINDS = ['mown', 'cut', 'rough', 'sand'] as const;
+export const dialKind = (lieName: string) => /bunker|sand/i.test(lieName) ? 'sand' : /rough/i.test(lieName) ? 'rough' : /cut/i.test(lieName) ? 'cut' : 'mown';
+let dialArt = '';
+function dialLayers(id: string) {
+  if (!dialArt) {
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    // first cut: short blades as fine strokes over a darker, wider stripe
+    let cut = '';
+    for (let i = 0; i < 260; i++) { const x = rnd() * 180 - 90, y = rnd() * 180 - 90, h = 3 + rnd() * 3, l = -0.6 + rnd() * 1.2; cut += `M${x.toFixed(1)} ${y.toFixed(1)}l${l.toFixed(1)} ${(-h).toFixed(1)}`; }
+    // rough: long wispy curved blades in three shades, back to front
+    const blades = (n: number, col: string, op: number, len: number) => { let d = ''; for (let i = 0; i < n; i++) { const x = rnd() * 190 - 95, y = rnd() * 200 - 90, h = len * (0.6 + rnd() * 0.8), b = (rnd() - 0.4) * h * 0.7; d += `M${x.toFixed(1)} ${y.toFixed(1)}q${(b * 0.2).toFixed(1)} ${(-h * 0.55).toFixed(1)} ${b.toFixed(1)} ${(-h).toFixed(1)}`; } return `<path d="${d}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linecap="round" opacity="${op}"/>`; };
+    const rough = blades(150, '#0f2f14', 0.55, 20) + blades(130, '#3f7a2c', 0.75, 22) + blades(90, '#7fae4a', 0.6, 18);
+    // sand: raked lines (gentle parallel waves) and a fine stipple
+    let rake = ''; for (let y = -96; y <= 96; y += 6.5) rake += `M-100 ${y.toFixed(1)}q25 ${(-3).toFixed(1)} 50 0t50 0t50 0t50 0`;
+    let grit = ''; for (let i = 0; i < 220; i++) grit += `M${(rnd() * 180 - 90).toFixed(1)} ${(rnd() * 180 - 90).toFixed(1)}h0.01`;
+    dialArt = JSON.stringify({ cut, rough, rake, grit });
+  }
+  const A = JSON.parse(dialArt) as { cut: string; rough: string; rake: string; grit: string };
+  const stripes = (w: number, a: number) => Array.from({ length: 8 }, (_, i) => `<rect x="${-90 - (w - 13) + i * w * 2}" y="-90" width="${w}" height="180" fill="rgba(255,255,255,${a})"/>`).join('');
+  return `<g class="dial-l" data-k="mown"><circle r="82" fill="url(#${id}t)"/>${stripes(13, 0.045)}</g>
+    <g class="dial-l" data-k="cut"><circle r="82" fill="url(#${id}t2)"/>${stripes(20, 0.03)}<path d="${A.cut}" stroke="#163f1b" stroke-width="1.1" stroke-linecap="round" opacity=".45"/></g>
+    <g class="dial-l" data-k="rough"><circle r="82" fill="url(#${id}t3)"/>${A.rough}</g>
+    <g class="dial-l" data-k="sand"><circle r="82" fill="url(#${id}t4)"/><path d="${A.rake}" fill="none" stroke="rgba(150,112,52,.32)" stroke-width="1.6"/><path d="${A.rake}" fill="none" stroke="rgba(255,250,232,.55)" stroke-width="1" transform="translate(0 1.6)"/><path d="${A.grit}" stroke="rgba(120,90,40,.45)" stroke-width="1.3" stroke-linecap="round"/></g>`;
+}
+void DIAL_KINDS;
+
 export function padSVG(skin: Skin) {
   const id = 'p' + (++uid);
   const ticks = [20, 40, 60, 80].map((y, i) => `<line x1="-9" x2="9" y1="${y}" y2="${y}" class="tick"/><text x="14" y="${y + 3.5}" font-size="9" class="tlab">${(i + 1) * 25}</text>`).join('');
@@ -147,13 +175,15 @@ export function padSVG(skin: Skin) {
     const arcPt = (f: number, r = 80) => { const a = ((112 + 150 * f) * Math.PI) / 180; return [Math.cos(a) * r, Math.sin(a) * r]; };
     const [ax0, ay0] = arcPt(0), [ax1, ay1] = arcPt(1);
     const beads = [0.25, 0.5, 0.75, 1].map((f, i) => { const [x, y] = arcPt(f); const [lx, ly] = arcPt(f, 66); return `<g class="bead" data-f="${f}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i === 3 ? 6 : 4.5}"/></g>`; void lx; void ly; }).join('');
-    const stripes = Array.from({ length: 7 }, (_, i) => `<rect x="${-90 + i * 26}" y="-90" width="13" height="180" fill="rgba(255,255,255,.045)"/>`).join('');
     const rays = Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * Math.PI * 2; return `<path d="M${(Math.cos(a) * 30).toFixed(1)} ${(Math.sin(a) * 30).toFixed(1)} L${(Math.cos(a + 0.08) * 46).toFixed(1)} ${(Math.sin(a + 0.08) * 46).toFixed(1)} L${(Math.cos(a - 0.08) * 46).toFixed(1)} ${(Math.sin(a - 0.08) * 46).toFixed(1)} Z"/>`; }).join('');
     return `<svg class="pad-svg pad-f" id="${id}" viewBox="-100 -100 200 200" aria-hidden="true">
     <defs>
       <radialGradient id="${id}b" cx="36%" cy="30%"><stop offset="0" stop-color="#ffffff"/><stop offset=".6" stop-color="#f3f5f8"/><stop offset="1" stop-color="#b9c1cc"/></radialGradient>
       <linearGradient id="${id}r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffdf5"/><stop offset=".55" stop-color="#fbeccc"/><stop offset="1" stop-color="#e2c27c"/></linearGradient>
       <radialGradient id="${id}t" cx="45%" cy="35%"><stop offset="0" stop-color="#4fa743"/><stop offset=".7" stop-color="#2e7a32"/><stop offset="1" stop-color="#1d5526"/></radialGradient>
+      <radialGradient id="${id}t2" cx="45%" cy="35%"><stop offset="0" stop-color="#3f9238"/><stop offset=".7" stop-color="#256429"/><stop offset="1" stop-color="#16451d"/></radialGradient>
+      <radialGradient id="${id}t3" cx="45%" cy="35%"><stop offset="0" stop-color="#2f6f2a"/><stop offset=".7" stop-color="#1c4a1f"/><stop offset="1" stop-color="#112f14"/></radialGradient>
+      <radialGradient id="${id}t4" cx="42%" cy="32%"><stop offset="0" stop-color="#f6e8c4"/><stop offset=".65" stop-color="#e6cf99"/><stop offset="1" stop-color="#c9a865"/></radialGradient>
       <linearGradient id="${id}p" gradientUnits="userSpaceOnUse" x1="0" y1="-80" x2="0" y2="80"><stop offset="0" stop-color="#ffe066"/><stop offset=".55" stop-color="#ffb21a"/><stop offset=".85" stop-color="#ff7a1a"/><stop offset="1" stop-color="#e5352b"/></linearGradient>
       <linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#174a2c"/><stop offset=".55" stop-color="#2d6a3a"/><stop offset=".85" stop-color="#8f8a2e"/><stop offset="1" stop-color="#c9a227"/></linearGradient>
       <linearGradient id="${id}cap" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe680"/><stop offset="1" stop-color="#f2a900"/></linearGradient>
@@ -163,8 +193,7 @@ export function padSVG(skin: Skin) {
     <circle cy="5" r="95" fill="rgba(6,20,43,.35)"/>
     <circle r="94" fill="#d4b064"/>
     <circle r="91" fill="url(#${id}r)"/>
-    <circle r="82" fill="url(#${id}t)"/>
-    <g clip-path="url(#${id}c)">${stripes}<circle r="82" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="6"/></g>
+    <g clip-path="url(#${id}c)">${dialLayers(id)}<circle r="82" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="6"/></g>
     <path d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 1 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="rgba(6,20,43,.45)" stroke-width="15" stroke-linecap="round"/>
     <path class="power-arc" d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 1 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="url(#${id}p)" stroke-width="15" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100" opacity="0"/>
     ${beads}
@@ -427,6 +456,7 @@ export class Hud {
     this.q('#modeSlot').innerHTML = '';
     const L = LIES[this.lie];
     const [, , kind] = LIE_WORD[L.name] ?? ['Okay', 'ok', 'fairway'];
+    this.pad.querySelector('svg')?.setAttribute('data-dial', dialKind(L.name));   // the dial's turf shows the lie
     const where = L.side ? (L.side < 0 ? 'ball above feet, starts left' : 'ball below feet, starts right') : 'flat';
     this.q('#lieSlot').innerHTML = this.skin === 'f'
       ? `<button type="button" class="hud-panel lie-card lie-w lie-c" data-act="lie" aria-label="Lie: ${L.name}, ${L.lo} to ${L.hi} percent distance${L.slope ? `, ${L.slope} degree slope, ball ${where}` : ', flat'}. Tap for another sample lie">

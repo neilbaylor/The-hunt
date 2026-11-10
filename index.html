@@ -81,6 +81,9 @@
   .intro[data-layout="a"] h1 { text-shadow: 0 2px 0 rgba(0,0,0,.18), 0 10px 40px rgba(0,0,0,.45); }
   .intro[data-layout="a"] .il-rule { width: 40px; height: 4px; margin: 2px 0 6px; }
   .intro[data-layout="a"] .tap { font-size: 11.5px; letter-spacing: .28em; }
+  /* a: golden-hour warmth — a low sun glow from the top corner and a warm lift over the frame */
+  .intro[data-layout="a"]::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(120% 60% at 92% 4%, rgba(255,176,72,.55) 0%, rgba(255,150,60,.18) 38%, rgba(255,150,60,0) 62%), linear-gradient(180deg, rgba(255,170,80,.12), rgba(255,170,80,0) 60%); mix-blend-mode: screen; }
+  .intro[data-layout="a"] .il-lock { position: relative; }
   .intro.gone .il-lock, .intro.gone .il-top, .intro.gone .il-stack { transform: translateY(40px); opacity: 0; transition: transform .6s cubic-bezier(.5,0,.7,.4), opacity .5s; animation: none; }
   @media (prefers-reduced-motion: reduce) { .intro .il-lock, .intro .il-top, .intro .il-stack, .intro[data-layout] .tap { animation: none; } }
   @media (orientation: landscape) { .intro { justify-items: start; background: linear-gradient(90deg, rgba(11,26,51,.78) 0%, rgba(11,26,51,.3) 42%, rgba(11,26,51,0) 65%); align-items: end; } .intro-card { justify-items: start; text-align: left; } }
