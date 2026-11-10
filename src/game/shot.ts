@@ -30,13 +30,15 @@ export const MODES: Record<ShotMode, { label: string; rule: string; ok: (id: str
   flop: { label: 'Flop', rule: '56° or 60° · max 30', ok: id => !!CLUB_DATA[id].flop, max: id => Math.round(30 * (CLUB_DATA[id].flop ?? 0)) },
 };
 
-export interface Lie { name: string; pct: number; slope: number; side: -1 | 0 | 1; txt: string }
+/** pct is the planning figure (the middle of the range); a real strike rolls a random value in lo..hi,
+ *  and worse lies have a wider range */
+export interface Lie { name: string; pct: number; lo: number; hi: number; slope: number; side: -1 | 0 | 1; txt: string }
 export const LIES: Lie[] = [
-  { name: 'Tee box', pct: 100, slope: 0, side: 0, txt: 'Flat lie' },
-  { name: 'Fairway', pct: 100, slope: 3, side: -1, txt: 'Ball above feet · starts left' },
-  { name: 'First cut', pct: 92, slope: 2, side: 1, txt: 'Ball below feet · starts right' },
-  { name: 'Rough', pct: 78, slope: 5, side: -1, txt: 'Ball above feet · starts left' },
-  { name: 'Fairway bunker', pct: 85, slope: 1, side: 1, txt: 'Ball below feet · starts right' },
+  { name: 'Tee box', pct: 100, lo: 98, hi: 100, slope: 0, side: 0, txt: 'Flat lie' },
+  { name: 'Fairway', pct: 98, lo: 95, hi: 100, slope: 3, side: -1, txt: 'Ball above feet · starts left' },
+  { name: 'First cut', pct: 91, lo: 88, hi: 95, slope: 2, side: 1, txt: 'Ball below feet · starts right' },
+  { name: 'Rough', pct: 77.5, lo: 70, hi: 85, slope: 5, side: -1, txt: 'Ball above feet · starts left' },
+  { name: 'Fairway bunker', pct: 85, lo: 78, hi: 92, slope: 1, side: 1, txt: 'Ball below feet · starts right' },
 ];
 
 export interface SwingResult {
@@ -50,6 +52,8 @@ export interface SwingResult {
   strike?: { x: number; y: number };
   /** the player's plan from the aim view: curve -1..1 (+ = bends right on screen), loft -1..1 (lower .. higher) */
   aim?: { curve: number; loft: number };
+  /** a real strike: roll the lie's percentage within lo..hi (planning previews use the middle) */
+  rollLie?: boolean;
 }
 
 export interface ShotPlan {
@@ -81,7 +85,8 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   // a full swing always goes a decent way: the stick's travel maps onto 60–100% of the club's full carry
   // (shorter shots are what punch, pitch and flop are for)
   const pw = mode === 'full' ? FULL_MIN + (1 - FULL_MIN) * clamp(r.power, 0, 1) : clamp(r.power, 0.05, 1);
-  let carry = MODES[mode].max(id) * pw * lie.pct / 100 * (1 - 0.12 * clamp(eP, 0, 1));
+  const liePct = r.rollLie ? lie.lo + Math.random() * (lie.hi - lie.lo) : lie.pct;
+  let carry = MODES[mode].max(id) * pw * liePct / 100 * (1 - 0.12 * clamp(eP, 0, 1));
   carry *= 1 - Math.random() * 0.09 * e;
   // launch and spin by mode
   let la = C.launch, spin = C.spin;

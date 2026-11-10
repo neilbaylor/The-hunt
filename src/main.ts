@@ -237,7 +237,7 @@ function strike(now: number, p: [number, number], released: boolean) {
   const drift = SW.driftN ? SW.driftSum / SW.driftN / 80 : 0;
   // the pad's left/right is the screen's left/right; for a lefty the ball still curves the way you push
   const strikePt = (hud as unknown as { strike?: { x: number; y: number } }).strike ?? { x: 0, y: 0 };
-  plan = planShot({ power, offMs: SW.off, pushMs: now - SW.tTrans, angle, drift, released, strike: strikePt, aim: { curve: aim.curve, loft: aim.loft } }, hud.club, hud.mode, LIES[hud.lie], golfer.lefty);
+  plan = planShot({ power, offMs: SW.off, pushMs: now - SW.tTrans, angle, drift, released, strike: strikePt, aim: { curve: aim.curve, loft: aim.loft }, rollLie: true }, hud.club, hud.mode, LIES[hud.lie], golfer.lefty);
   plan.launch.azimuth += aim.dir; // aimed off the straight line (aim view)
   ball.hit(plan.launch);
   { const b = golfer.ballWorld(new THREE.Vector3()); b.y -= BALL.r; const spec = CLUB_SPECS[hud.club];
