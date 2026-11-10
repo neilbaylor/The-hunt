@@ -928,6 +928,12 @@ if REAL and 'mv_cams' in globals():
         for ci_ in (61, 291):
             wc_ = np.exp(-(np.linalg.norm(cp - lm_f[ci_], axis=1) / 0.007) ** 2) * m_
             rc = rc * (1 - 0.5 * wc_[:, None]) + np.median(rc[cheeks_], 0) * 0.5 * wc_[:, None]
+        # and soften the nasolabial lines (nose wing to mouth corner) a little
+        for a_i, b_i in ((98, 61), (327, 291)):
+            a3, b3 = lm_f[a_i], lm_f[b_i]; ab = b3 - a3; tpar = np.clip(((cp - a3) @ ab) / (ab @ ab), 0, 1)
+            dseg = np.linalg.norm(cp - (a3 + tpar[:, None] * ab), axis=1)
+            wn_ = np.exp(-(dseg / 0.005) ** 2) * m_ * 0.3
+            rc = rc * (1 - wn_[:, None]) + np.median(rc[cheeks_], 0) * wn_[:, None]
         col = col * (1 - m_[:, None]) + rc * m_[:, None]
         conf = np.maximum(conf, m_)
         real_ok = True

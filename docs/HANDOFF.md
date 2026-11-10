@@ -106,3 +106,7 @@ Playful, not corporate, and minimal data (details behind a "Shot details" sheet)
 **Style**: the finish is still "way too hand-drawn" in course renders; the default must be very subtle (no outline, no hatching, light grain, gentle painterly smoothing).
 
 **Bag**: the first Jones Rover model was crude. Rebuild it as a soft, tapered fabric bag and place it further back as a background detail.
+- **Face animation (owner wants smiling, blinking and talking):** `body.face.setExpression({smile, grimace, browUp, browDown, jawOpen, blink})`, `lookAt` and `setGaze` exist, and the idle blink works. Next:
+  - a mouth interior (teeth, tongue, cavity) so the open mouth and grin look right;
+  - about 6 visemes plus `face.say(text)` lip-flap synced to the HUD speech bubble;
+  - a full grin with teeth and eye squint.
