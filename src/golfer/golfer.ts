@@ -101,6 +101,7 @@ const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search
 // held-finish targets in the chest's frame (URL-tunable on golfer.html: fg = hands from the neck, fs = shaft back/down
 // added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
 const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.38, 0.5]), pl: _fv('fpl', [0.45, -0.35, 0.55]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
+const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
 const GRIP_B = _fv('gb', [0.65, 0.32]);
 const LEAN = 0.075;             // shaft lean at impact, radians (hands ~6 cm ahead of the ball)
 
@@ -255,7 +256,10 @@ export class Golfer {
       const frame = (side: 'L' | 'R', grip: THREE.Vector3) => this.gripFrame(side, grip);
       // overlap grip: the trail pinky rides over the lead index, so the hands sit ~7 cm apart (the club's own
       // trail grip point is 9 cm below the lead one)
-      const fL = frame('L', gl), fR = frame('R', gl.clone().lerp(gr, 0.78));
+      // the lead hand sits ~3 cm further down the grip than the club's nominal point, so a little of the butt shows above
+      // the heel pad (the wrist ends up just above the butt, not past it); the trail hand right under it
+      const dn = this.club.shaftDir.clone().normalize().multiplyScalar(-GRIP_DOWN[0]);
+      const fL = frame('L', gl.clone().add(dn)), fR = frame('R', gl.clone().lerp(gr, GRIP_DOWN[1]).add(dn));
       this.handFrame = { L: fL, R: fR };
       this.hands = { group: new THREE.Group(), wristLead: fL.wrist, wristTrail: fR.wrist };
     } else {

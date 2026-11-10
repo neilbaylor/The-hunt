@@ -1380,7 +1380,10 @@ _prot = np.maximum(_prot, _brow_core)
 _texF = tex.astype(np.float32); _Lt = _texF.mean(2)
 _med = cv2.medianBlur(np.clip(_Lt, 0, 255).astype(np.uint8), 15).astype(np.float32)
 _rat = _Lt[ty, tx] / np.maximum(_med[ty, tx], 1)
-_out = np.clip((0.75 - _rat) / 0.08, 0, 1) * _faceF * (1 - _prot)
+# and blotches wider than that window: against a 41 px median (a little milder threshold)
+_med2 = cv2.medianBlur(np.clip(_Lt, 0, 255).astype(np.uint8), 41).astype(np.float32)
+_rat2 = _Lt[ty, tx] / np.maximum(_med2[ty, tx], 1)
+_out = np.maximum(np.clip((0.75 - _rat) / 0.08, 0, 1), np.clip((0.8 - _rat2) / 0.08, 0, 1)) * _faceF * (1 - _prot)
 _om = (_tex_map(_out) > 0.3).astype(np.uint8) * 255
 _om = cv2.dilate(_om, np.ones((3, 3), np.uint8))
 _inp = cv2.inpaint(np.clip(_texF, 0, 255).astype(np.uint8), _om, 6, cv2.INPAINT_TELEA).astype(np.float32)
@@ -1398,8 +1401,11 @@ for _ec, _bu in zip(_EYEC, _BROW_U):
     _c2 = np.array([_cc[0], (_cc[1] + _bc[1]) / 2 - 0.002, _cc[2]]); _rx = np.ptp(_o[:, 0]) / 2 + 0.008; _ry = (_bc[1] - _cc[1]) / 2 + 0.012
     _orb = np.maximum(_orb, np.clip(1.2 - np.linalg.norm((cp - _c2)[:, :2] / [_rx, _ry], axis=1), 0, 1) * (cp[:, 2] > _cc[2] - 0.02))
 _skinz = np.maximum(_orb, _brow_near) * (1 - _prot) * _faceF          # (_prot includes the brow core)
-_gain = np.clip((_ref * 0.93) / np.maximum(_Lt, 1), 1, 1.8)
-_lift = (_gain - 1) * _skinz * 0.85
+# fade out toward the lash lines (the lids keep their own fold shading)
+_dl = np.min(np.stack([_poly_d(cp, lm_f[_ec]) for _ec in _EYEC]), 0)
+_skinz = _skinz * np.clip((_dl - 0.002) / 0.003, 0, 1)
+_refc = np.median(_texF[ty, tx][_faceF & (_prot == 0) & (_brow_near == 0) & (cp[:, 1] < lm_f[168, 1]) & (cp[:, 1] > lm_f[164, 1])], 0)
+_lift = np.zeros(len(cp))
 # brows: one tone for both (the mean of their medians), applied as a gain inside the band only
 _bg = np.ones(len(cp))
 _sideL = cp[:, 0] < lm_f[168, 0]
@@ -1407,9 +1413,14 @@ _bm = [np.median(_Lt[(_brow_core > 0.7) & (_sideL == sd)]) if ((_brow_core > 0.7
 if not np.isnan(_bm).any():
     _bt = (_bm[0] + _bm[1]) / 2
     _bg = np.where(_sideL, _bt / _bm[0], _bt / _bm[1])
-    print(f'  brows: tone {np.round(_bm, 1)} → {_bt:.1f}; orbital/brow skin lifted toward L {_ref:.0f}')
-_gmap = _tex_map((1 + _lift) * (1 + (_bg - 1) * _brow_core) - 1, 1.5)[..., None]
+    print(f'  brows: tone {np.round(_bm, 1)} → {_bt:.1f}; orbital/brow skin blended toward {_refc.round()}')
+_gmap = _tex_map((_bg - 1) * _brow_core, 1.5)[..., None]
 _texF = _texF * (1 + _gmap)
+# the shadowed skin: blended toward the skin colour, keeping its own fine texture (lightness over a local blur)
+_Lb = cv2.GaussianBlur(_texF.mean(2), (0, 0), 4)
+_detail = (_texF.mean(2) / np.maximum(_Lb, 1))[..., None]
+_ow2 = _tex_map(np.clip((_ref * 0.95 - _Lt) / (_ref * 0.3), 0, 1) * _skinz * 0.8, 2.0)[..., None]
+_texF = _texF * (1 - _ow2) + np.clip(_refc[None, None] * _detail, 0, 255) * _ow2
 # soften the brow band's edges (a gentle blur where core falls off), leaving the hair texture in the middle
 _edge = _tex_map(np.clip(_brow_core * (1 - _brow_core) * 4, 0, 1) * _faceF, 1.0)[..., None]
 _texF = _texF * (1 - 0.6 * _edge) + cv2.GaussianBlur(_texF, (0, 0), 1.6) * 0.6 * _edge

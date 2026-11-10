@@ -44,6 +44,35 @@
   .intro button:active { transform: translateY(4px) scale(.97); box-shadow: 0 1px 0 #c98f00, 0 6px 14px rgba(0,0,0,.3), inset 0 2px 0 rgba(255,255,255,.6); }
   .intro button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
   @keyframes nudge { 0%, 85%, 100% { transform: none; } 90% { transform: translateY(-4px) rotate(-1.5deg); } 95% { transform: translateY(0) rotate(1deg); } }
+  /* ── intro layouts (?intro=a|b|c): no "Player 1", the name in a bold condensed face ── */
+  .intro[data-layout] { background: none; }
+  .intro .il-eyebrow { display: inline-flex; align-items: center; gap: 9px; font: 600 13px/1 'Barlow', sans-serif; letter-spacing: .32em; text-transform: uppercase; color: #fbf3df; text-shadow: 0 1px 8px rgba(0,0,0,.5); }
+  .intro .il-eyebrow .crest { width: 30px; height: 30px; border-radius: 50%; background: var(--crest) center/122% no-repeat, #13294b; box-shadow: 0 0 0 2px #ffd23f; }
+  .intro[data-layout] h1 { margin: 0; font: 400 clamp(120px, 38vw, 220px)/.86 'Anton', 'Barlow Condensed', sans-serif; letter-spacing: .005em; text-transform: uppercase; color: #fff; -webkit-text-stroke: 0; text-shadow: 0 4px 30px rgba(0,0,0,.35); transform: none; }
+  .intro .il-rule { display: block; width: 54px; height: 6px; border-radius: 2px; background: #ffd23f; box-shadow: 0 0 14px rgba(255,210,63,.7); }
+  .intro[data-layout] .tap { margin: 0; background: none; box-shadow: none; padding: 0; font: 600 12.5px/1 'Barlow', sans-serif; letter-spacing: .3em; color: rgba(255,250,240,.92); text-shadow: 0 1px 8px rgba(0,0,0,.6); animation: tapBreath 2.2s ease-in-out infinite; }
+  @keyframes tapBreath { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+  .intro[data-layout] .tap::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 10px; border-radius: 50%; background: #ffd23f; box-shadow: 0 0 10px #ffd23f; vertical-align: 1px; }
+  /* a: close-up, a cinematic bottom lockup on a dark fade */
+  .intro[data-layout="a"] { background: linear-gradient(180deg, rgba(8,18,34,.35) 0%, rgba(8,18,34,0) 22%, rgba(8,18,34,0) 52%, rgba(8,18,34,.72) 82%, rgba(8,18,34,.9) 100%); }
+  .intro[data-layout="a"] .il-lock { display: grid; justify-items: start; gap: 12px; width: 100%; padding: 0 6px 18px; animation: introIn .9s cubic-bezier(.2,1.2,.4,1) both; }
+  .intro[data-layout="a"] h1 { margin: -4px 0 -6px -4px; }
+  /* b: wide golden hour, the name editorial at the top-left over a soft sky fade */
+  .intro[data-layout="b"] { background: linear-gradient(180deg, rgba(8,18,34,.55) 0%, rgba(8,18,34,.15) 34%, rgba(8,18,34,0) 50%, rgba(8,18,34,0) 80%, rgba(8,18,34,.5) 100%); justify-items: start; }
+  .intro[data-layout="b"] .il-top { position: absolute; left: max(20px, env(safe-area-inset-left)); top: calc(max(18px, env(safe-area-inset-top)) + 14px); display: grid; justify-items: start; gap: 10px; animation: introIn .9s cubic-bezier(.2,1.2,.4,1) both; }
+  .intro[data-layout="b"] h1 { font-size: clamp(150px, 46vw, 260px); margin-left: -6px; }
+  .intro[data-layout="b"] .tap { justify-self: center; margin-bottom: 14px; }
+  /* c: the live 3D face in a gold medallion, the name under it */
+  .intro[data-layout="c"] { align-items: end; background: radial-gradient(120% 70% at 50% 62%, rgba(8,18,34,.2) 0%, rgba(8,18,34,.78) 100%); }
+  .intro[data-layout="c"] .il-stack { position: absolute; left: 0; right: 0; top: 18%; display: grid; justify-items: center; gap: 6px; animation: introIn .9s cubic-bezier(.2,1.4,.4,1) both; }
+  .intro .il-medal { width: 176px; height: 176px; border-radius: 50%; position: relative; box-shadow: 0 0 0 4px #fffaf0, 0 0 0 9px #ffd23f, 0 0 40px 10px rgba(255,210,63,.35), 0 18px 40px rgba(0,0,0,.45); }
+  .intro .il-medal .face-wrap { display: block; width: 176px; height: 176px; }
+  .intro .il-medal .face-badge { width: 176px !important; height: 176px !important; box-shadow: none !important; }
+  .intro .il-medal .face-name, .intro .il-medal .face-word, .intro .il-medal .face-bubble { display: none !important; }
+  .intro[data-layout="c"] h1 { font-size: clamp(110px, 34vw, 190px); margin-top: 8px; }
+  .intro[data-layout="c"] .tap { margin-bottom: 26px; }
+  .intro.gone .il-lock, .intro.gone .il-top, .intro.gone .il-stack { transform: translateY(40px); opacity: 0; transition: transform .6s cubic-bezier(.5,0,.7,.4), opacity .5s; animation: none; }
+  @media (prefers-reduced-motion: reduce) { .intro .il-lock, .intro .il-top, .intro .il-stack, .intro[data-layout] .tap { animation: none; } }
   @media (orientation: landscape) { .intro { justify-items: start; background: linear-gradient(90deg, rgba(11,26,51,.78) 0%, rgba(11,26,51,.3) 42%, rgba(11,26,51,0) 65%); align-items: end; } .intro-card { justify-items: start; text-align: left; } }
   @media (prefers-reduced-motion: reduce) { .intro-card, .intro button, .intro .tap { animation: none; } }
   .rotate { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; text-align: center; background: #0e1613; color: #fff; font-family: 'Barlow', system-ui, sans-serif; padding: 24px; }

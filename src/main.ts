@@ -534,10 +534,17 @@ function updateCamera(dt: number, now: number) {
 // ── intro overlay ──
 const intro = document.createElement('div');
 intro.className = 'intro';
-intro.innerHTML = `<span class="brand"><i class="crest" aria-hidden="true"></i><b>The Hunt</b></span><div class="intro-card">
-  <span class="kick">Player 1</span><h1>${profile.name}</h1>
-  <span class="tap">Tap anywhere to start</span></div>`;
-intro.dataset.nameStyle = new URLSearchParams(location.search).get('name') ?? 'c';
+// three layouts for the owner to pick from (?intro=a|b|c):
+//  a: cinematic close-up of Neil, a clean bottom lockup (crest wordmark, a huge condensed NEIL, a yellow rule)
+//  b: a golden-hour wide shot, the name huge and editorial at the top-left (the HUD's big-number voice)
+//  c: the live 3D face in a big medallion, name and title stacked under it, the course behind
+const INTRO = ((q: string | null) => (q === 'b' || q === 'c' ? q : 'a'))(QS.get('intro'));
+intro.dataset.layout = INTRO;
+intro.innerHTML = INTRO === 'b'
+  ? `<div class="il-top"><span class="il-eyebrow"><i class="crest" aria-hidden="true"></i>The Hunt</span><h1>${profile.name}</h1><i class="il-rule" aria-hidden="true"></i></div><span class="tap">Tap anywhere to start</span>`
+  : INTRO === 'c'
+  ? `<div class="il-stack"><div class="il-medal" aria-hidden="true"></div><h1>${profile.name}</h1><span class="il-eyebrow"><i class="crest" aria-hidden="true"></i>The Hunt</span></div><span class="tap">Tap anywhere to start</span>`
+  : `<div class="il-lock"><span class="il-eyebrow"><i class="crest" aria-hidden="true"></i>The Hunt</span><h1>${profile.name}</h1><i class="il-rule" aria-hidden="true"></i><span class="tap">Tap anywhere to start</span></div>`;
 intro.setAttribute('role', 'button'); intro.tabIndex = 0; intro.setAttribute('aria-label', `Start playing as ${profile.name}`);
 document.body.appendChild(intro);
 // a tap anywhere starts (no button)
@@ -549,6 +556,17 @@ const introFly = { t0: 0, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
   const head = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(head);
   const piv = golfer.ballWorld(new THREE.Vector3()).add(new THREE.Vector3(0.5 * side, 0, 0));
+  if (INTRO === 'a' || INTRO === 'b') {
+    // a: a slow push on a head-and-shoulders close-up (a touch low, ¾ to his lead side); b: a wide, high golden-hour shot
+    const T = now / 1000, th = (golfer.lefty ? Math.PI : 0) + (INTRO === 'a' ? 0.42 : 0.75) * side + 0.04 * Math.sin(T * 0.25);
+    const R = INTRO === 'a' ? 1.75 - 0.06 * Math.sin(T * 0.2) : 8.5;
+    pos.set(head.x + Math.cos(th) * R, 0, head.z + Math.sin(th) * R);
+    pos.y = INTRO === 'a' ? head.y - 0.06 : 2.6;
+    pos.y = Math.max(pos.y, (range?.heightAt(pos.x, pos.z) ?? 0) + 1.0);
+    if (INTRO === 'a') look.set(head.x, head.y - 0.2, head.z);   // face in the upper half, the lockup under the chin
+    else look.copy(piv).add(new THREE.Vector3(-1.6 * side, 1.9, -0.6));   // him small, low right; the sky and the course take the frame
+    return;
+  }
   const th = (golfer.lefty ? Math.PI : 0) + 0.32 * side + 0.06 * Math.sin(now / 1000 * 0.25);   // in front of him, a little round
   pos.set(piv.x + Math.cos(th) * 3.8, 0, piv.z + Math.sin(th) * 3.8);
   pos.y = Math.max(1.38 + Math.sin(now / 1000 * 0.18) * 0.04, (range?.heightAt(pos.x, pos.z) ?? 0) + 1.2);
@@ -556,6 +574,7 @@ function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
 }
 function startPlay() {
   if (state !== 'intro' || camMode !== 'intro') return;
+  if (INTRO === 'c') document.getElementById('who')!.appendChild(faceBadge.el);   // the live face goes home to the HUD
   intro.classList.add('gone');
   setTimeout(() => intro.remove(), 900);
   introFly.t0 = last; introFly.pos.copy(camPos); introFly.look.copy(camLook);
@@ -704,7 +723,7 @@ function frame(now: number) {
   // the hand-drawn finish keeps his face clean: it needs the head's screen position each frame
   if (post.finish === 'hand' && golfer.body.bones[5]) post.setFace(golfer.body.bones[5].getWorldPosition(_faceHead), 0.15);
   post.render(dt);
-  faceBadge.draw((state !== 'intro' || QS.has('badge')) && (!aimCtl.active || QS.has('badge')) && !document.hidden);   // ?badge: draw it everywhere (badge checks)
+  faceBadge.draw((state !== 'intro' || INTRO === 'c' || QS.has('badge')) && (!aimCtl.active || QS.has('badge')) && !document.hidden);   // ?badge: draw it everywhere (badge checks)
   (window as any).__frameMs = performance.now() - r0;
   if (!manualClock) requestAnimationFrame(frame);
 }
@@ -726,6 +745,8 @@ for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) 
 // the live face badge: the head (and the lights) also live on the badge camera's layer
 const faceBadge = new FaceBadge(renderer, scene, () => golfer.body.bones[5] ?? null, () => (golfer.body as { face?: import('./ui/facebadge').FaceLike }).face, document.getElementById('who')!, profile.name, () => golfer.char);
 golfer.root.traverse(o => o.layers.enable(AVATAR_LAYER));
+// intro layout c shows the live 3D face (the badge) in its medallion until the tap
+if (INTRO === 'c') intro.querySelector('.il-medal')?.appendChild(faceBadge.el);
 requestAnimationFrame(t => { last = t; frame(t); });
 (window as any).__game = { faceBadge, wind, camera, range,
   golfer, ball, hud, aim, aimCtl, shotcam, get state() { return state; }, skipToLanding, skipToLandingNow,
