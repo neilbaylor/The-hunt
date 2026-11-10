@@ -98,7 +98,9 @@ const ROLL_TOP = +(globalThis.location ? new URLSearchParams(globalThis.location
 const ADDRESS_TOE_UP = { driver: +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('toeup') ?? 10 : 10), wood: 6, hybrid: 3 };
 const HA_DRV = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('ha') ?? 0.06 : 0.06);
 const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search) : null, _fv = (n: string, d: number[]) => _fq?.get(n)?.split(',').map(Number) ?? d;
-const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.5, 0.55]), pl: _fv('fpl', [0.45, -0.35, 0.55]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
+// held-finish targets in the chest's frame (URL-tunable on golfer.html: fg = hands from the neck, fs = shaft back/down
+// added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
+const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.38, 0.5]), pl: _fv('fpl', [0.45, -0.35, 0.55]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_B = _fv('gb', [0.65, 0.32]);
 const LEAN = 0.075;             // shaft lean at impact, radians (hands ~6 cm ahead of the ball)
 

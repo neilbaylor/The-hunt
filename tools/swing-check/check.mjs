@@ -86,6 +86,7 @@ const r = await page.evaluate(() => {
   const shaft = headC.clone().sub(butt);
   const shL = P[B.upperL], shR = P[B.upperR], shLine = shR.clone().sub(shL);
   out.finishShaftVsShoulders_deg_info = [deg(Math.min(shaft.angleTo(shLine), Math.PI - shaft.angleTo(shLine))), true];
+  { const a = shaft.clone().setY(0), b = shLine.clone().setY(0); const t = deg(a.angleTo(b)); out.finishShaftVsShouldersTopView_deg_info = [Math.min(t, 180 - t), true]; }
   out.finishShaftDown_deg_info = [deg(Math.asin(-shaft.clone().normalize().y)), true];
   const along = headC.clone().sub(shL).dot(shLine.clone().normalize()) - shLine.length();
   out.finishHeadPastTrailShoulder_cm_info = [along * 100, true];
