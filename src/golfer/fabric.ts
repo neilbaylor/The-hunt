@@ -40,9 +40,9 @@ const BODY: Record<FabricKind, string> = {
     float wy2 = vB.y - uBeltY;
     float ang = atan(vB.x, vB.z - uBackZ);
     float gather = smoothstep(0.14, 0.02, wy2) * step(-0.02, wy2);
-    h += 0.0010 * gather * (0.5 + 0.5 * sin(ang * 13.0 + 3.0 * fbm3(vB * 7.0)));
+    h += 0.0007 * gather * (0.5 + 0.5 * sin(ang * 13.0 + 3.0 * fbm3(vB * 7.0)));
     float torso = smoothstep(uBeltY + 0.05, uBeltY + 0.15, vB.y) * (1.0 - smoothstep(uBeltY + 0.35, uBeltY + 0.45, vB.y));
-    h += 0.0005 * torso * (0.5 + 0.5 * sin((vB.y + 0.7 * abs(vB.x)) * 38.0 + 2.5 * fbm3(vB * 5.0)));
+    h += 0.0003 * torso * (0.5 + 0.5 * sin((vB.y + 0.7 * abs(vB.x)) * 38.0 + 2.5 * fbm3(vB * 5.0)));
     // embroidered crest on the chest (planar projection from the front)
     vec2 cuv = vec2((vB.x - uCrestC.x) / uCrestS + 0.5, (vB.y - uCrestC.y) / abs(uCrestS) * 1.2 + 0.5);
     float inC = step(uCrestC.z - 0.03, vB.z) * step(0.0, cuv.x) * step(cuv.x, 1.0) * step(0.0, cuv.y) * step(cuv.y, 1.0);
