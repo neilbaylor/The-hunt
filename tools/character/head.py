@@ -43,6 +43,7 @@ ap.add_argument('--rest', default='closed', choices=['closed', 'grin'], help='re
 ap.add_argument('--rest-smile', type=float, default=-0.85, help='smile morph baked into the rest face')
 ap.add_argument('--real-photos', default='8716142c,ee55797f,efc78715,f9637097', help='his photos the central face is projected from (name prefixes; empty = none)')
 ap.add_argument('--skin-lift', type=float, default=6.0, help='Lab L added to the real-photo face')
+ap.add_argument('--clean-weight', type=float, default=3.0, help="weight of a photo's relit copy (<photo>.clean.jpg, same geometry) in the face texture; 0 = ignore them")
 ap.add_argument('--ear-back', type=float, default=0.3, help='ears swung back about their roots (rad)')
 ap.add_argument('--ear-out', type=float, default=0.7, help='ear protrusion scale')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
@@ -1042,7 +1043,7 @@ if REAL and 'mv_cams' in globals():
         lab_ = rgb2lab(c_[sel_]); st_ = (lab_.mean(0), lab_.std(0))
         if ref_stats is None: ref_stats = st_
         else: c_ = transfer(c_, st_[0], st_[1], ref_stats[0], ref_stats[1], (0.8, 1.25))
-        samples.append(c_); weights.append(w_)
+        samples.append(c_); weights.append(w_ * cw_)
         print(f'  real photo {os.path.basename(cam["photo"])[:8]}: {int(sel_.sum())} texels')
     if samples:
         S_ = np.stack(samples, 1); Wt_ = np.stack(weights, 1)                 # (texels, photos, 3), (texels, photos)
