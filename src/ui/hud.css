@@ -596,3 +596,10 @@ body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-orig
 .face-bubble { left: 104px; top: 128px; }
 .hud.in-shot .who { transform: none; }
 @media (max-width: 380px) { .face-wrap { grid-template-columns: 84px; grid-template-rows: 84px auto auto; } .face-badge { width: 84px; height: 84px; } .hud .ed-n { font-size: 80px; } }
+
+/* power target: where to pull for the aim distance (shorter than the club's full swing) */
+.pad-f .ptarget text { font: 700 10px 'Fredoka', sans-serif; fill: #fff; }
+.pad-f .ptarget line { filter: drop-shadow(0 0 2px rgba(0,0,0,.4)); }
+.pad-f.on-target .ptarget line { stroke: #5ff0a0; filter: drop-shadow(0 0 6px #5ff0a0); }
+.pad-f.on-target .ptarget rect { fill: #17a558; }
+.hud .pad-hint { position: absolute; left: 50%; top: -30px; transform: translateX(-50%); white-space: nowrap; font: 700 12px/1 'Fredoka', sans-serif; color: #13294b; background: #fffaf0; padding: 6px 12px; border-radius: 999px; box-shadow: 0 3px 0 #e6cd94, 0 6px 12px rgba(0,0,0,.2); pointer-events: none; }

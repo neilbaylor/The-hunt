@@ -27,7 +27,7 @@ export class FaceBadge {
   readonly el: HTMLDivElement;
   private badge: HTMLDivElement; private word: HTMLSpanElement; private bubble: HTMLDivElement;
   private rt = new THREE.WebGLRenderTarget(192, 192, { samples: 4 });
-  private cam = new THREE.PerspectiveCamera(30, 1, 0.4, 2);   // near clip just short of the face: an arm or club in front never blocks it
+  private cam = new THREE.PerspectiveCamera(17, 1, 0.84, 3);   // a long lens from 1 m with the near clip just short of the visor: an arm or the club in front never blocks the face
   private up = new THREE.Vector3(0, 1, 0); private fwdInit = false;
   private key = new THREE.DirectionalLight('#fff4e6', 1.8); private fill = new THREE.DirectionalLight('#dbe9ff', 0.6);
   private blitScene = new THREE.Scene(); private blitCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -123,7 +123,7 @@ export class FaceBadge {
       const right = new THREE.Vector3().crossVectors(this.up, this.fwd).normalize();
       const sway = this.shake > 0 ? Math.sin(this.t * 22) * 0.1 * this.shake : 0;
       const look = eye.clone().addScaledVector(this.up, -0.035);                    // just below the nose bridge: face + a little shoulder
-      this.cam.position.copy(look).addScaledVector(this.fwd, 0.56).addScaledVector(right, 0.12 + sway).addScaledVector(this.up, 0.02);   // slight ¾
+      this.cam.position.copy(look).addScaledVector(this.fwd, 1.0).addScaledVector(right, 0.2 + sway).addScaledVector(this.up, 0.02);   // slight ¾
       this.cam.up.copy(this.up); this.cam.lookAt(look);
       // its own key and fill, riding with the camera, so it's never dark
       this.key.position.copy(this.cam.position).addScaledVector(this.up, 0.5).addScaledVector(right, -0.4); this.key.target.position.copy(look);

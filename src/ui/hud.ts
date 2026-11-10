@@ -165,6 +165,7 @@ export function padSVG(skin: Skin) {
     <path d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="rgba(6,20,43,.45)" stroke-width="15" stroke-linecap="round"/>
     <path class="power-arc" d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="url(#${id}p)" stroke-width="15" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
     ${beads}
+    <g class="ptarget" visibility="hidden"><line class="pt-ring" stroke="#ff4fa3" stroke-width="5" stroke-linecap="round"/><line class="pt-track" x1="-21" x2="21" stroke="#ff4fa3" stroke-width="4" stroke-linecap="round"/><g class="pt-lab"><rect x="-17" y="-9" width="34" height="18" rx="9" fill="#ff4fa3" stroke="#fff" stroke-width="1.5"/><text y="4.5" text-anchor="middle">150</text></g></g>
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="url(#${id}g)"/>
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="3"/>
     <rect x="-15.5" y="-72.5" width="31" height="163" rx="15.5" fill="none" stroke="rgba(255,246,227,.22)" stroke-width="1.2"/>
@@ -547,6 +548,23 @@ export class Hud {
 
   // ── swing pad drawing ──
   private padTop = false; private padStruck = false;
+  /** the pull that carries the ball to the aim distance (0..1), or null at full; hint when even a full swing's minimum is too far */
+  private pTarget: number | null = null; private pOn = false;
+  setPowerTarget(f: number | null, yds: number, hint = '') {
+    const key = `${f === null ? 'x' : f.toFixed(3)}|${Math.round(yds)}|${hint}`;
+    if ((this as any)._ptk === key) return; (this as any)._ptk = key;
+    this.pTarget = f;
+    const svg = this.pad.querySelector('svg'), g = svg?.querySelector<SVGGElement>('.ptarget'); if (!svg || !g) return;
+    g.setAttribute('visibility', f === null ? 'hidden' : 'visible');
+    this.el.querySelector('#padHint')?.remove();
+    if (hint) this.q('.br').insertAdjacentHTML('beforeend', `<div class="pad-hint" id="padHint">${hint}</div>`);
+    if (f === null) return;
+    const a = ((262 - 150 * f) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
+    const L = g.querySelector('.pt-ring')!; L.setAttribute('x1', (c * 70).toFixed(1)); L.setAttribute('y1', (sn * 70).toFixed(1)); L.setAttribute('x2', (c * 92).toFixed(1)); L.setAttribute('y2', (sn * 92).toFixed(1));
+    const T = g.querySelector('.pt-track')!, ty = (f * 80).toFixed(1); T.setAttribute('y1', ty); T.setAttribute('y2', ty);
+    g.querySelector('.pt-lab')!.setAttribute('transform', `translate(${(c * 64 - 6).toFixed(1)} ${(sn * 64).toFixed(1)})`);
+    g.querySelector('text')!.textContent = String(Math.round(yds));
+  }
   setPad(pt: [number, number], trailB: [number, number][], trailD: [number, number][], atTop: boolean) {
     const svg = this.pad.querySelector('svg'); if (!svg) return;
     const puck = svg.querySelector('.puck') as SVGGElement;
@@ -563,6 +581,9 @@ export class Hud {
       svg.querySelector('.power-arc')!.setAttribute('stroke-dasharray', `${(f * 100).toFixed(1)} 100`);
       svg.querySelectorAll<SVGGElement>('.bead').forEach(b => b.classList.toggle('lit', f >= +b.dataset.f! - 0.02));
       svg.classList.toggle('maxed', f >= 0.98);
+      // on the aim distance's pull: a glow and a tick
+      const on = this.pTarget !== null && trailB.length > 1 && Math.abs(f - this.pTarget) <= 0.03;
+      svg.classList.toggle('on-target', on); if (on && !this.pOn) buzz(10); this.pOn = on;
       (svg as unknown as HTMLElement).style.setProperty('--pull', f.toFixed(3));   // the dial swells as you pull
       if (atTop && !this.padTop) buzz(12);
       this.padTop = atTop;

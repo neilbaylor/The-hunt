@@ -576,7 +576,14 @@ function frame(now: number) {
   hud.setState(state === 'ready', state === 'flight', !card);
   hud.el.classList.toggle('in-shot', state === 'flight' || state === 'result');   // the top controls step away for the shot
   // the editorial distance: target at address (live with the aim ring), a ticking carry in the air
-  if (state === 'ready' || state === 'swinging' || state === 'intro') hud.edAddress(aim.distanceYds);
+  if (state === 'ready' || state === 'swinging' || state === 'intro') {
+    hud.edAddress(aim.distanceYds);
+    // the stick's power target: the pull that carries the aim distance (full swings map the pull onto 60–100% of carry)
+    const M = SHOT_MODES[hud.mode], max = M.max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].pct / 100, pw = aim.distanceYds / Math.max(1, max);
+    const f = hud.mode === 'full' ? (pw - FULL_MIN) / (1 - FULL_MIN) : pw;
+    const hint = hud.mode === 'full' && f < 0 ? (CLUB_SPECS[hud.club].id.match(/PW|°/) ? 'Too short for a full swing · try Pitch' : 'Too short for a full swing · try Punch') : '';
+    hud.setPowerTarget(f >= 0.97 ? null : clamp(f, 0, 1), aim.distanceYds, hint);
+  } else hud.setPowerTarget(null, 0);
   else if (state === 'flight') hud.edLive(Math.hypot(ball.pos.x - ball.start.x, ball.pos.z - ball.start.z) / YD);
   aimCtl.setEnabled(state === 'ready');
   aimCtl.update(dt, state === 'ready' || state === 'swinging');

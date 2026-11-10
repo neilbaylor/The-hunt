@@ -24,13 +24,25 @@ vec3 bumpN(vec3 pos, vec3 n, float h){
 const BODY: Record<FabricKind, string> = {
   polo: /* glsl */ `
     float hem = vC.x, seam = vC.y;
-    // plain matte poly/cotton jersey: no knit texture and no painted folds (the drape is in the geometry);
-    // only a faint turned-back band at the hems and a barely-there shade along the seams
-    float sg = 1.0 - smoothstep(0.0, 0.0025, seam);
+    // matte performance jersey: a fine knit only up close, clear seams (shoulder/armhole, sides) with a line of
+    // stitching, a turned hem, and a few soft drape folds: vertical ones gathering into the waistband (tucked),
+    // and broad diagonal tension folds across the torso
+    float fine = 1.0 - smoothstep(0.0005, 0.0018, fwidth(vB.y));
+    vec3 kq = vB * 900.0;
+    h += 0.00003 * abs(sin(kq.x) * sin(kq.y + 0.5 * sin(kq.z))) * fine;
+    float sg = 1.0 - smoothstep(0.0, 0.0018, seam);
+    float sst = (1.0 - smoothstep(0.0006, 0.0014, abs(seam - 0.0045))) * step(0.45, fract((vB.x + vB.y + vB.z) * 220.0));
+    h -= 0.00035 * sg;
+    col *= 1.0 - 0.07 * sg - 0.1 * sst;
     float band = 1.0 - smoothstep(0.014, 0.018, hem);
     col *= 1.0 - 0.035 * band;
-    col *= 1.0 - 0.02 * sg;
-    h += 0.00015 * smoothstep(0.012, 0.016, hem) * band;   // the fold line of the hem, very soft
+    h += 0.00015 * smoothstep(0.012, 0.016, hem) * band;
+    float wy2 = vB.y - uBeltY;
+    float ang = atan(vB.x, vB.z - uBackZ);
+    float gather = smoothstep(0.14, 0.02, wy2) * step(-0.02, wy2);
+    h += 0.0010 * gather * (0.5 + 0.5 * sin(ang * 13.0 + 3.0 * fbm3(vB * 7.0)));
+    float torso = smoothstep(uBeltY + 0.05, uBeltY + 0.15, vB.y) * (1.0 - smoothstep(uBeltY + 0.35, uBeltY + 0.45, vB.y));
+    h += 0.0005 * torso * (0.5 + 0.5 * sin((vB.y + 0.7 * abs(vB.x)) * 38.0 + 2.5 * fbm3(vB * 5.0)));
     // embroidered crest on the chest (planar projection from the front)
     vec2 cuv = vec2((vB.x - uCrestC.x) / uCrestS + 0.5, (vB.y - uCrestC.y) / abs(uCrestS) * 1.2 + 0.5);
     float inC = step(uCrestC.z - 0.03, vB.z) * step(0.0, cuv.x) * step(cuv.x, 1.0) * step(0.0, cuv.y) * step(cuv.y, 1.0);
