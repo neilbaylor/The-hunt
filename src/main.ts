@@ -113,14 +113,15 @@ const aimCtl = new AimController({
   scene, camera, canvas: renderer.domElement, range, lefty: golfer.lefty,
   ballPos: () => golfer.ballWorld(new THREE.Vector3()),
   // the reachable band for the club and shot type: a full swing goes 60-100% of the club's carry; the other modes 30-100% of their own max
-  carry: () => { const full = SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id); return { full, min: Math.max(5, Math.round(full * (hud.mode === 'full' ? FULL_MIN : 0.3))), max: full }; },
+  carry: () => { const full = Math.round(SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].pct / 100);   // the lie takes its share (rough 70–85% → the middle)
+    return { full, min: Math.max(5, Math.round(full * (hud.mode === 'full' ? FULL_MIN : 0.3))), max: full }; },
   // the golfer turns to face the aim line (he stands round the ball, which sits at the origin)
   onChange: () => { golfer.root.rotation.y = -aim.dir; golfer.root.updateMatrixWorld(true); if (state === 'ready') teeUp(); },
   shapeAt: (t, out) => preview.pointAt(t, out),
 });
-hud.onLie = () => { sound.ui(); teeUp(); };
+hud.onLie = () => { sound.ui(); teeUp(); aimCtl.clubChanged(); };   // a new lie changes the reach: re-aim at its full distance
 // ?lie=3 or ?lie=rough: start on that sample lie (HUD checks)
-{ const l = QS.get('lie'); if (l) { const i = /^\d+$/.test(l) ? +l : LIES.findIndex(x => x.name.toLowerCase().replace(/\s+/g, '').startsWith(l.toLowerCase())); if (i >= 0 && i < LIES.length) { hud.lie = i; hud.render(null); } } }
+{ const l = QS.get('lie'); if (l) { const i = /^\d+$/.test(l) ? +l : LIES.findIndex(x => x.name.toLowerCase().replace(/\s+/g, '').startsWith(l.toLowerCase())); if (i >= 0 && i < LIES.length) { hud.lie = i; hud.render(null); aimCtl.clubChanged(); } } }
 
 function teeUp() {
   // off the tee box: driver teed high (ball's equator at the top of the face, ~3.7 cm of tee showing),
