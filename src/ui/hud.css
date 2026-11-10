@@ -652,3 +652,17 @@ body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-orig
 .lie-c .lie-slope b { font-size: 12px; }
 .lie-c .lie-slope small { font-size: 9px; }
 .lie-c .lie-txt:not(:has(.lie-slope)) { align-content: center; }
+
+/* club coin colourways (try-outs; body[data-coin] = a|b|c|d via ?coin=). Default stays navy until one is picked */
+body[data-coin="a"] .hud.skin-f .club-btn .big { background: radial-gradient(circle at 35% 30%, #ffe680, #ffd23f 70%); color: #1f4d36; box-shadow: inset 0 -3px 0 rgba(150,110,0,.35), 0 0 0 2px #c9a227; }
+body[data-coin="a"] .hud.skin-f .list button[aria-pressed="true"] { background: #ffd23f; color: #1f4d36; box-shadow: 0 0 0 2px #c9a227; }
+body[data-coin="a"] .hud.skin-f .list button[aria-pressed="true"] b, body[data-coin="a"] .hud.skin-f .list button[aria-pressed="true"] span { color: #1f4d36; }
+body[data-coin="b"] .hud.skin-f .club-btn .big { background: radial-gradient(circle at 35% 30%, #2f6b4c, #1f4d36 70%); color: #fbf3df; box-shadow: inset 0 -3px 0 rgba(0,0,0,.25), 0 0 0 2px #ffd23f; }
+body[data-coin="b"] .hud.skin-f .list button[aria-pressed="true"] { background: #1f4d36; color: #fbf3df; box-shadow: 0 0 0 2px #ffd23f; }
+body[data-coin="b"] .hud.skin-f .list button[aria-pressed="true"] b { color: #fbf3df; } body[data-coin="b"] .hud.skin-f .list button[aria-pressed="true"] span { color: #ffd23f; }
+body[data-coin="c"] .hud.skin-f .club-btn .big { background: radial-gradient(circle at 35% 30%, #fffdf5, #f3e6c8 75%); color: #1f4d36; box-shadow: inset 0 -3px 0 rgba(150,120,60,.25), 0 0 0 3px #ffd23f; }
+body[data-coin="c"] .hud.skin-f .list button[aria-pressed="true"] { background: #fffdf5; color: #1f4d36; box-shadow: 0 0 0 3px #ffd23f; }
+body[data-coin="c"] .hud.skin-f .list button[aria-pressed="true"] b, body[data-coin="c"] .hud.skin-f .list button[aria-pressed="true"] span { color: #1f4d36; }
+body[data-coin="d"] .hud.skin-f .club-btn .big { background: linear-gradient(160deg, #fff1a6 0%, #ffd23f 45%, #e0a419 100%); color: #13241b; box-shadow: inset 0 -3px 0 rgba(120,80,0,.35), inset 0 2px 0 rgba(255,255,255,.6), 0 0 0 2px #fffaf0, 0 0 0 4px #c9a227; }
+body[data-coin="d"] .hud.skin-f .list button[aria-pressed="true"] { background: linear-gradient(160deg, #fff1a6, #ffd23f 50%, #e0a419); color: #13241b; box-shadow: 0 0 0 2px #c9a227; }
+body[data-coin="d"] .hud.skin-f .list button[aria-pressed="true"] b, body[data-coin="d"] .hud.skin-f .list button[aria-pressed="true"] span { color: #13241b; }

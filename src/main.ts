@@ -99,6 +99,7 @@ scene.add(fill, fill.target);
 // ── HUD + sound ──
 const hud = new Hud(document.body, profile);
 hud.onSpinTick = lvl => sound.whirr(lvl);
+if (QS.get('coin')) document.body.dataset.coin = QS.get('coin')!;   // club coin colourway try-outs (a|b|c|d)
 hud.el.classList.add('hidden');
 const sound = new Sound();
 hud.club = 6; hud.mode = 'full'; hud.lie = 0; hud.render(null);
