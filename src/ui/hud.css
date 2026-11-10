@@ -607,3 +607,15 @@ body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-orig
 /* the aim preview's yardage tag (editorial style) */
 .aim-preview-tag { position: fixed; left: 0; top: 0; z-index: 5; pointer-events: none; font: 400 22px/1 'Anton', 'Barlow Condensed', sans-serif; color: #fff; letter-spacing: .02em; text-shadow: 0 1px 6px rgba(0,0,0,.55); white-space: nowrap; }
 .aim-preview-tag small { font: 600 9.5px/1 'Barlow', sans-serif; letter-spacing: .22em; margin-left: 4px; }
+
+/* the club chip lives bottom-right beside the swing stick (mirroring the strike ball); its picker is a bottom sheet */
+.hud .club-dock { position: absolute; right: -78px; bottom: 30px; pointer-events: auto; }
+.hud.skin-f .club-dock .club-btn { width: 66px; height: 66px; min-width: 0; padding: 0; border-radius: 22px; display: grid; grid-template-columns: 1fr; grid-template-rows: auto auto; justify-items: center; align-content: center; row-gap: 3px; }
+.hud.skin-f .club-dock .club-btn .big { grid-column: 1; grid-row: 1; width: 40px; height: 40px; font-size: 18px; box-shadow: inset 0 -3px 0 rgba(0,0,0,.25), 0 0 0 2px var(--flag); }
+.hud.skin-f .club-dock .club-btn .big.sm { font-size: 15px; }
+.hud.skin-f .club-dock .club-btn .cap { grid-column: 1; grid-row: 2; font: 700 9.5px/1 var(--h-body); color: var(--navy); max-width: 62px; text-align: center; white-space: nowrap; }
+.hud.skin-f .club-dock .club-btn .cap em { display: block; font-size: 8.5px; margin-top: 1px; }
+.hud .club-sheet { position: absolute; left: 50%; bottom: calc(100% + 10px); top: auto !important; transform: translateX(-50%); width: max-content; z-index: 5; animation: sheetUp .3s cubic-bezier(.2,1.4,.4,1) both; }
+@keyframes sheetUp { from { transform: translate(-50%, 24px); opacity: 0; } to { transform: translateX(-50%); opacity: 1; } }
+.hud .tl .row:empty, .hud .tl .row:has(#modeSlot:empty) { display: none; }
+@media (prefers-reduced-motion: reduce) { .hud .club-sheet { animation: none; } }
