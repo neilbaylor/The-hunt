@@ -231,7 +231,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
           // so any sliver left between the margins reads as lashes, never as iris
           if (uLidGeo > 0.5) {
             vec3 lidc0 = uLid * 0.9;
-            eye = mix(eye, mix(lidc0, vec3(0.06, 0.045, 0.04), 1.0 - smoothstep(0.15, 0.55, abs(e.y + 0.3))), smoothstep(0.45, 0.9, uBlink));
+            eye = mix(eye, mix(lidc0, vec3(0.06, 0.045, 0.04), (1.0 - smoothstep(0.15, 0.55, abs(e.y + 0.3))) * (1.0 - smoothstep(0.6, 0.95, abs(e.x)))), smoothstep(0.45, 0.9, uBlink));   // (lash line fades out at the corners)
             diffuseColor.rgb = mix(diffuseColor.rgb, eye, inside);
           } else {
           float bl = uBlink;
@@ -378,7 +378,9 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       // the lips part along a smooth cut (head.py): the jaw drops for real while talking (jawOpen 1 ≈ 9 mm at the lower lip)
       // a voice clip's loudness (when given) scales the jaw: loud syllables open wider, quiet ones barely part the lips
       const loud = jawCurve ? 0.35 + 1.0 * (jawCurve[Math.min(jawCurve.length - 1, Math.floor(st * jawFps))] ?? 0) : 1;
-      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.8, w_ * talkK * 0.6 * loud) : Math.min(1.2, w_ * talkK);
+      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.8, w_ * talkK * 1.0 * loud) : Math.min(1.2, w_ * talkK);
+      // voiced: the jaw never quite closes between vowels (except the lip-closing M/B/P and the pauses)
+      if (speech[k].v !== 'M' && speech[k].v !== '_') tgt.jawOpen = Math.max(tgt.jawOpen ?? 0, Math.min(0.8, 0.14 * talkK * loud));
       nodV += ((speech[k].v === 'A' || speech[k].v === 'O' ? 0.035 : 0) - nodV) * (1 - Math.exp(-dt * 6));
     } else nodV += (0 - nodV) * (1 - Math.exp(-dt * 4));
     {

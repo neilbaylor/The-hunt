@@ -137,8 +137,8 @@ export class FaceBadge {
     head.updateWorldMatrix(true, false);
     if (head.matrixWorld.determinant() < 0) pivot.scale.x = -1;
     // front-on and level: from straight ahead at eye height, a long lens framing visor top to chin
-    const cam = new THREE.PerspectiveCamera(19.5, 1, 0.3, 3);
-    const look = new THREE.Vector3(e.x, e.y - 0.002, e.z);                 // visor top to chin, a little neck
+    const cam = new THREE.PerspectiveCamera(16.5, 1, 0.3, 3);
+    const look = new THREE.Vector3(e.x, e.y - 0.014, e.z);                 // visor band to chin: the face fills the circle
     cam.position.set(look.x, look.y + 0.02, look.z + 0.95); cam.lookAt(look);
     b.face.setTalkScale(2);                                    // a small badge wants the mouth shapes bigger
     b.face.setExpression({ smile: 0.4 });

@@ -762,14 +762,28 @@ if A.lids:
         p_meet = p_lo + 0.25 * (p_up - p_lo)
         wx = np.clip((hw * 1.25 - np.abs(dx - xm)) / (hw * 0.3), 0, 1)
         near = (np.linalg.norm(d, axis=1) < 0.024) & (dz > -0.002) & (wx > 0)
-        s_up = (1 - sstep(p_up, p_up + 0.6, phi)) * (phi >= p_up - 0.015)
-        s_lo = (1 - sstep(p_lo, p_lo - 0.45, phi)) * (phi <= p_lo + 0.015)
-        # the margins just overlap when closed (more folds them into a zig-zag); the shader shades what's left of the eye
-        dphi = ((p_meet - 0.04 - p_up) * s_up + (p_meet + 0.02 - p_lo) * s_lo) * wx * near
-        inside = (phi < p_up - 0.015) & (phi > p_lo + 0.015) & near
-        phi2 = phi + dphi; rho2 = rho * (1 + (0.045 * s_up + 0.02 * s_lo) * wx * near) - 0.002 * inside * wx
+        # one continuous, monotonic remap of each vertex's angle (no fold, so no zig-zag where the landmark margin falls
+        # between vertices): the upper lid (margin → 0.6 rad above) stretches down to the meeting curve, the lower lid
+        # (margin → 0.45 rad below) up to it, and the eye surface between a margin and the meeting curve collapses onto
+        # it, sinking 2 mm behind the lids
+        DU, DL = 0.6, 0.45
+        phi2 = phi.copy()
+        up_l = (phi >= p_up) & (phi < p_up + DU)
+        phi2[up_l] = (p_meet + (phi - p_up) * (p_up + DU - p_meet) / DU)[up_l]
+        lo_l = (phi <= p_lo) & (phi > p_lo - DL)
+        phi2[lo_l] = (p_meet - (p_lo - phi) * (p_meet - (p_lo - DL)) / DL)[lo_l]
+        inside = (phi > p_lo) & (phi < p_up)
+        phi2[inside] = p_meet[inside]
+        # (blend the lid stretch out smoothly at its top/bottom so the crease doesn't kink)
+        k_up = sstep(p_up + DU, p_up + 0.6 * DU, phi); k_lo = sstep(p_lo - DL, p_lo - 0.6 * DL, phi)
+        phi2 = np.where(up_l, phi + (phi2 - phi) * np.maximum(k_up, (phi < p_up + 0.6 * DU)), phi2)
+        phi2 = np.where(lo_l, phi + (phi2 - phi) * np.maximum(k_lo, (phi > p_lo - 0.6 * DL)), phi2)
+        sink = np.minimum(np.clip((p_up - phi) / 0.06, 0, 1), np.clip((phi - p_lo) / 0.06, 0, 1)) * inside
+        dphi = (phi2 - phi) * wx * near
+        phi2 = phi + dphi
+        rho2 = rho * (1 + 0.03 * (up_l | lo_l) * wx * near) - 0.002 * sink * wx * near
         nd = np.outer(dx, X) + (rho2 * np.sin(phi2))[:, None] * Y + (rho2 * np.cos(phi2))[:, None] * Z
-        lid += np.where((near & ((dphi != 0) | inside))[:, None], nd - d, 0)
+        lid += np.where(near[:, None], nd - d, 0)
         print(f'  eyelids: {int((np.abs(dphi) > 1e-4).sum())} lid verts rotate (upper {np.degrees((p_meet - p_up).mean()):.0f}°, lower {np.degrees((p_meet - p_lo).mean()):+.0f}°), {int(inside.sum())} eye-surface verts sink')
     morph_d['blink'] = lid
 if 'jawOpen' in morph_d:
@@ -852,7 +866,7 @@ if 'jawOpen' in morph_d:
             ids = np.arange(len(LV), len(LV) + len(chain))
             LV = np.r_[LV, P]; wts = wts + [wts[v] for v in chain]
             for k_ in morph_d: morph_d[k_] = np.r_[morph_d[k_], morph_d[k_][chain]]
-            LIPIN = np.r_[LIPIN, np.full(len(chain), 0.5 + 0.5 * row)]
+            LIPIN = np.r_[LIPIN, (0.5 + 0.5 * row) * np.clip((taper - 0.3) / 0.5, 0, 1)]   # (lip-coloured toward the corners, where the strips stretch into view)
             for i in range(len(chain) - 1):
                 a, b, c, d = prev[i], prev[i + 1], ids[i], ids[i + 1]
                 for tri in ([a, c, b], [b, c, d]):
