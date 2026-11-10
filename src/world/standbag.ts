@@ -42,7 +42,10 @@ function section(y: number) {
 }
 function bodyPoint(a: number, y: number, out: THREE.Vector3, puff = 0) {
   const { rx, rz } = section(y);
-  const soft = 1 + 0.025 * Math.sin(a * 3 + y * 11) + 0.012 * Math.sin(a * 7 - y * 23) + puff; // bulges and creases
+  // soft fabric: broad bulges where the clubs press out, vertical creases, a slight pinch at the colour seam
+  const crease = Math.pow(Math.abs(Math.sin(a * 4 + 0.6 + 0.4 * Math.sin(y * 7))), 0.35) - 0.7;
+  const pinch = -0.035 * Math.exp(-Math.pow((y - SPLIT) / 0.025, 2));
+  const soft = 1 + 0.045 * Math.sin(a * 3 + y * 9) * Math.sin(y * 6.5 + 0.4) + 0.025 * crease + 0.012 * Math.sin(a * 7 - y * 23) + pinch + puff;
   return out.set(Math.sin(a) * rx * soft, y, -Math.cos(a) * rz * soft); // a = 0 is the front (-z)
 }
 
@@ -50,13 +53,13 @@ function bodyPoint(a: number, y: number, out: THREE.Vector3, puff = 0) {
 export function createStandBag(): THREE.Mesh {
   const parts: THREE.BufferGeometry[] = [];
   // ── the body: blue below, white/very light grey above (a soft colour seam), slightly tapered oval ──
-  parts.push(colored(surface(40, 22, (u, v, o) => { bodyPoint(u * Math.PI * 2, 0.04 + v * (H - 0.04), o); }), (_x, y) => y < SPLIT ? C.blue : y > H - 0.08 ? C.grey : C.white));
+  parts.push(colored(surface(56, 34, (u, v, o) => { bodyPoint(u * Math.PI * 2, 0.04 + v * (H - 0.04), o); }), (_x, y) => y < SPLIT ? C.blue : y > H - 0.08 ? C.grey : C.white));
   // a thin blue piping line up the white half (as on the real bag)
   parts.push(colored(surface(2, 10, (u, v, o) => { bodyPoint(0.42 + (u - 0.5) * 0.02, SPLIT + v * (H - SPLIT - 0.06), o, 0.006); }), C.blue));
   // ── the big blue front pocket: a pillow wrapping the front of the curve ──
   const PA = 1.25, PY0 = 0.07, PY1 = SPLIT + 0.06;
   const pocket = (u: number, v: number, o: THREE.Vector3, extra = 0) => bodyPoint((u - 0.5) * PA * 2, PY0 + v * (PY1 - PY0), o, 0.14 * Math.pow(Math.sin(Math.PI * u), 0.6) * Math.pow(Math.sin(Math.PI * v), 0.5) + extra);
-  parts.push(colored(surface(20, 14, (u, v, o) => { pocket(u, v, o); }), C.blueD));
+  parts.push(colored(surface(24, 18, (u, v, o) => { pocket(u, v, o); }), C.blue));
   // black piping round the pocket, the long zip, the orange pull tab and the diamond badge
   const along = (f: (t: number, o: THREE.Vector3) => void, n: number, r: number, c: THREE.Color) => {
     const pts: THREE.Vector3[] = []; for (let i = 0; i <= n; i++) { const o = new THREE.Vector3(); f(i / n, o); pts.push(o); }

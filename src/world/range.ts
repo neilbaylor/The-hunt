@@ -772,11 +772,12 @@ function axis(lo: number, hi: number, step: number, minV: number, maxV: number, 
   return left.reverse().concat(out);
 }
 /** The terrain as a grid of chunks (dense in the playing corridor), so the camera and frustum culling skip what is off screen. */
-function terrainChunks(coarse = false): THREE.BufferGeometry[] {
+function terrainChunks(detail: Detail = 'high'): THREE.BufferGeometry[] {
+  const coarse = detail === 'low', fine = detail === 'high' ? 0.5 : 1.0;
   // 2 m everywhere in the corridor, 0.5 m over the bunkers so their lips and faces are crisp
   const refine = (arr: number[], spans: [number, number][]) => {
     let out = arr.filter(v => !spans.some(([a, b]) => v > a && v < b));
-    for (const [a, b] of spans) for (let v = a; v <= b + 1e-6; v += 0.5) out.push(v);
+    for (const [a, b] of spans) for (let v = a; v <= b + 1e-6; v += fine) out.push(v);
     out = [...new Set(out.map(v => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
     return out;
   };
@@ -1349,7 +1350,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
   // ground
   const noise = makeNoiseTexture(renderer);
   const gmat = groundMaterial(noise, makeForestTexture(), makeTurfTexture(renderer));
-  for (const g of terrainChunks(buildDetail === 'low')) {
+  for (const g of terrainChunks(buildDetail)) {
     const terrain = new THREE.Mesh(g, gmat);
     terrain.receiveShadow = true;
     terrain.name = 'terrain';
@@ -1653,7 +1654,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       const b = 0.78 + rand() * 0.42, warm = (rand() - 0.5) * 0.22 * k;
       return out.setRGB(b * (1 + warm), b, b * (1 - warm * 0.8));
     };
-    const place = (x: number, z: number, sp0: number, scl: number) => {
+    const place = (x: number, z: number, sp0: number, scl: number, green = false) => {
       let sp = sp0;
       if (blocked(x, z)) return;
       const ci = CH.findIndex(([a, b]) => z <= a && z > b); if (ci < 0) return;
@@ -1665,7 +1666,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       buckets[ci][sp].push(m4.compose(p, q, s).clone());
       const tc = tintOf(new THREE.Color(), 1);
       // a few trees have started to turn (encoded as r > 4: the leaf shader recolours them)
-      if (sp !== 1 && rand() < (sp === 4 ? 0.16 : 0.05)) tc.r = 8 + Math.floor(rand() * 3) * 2 + rand() * 0.9;
+      if (!green && sp !== 1 && rand() < (sp === 4 ? 0.16 : 0.05)) tc.r = 8 + Math.floor(rand() * 3) * 2 + rand() * 0.9;
       tints[ci][sp].push(tc);
       blobs.push({ x, z, r: (sp === 1 ? 2.6 : sp === 2 ? 1.9 : sp === 3 ? 3.9 : 3.5) * s.x, h: (sp === 1 ? 10 : sp === 2 ? 11 : 12) * s.y });
     };
@@ -1688,7 +1689,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
     }
     // a few big hero oaks and maples close to the tee and down the first 100 yards, framing the shot as in the
     // photos: broad crowns of big lobes, 15–25 m across, high over clean trunks
-    for (const [hx, hz, sp, sc] of [[-26, 6, 3, 2.0], [-34, -36, 0, 2.3], [31, -16, 4, 1.9], [-24, -66, 3, 1.7], [33, -70, 0, 2.1], [-34, -110, 4, 1.6]] as const) place(hx, hz, sp, sc);
+    for (const [hx, hz, sp, sc] of [[-26, 6, 3, 2.0], [-34, -36, 0, 2.3], [31, -16, 4, 1.9], [-24, -66, 3, 1.7], [33, -70, 0, 2.1], [-34, -110, 4, 1.6]] as const) place(hx, hz, sp, sc, true); // heroes stay summer-green
     // the far end and behind the tee
     for (let i = 0; i < 140; i++) { const x = (rand() - 0.5) * 260, z = -345 - rand() * 120; place(x, z, rand() < 0.5 ? 0 : 1, 0.9 + rand() * 0.7); }
     // a second, taller layer further back on the rising ground, with gaps, so the backdrop has depth

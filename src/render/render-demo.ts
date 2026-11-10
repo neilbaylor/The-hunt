@@ -79,7 +79,7 @@ if (view === 'portrait') {
     camera.position.set(bx * 0.55, t.pos.y + 1.7, bz + 9); camera.lookAt(bx, t.pos.y + 1.1, bz);
   }
   focus.copy(t.pos);
-} else if (view === 'bag') { camera.position.set(2.15 - 0.75, 0.5, -3.3 + 1.25); camera.lookAt(2.15, 0.45, -3.3); focus.set(2.15, 0, -3.3);
+} else if (view === 'bag') { camera.position.set(2.15 - 1.15, 0.62, -3.3 + 2.0); camera.lookAt(2.15, 0.42, -3.3); focus.set(2.15, 0, -3.3);
 } else if (view === 'intro') { camera.position.set(-2.1, 1.42, 0.35); camera.lookAt(0.6, 1.0, -0.3); focus.set(0.9, 0, 0);
 } else if (view === 'photo2') { camera.position.set(4, 9, 24); camera.lookAt(-2, 1.5, -70); focus.set(0, 0, -20);
 } else if (view === 'photo3') { camera.position.set(-30, 55, -20); camera.lookAt(5, 0, -150); focus.set(0, 0, -120);
