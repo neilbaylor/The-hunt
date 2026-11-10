@@ -213,3 +213,9 @@ The container restarted and stopped all agents mid-round; their committed work i
 - **Inputs:** photos, height and weight, handedness, outfit choices.
 - **What it does:** writes the profile JSON, runs build.py and head.py (Hugging Face shape generation needs a token for volume, with a MakeHuman-fit fallback), fits the headwear, and renders a check sheet.
 - **Also:** a gear and clothing library with swappable colours and logos; per-player swing personality (tempo, backswing length, finish, waggle, optionally traced from a friend's video); a player picker on the intro screen; a per-player badge face and voice lines.
+
+## Update (Nov 10, late)
+- Washed-out polo/shorts on face-on cam + intro FIXED: cause was the Preetham sky's sun-glow in the env map acting as a 2nd cyan sun on front-facing surfaces. `range.avatarEnv` (env capped at AVATAR_ENV_CAP=20) is applied to the golfer's non-metal materials each frame in main.ts. Earlier band-aids (matte clothes, intro sun/env dim, exposure x0.95, fill 0.3 face-on) remain and could be relaxed. Note: with scene.environment set, three.js overrides material envMapIntensity with scene.environmentIntensity.
+- Face: Hunyuan3D-2.1 head; neck cut 3.5 cm under chin + lofted into collar (no bib/beam; head.py asserts weights/extent). Geometric eyelid blink, re-cut lips with teeth/interior, jaw cap 0.8, `face.sayTimed`. Separate HUD badge head (src/ui/facebadge.ts, `FaceBadge.say`) talks with bubble even when muted.
+- Open: rest mouth only slightly happier (corners still read down at badge size; needs geometry/texture reshaping); faint dark line at right mouth corner while talking; intro layout C untested with new badge; `--ear-scale` flag exists (default 1).
+- Playable: https://claude.ai/artifact/SwaX1NNQRX3PwKnBZHPmsH (v12). Face clips: https://claude.ai/artifact/ADb2rTwuG1nN28DtohuFwz
