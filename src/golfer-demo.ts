@@ -75,7 +75,6 @@ else if (view === 'gripfront' || view === 'gripeye' || view === 'gripdtl') {
   const g = golfer.club.gripLead.clone().applyQuaternion(golfer.club.group.quaternion).add(golfer.club.group.position);
   const gt = golfer.club.gripTrail.clone().applyQuaternion(golfer.club.group.quaternion).add(golfer.club.group.position);
   const mid = g.clone().lerp(gt, 0.5);
-  const head = golfer.char.worldToLocal(golfer.body.bones[5].getWorldPosition(new THREE.Vector3())).add(new THREE.Vector3(0, 0.05, 0.08));
   // eye view: a third of the way from the eyes to the hands, clear of the hair when the head is turned
   const eye = view === 'gripeye' ? golfer.rig.eyePosition(new THREE.Vector3()).lerp(mid, 0.05) : view === 'gripdtl' ? mid.clone().add(new THREE.Vector3(-0.42, 0.06, 0.06)) : mid.clone().add(new THREE.Vector3(0.05, 0.22, 1.0));
   const pw = golfer.char.localToWorld(eye.clone()), tw = golfer.char.localToWorld(mid.clone());

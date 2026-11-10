@@ -7,6 +7,7 @@ import { Rig, type BodyPose } from './rig';
 import { buildClub, buildHands, CLUB_SPECS, type ClubModel } from './club';
 import type { GolferProfile } from './profile';
 import { buildHumanBody, type HumanData, type HumanExtras } from './human';
+import { sampleSwing, pinWeights, clipChest, buildClubTrack, clubAt, rowAt, num, vec, EV } from './mocap';
 
 export type ShotMode = 'full' | 'punch' | 'pitch' | 'flop';
 export type SwingPhase = 'address' | 'back' | 'down' | 'follow';
@@ -371,6 +372,7 @@ export class Golfer {
 
   /** Pose the golfer for a swing state. Returns the club-head position (world). */
   update(s: SwingState) {
+    if (this.swingSource === 'mocap' && s.phase !== 'address' && !this.mocapBusy && this.extras) return this.updateMocap(s);   // ?swing=mocap: the captured swing (mocap.ts)
     const st = SHOT_STYLE[this.mode], p = this.pose, k = this.k;
     const key: Keys = { ...A };
     let phi = s.phi, finW = 0;
@@ -616,6 +618,81 @@ export class Golfer {
       this.rig.apply(p);
     }
     if (this.extras && this.handFrame) this.poseHands(qc, key.heel);
+    this.char.updateMatrixWorld(true);
+    return this.club.group.localToWorld(this.clubHeadWorld.set(0, 0, 0));
+  }
+
+  // ---- captured swing (A/B against the hand-keyed one): ?swing=mocap on the URL, or set swingSource ----
+  swingSource: 'keyed' | 'mocap' = globalThis.location && new URLSearchParams(globalThis.location.search).get('swing') === 'mocap' ? 'mocap' : 'keyed';
+  private mocapBusy = false;
+  private mocapRef: { key: string; track: Float32Array; addr: { pos: THREE.Vector3; quat: THREE.Quaternion; poleL: THREE.Vector3; poleR: THREE.Vector3 }; imp: { pos: THREE.Vector3; quat: THREE.Quaternion; poleL: THREE.Vector3; poleR: THREE.Vector3 }; look: THREE.Quaternion } | null = null;
+  private mocapRow = new Float32Array(64); private mocapRow0 = rowAt(EV.BA);
+  /** per club and shot: the hand-keyed address and impact club positions (the captured swing is held to them there, so
+   *  the per-club set-up and the strike stay exactly as they are), and the club's orientation along the clip */
+  private mocapPrepare() {
+    const key = `${this.clubIndex}|${this.mode}|${this.teeH}|${this.club.group.uuid}`;
+    if (this.mocapRef?.key === key) return this.mocapRef;
+    const g = this.club.group, grab = () => ({ pos: g.position.clone(), quat: g.quaternion.clone(), poleL: this.pose.poleL.clone(), poleR: this.pose.poleR.clone() });
+    this.mocapBusy = true;
+    this.update({ phase: 'down', phi: 0, topPhi: PHI_TOP, idleT: 0 }); const imp = grab();
+    this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 }); const addr = grab();
+    this.mocapBusy = false;
+    const F = this.handFrame!;
+    const track = buildClubTrack(this.club.shaftDir.clone().negate().normalize(), F.L.dir, this.hands.wristLead, this.hands.wristTrail);
+    // the eyes: the clip's head direction, turned so that at address it looks at the ball
+    const qRigChest = this.rig.Q[BONE.chest].clone(), qClip = clipChest(this.mocapRow0, new THREE.Quaternion());
+    const head0 = vec(this.mocapRow0, 'head', new THREE.Vector3()).applyQuaternion(qClip.invert()).applyQuaternion(qRigChest);
+    const look = new THREE.Quaternion().setFromUnitVectors(head0, this.ballC.clone().sub(this.headCentre()).normalize());
+    return (this.mocapRef = { key, track, addr, imp, look });
+  }
+  private updateMocap(s: SwingState) {
+    const ref = this.mocapPrepare(), st = SHOT_STYLE[this.mode], p = this.pose, g = this.club.group, rig = this.rig;
+    const phase = s.phase as 'back' | 'down' | 'follow';
+    const { row, t } = sampleSwing(phase, s.phi, s.topPhi, st.finish, this.mocapRow), r0 = this.mocapRow0;
+    const d = (n: string) => num(row, n) - num(r0, n);
+    const f = phase === 'follow' ? Math.min(1, -s.phi / Math.abs(PHI_FINISH)) : 0;
+    // body: the clip's change from its own address, added to this golfer's address for the club in hand
+    p.hipTurn = A.hipTurn + st.open + d('hipTurn'); p.hipTilt = A.hipTilt + d('hipTilt'); p.hipSide = A.hipSide + d('hipSide');
+    p.chestTurn = A.chestTurn + st.open * 0.5 + d('chestTurn');
+    p.chestTilt = A.chestTilt + this.tiltAdj * (1 - smooth(0.25, 0.9, f)) + d('chestTilt');
+    p.chestSide = A.chestSide + this.sideAdj * (1 - smooth(0.1, 0.6, f)) + d('chestSide');
+    const leg = rig.len.thigh + rig.len.shin, v = new THREE.Vector3();
+    p.pelvis.copy(this.pelvisBase).addScaledVector(vec(row, 'pelvis', v), leg);
+    p.shrugL = p.shrugR = 0;
+    const heel = num(row, 'heel');
+    this.feet(p, heel, 0, p.hipTurn);
+    rig.apply(p);
+    // lead knee: along the clip's thigh, facing the way the foot points
+    p.kneePoleL.copy(rig.P[BONE.thighL]).addScaledVector(vec(row, 'kneeL', v), 0.5).addScaledVector(v.copy(p.toeL).sub(p.ankleL).setY(0).normalize(), 0.5);
+    this.legReach(p);
+    // arms and head are read in the chest's frame, so they stay with this body's chest
+    const toRig = rig.Q[BONE.chest].clone().multiply(clipChest(row, new THREE.Quaternion()).invert());
+    const dir = (n: string) => vec(row, n, new THREE.Vector3()).applyQuaternion(toRig).normalize();
+    const shL = rig.P[BONE.upperL], shR = rig.P[BONE.upperR], arm = rig.len.upper + rig.len.fore;
+    const wristL = shL.clone().addScaledVector(dir('leadDir'), Math.min(0.997, num(row, 'leadExt')) * arm);
+    // club: shaft as captured, carried by the lead hand; held to the keyed club at address and through impact
+    const qc = clubAt(ref.track, t, new THREE.Quaternion());
+    g.position.copy(wristL).sub(this.hands.wristLead.clone().applyQuaternion(qc));
+    p.poleL.copy(shL).add(dir('leadElbow')); p.poleR.copy(shR).add(dir('trailElbow'));
+    const pin = pinWeights(phase, t);
+    for (const [w, r] of [[pin.address, ref.addr], [pin.impact, ref.imp]] as const) {
+      if (w < 1e-4) continue;
+      qc.slerp(r.quat, w); g.position.lerp(r.pos, w); p.poleL.lerp(r.poleL, w); p.poleR.lerp(r.poleR, w);
+    }
+    g.quaternion.copy(qc);
+    p.wristL.copy(this.hands.wristLead).applyQuaternion(qc).add(g.position);
+    p.wristR.copy(this.hands.wristTrail).applyQuaternion(qc).add(g.position);
+    p.look.copy(this.headCentre()).addScaledVector(dir('head').applyQuaternion(ref.look), 4);
+    if (s.lookAt) p.look.copy(this.char.worldToLocal(s.lookAt.clone()));
+    rig.apply(p);
+    // both hands stay on the club (same as the keyed swing): if an arm can't reach, the club comes to the shoulder
+    for (let pass = 0; pass < 4; pass++) {
+      const miss = rig.wristPos.L.clone().sub(p.wristL).addScaledVector(rig.wristPos.R.clone().sub(p.wristR), 0.5);
+      if (miss.lengthSq() < 1e-7) break;
+      g.position.add(miss); p.wristL.add(miss); p.wristR.add(miss);
+      rig.apply(p);
+    }
+    this.poseHands(qc, heel);
     this.char.updateMatrixWorld(true);
     return this.club.group.localToWorld(this.clubHeadWorld.set(0, 0, 0));
   }
