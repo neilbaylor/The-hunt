@@ -511,7 +511,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       // stand: 3 cm at the back, a little lower round the front of the neck, down to ~8 mm where the ends meet
       const sh = 0.03 - 0.005 * fr - 0.017 * Math.pow(endw, 1.4);
       A.push(a); EW.push(endw); SH.push(sh);
-      S.push(neck(a, -0.0015, -0.006));                              // the foot of the stand, tucked into the neckline
+      S.push(neck(a, -0.004, -0.006));                               // the foot of the stand, tucked into the neckline
       // the top of the stand: hugging the neck 4.5 mm clear of it (the neck narrows above the shirt's opening)
       const G = neck(a, -0.002, sh), { q, n } = skinNear(G), H = q.addScaledVector(n, 0.0045);
       const hug = 1 - endw * endw;
@@ -576,7 +576,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const t = v.clone().sub(S[i]).dot(TU[i]), st = SR[i].map(q => { const d = q.clone().sub(S[i]); return [d.dot(TU[i]), d.dot(OU[i])]; });
       if (t < st[0][0] - 0.004 || t > st[NS - 1][0]) return;
       let k = 0; while (k < NS - 2 && t > st[k + 1][0]) k++;
-      const f = Math.min(1, Math.max(0, (t - st[k][0]) / (st[k + 1][0] - st[k][0] || 1))), need = st[k][1] + (st[k + 1][1] - st[k][1]) * f + 1.8 * rr;
+      const f = Math.min(1, Math.max(0, (t - st[k][0]) / (st[k + 1][0] - st[k][0] || 1))), need = st[k][1] + (st[k + 1][1] - st[k][1]) * f + 2.3 * rr;
       const have = v.clone().sub(S[i]).dot(OU[i]); if (have < need) v.addScaledVector(OU[i], need - have);
     };
     const gapAt = (i: number, k: number) => { const u = k / NL; return 0.0024 + 0.0012 * u * u * u + 0.0016 * EW[i] * u * u; };   // the edges, and most the points, lift a hair
@@ -704,6 +704,31 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const baked = bakeAtlas(bits, 512);
     const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.88, sheen: 0.2, sheenColor: collarMat.sheenColor, sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const cm = skinned(baked.geometry, bitsMat); cm.name = 'collar'; cm.castShadow = false;
+    // the collar rides on the shoulders more than the shirt's neckline does (40% of the neck's weight), so the
+    // lead point isn't dragged round by the chin at the top
+    // and its weights are blurred over ~1.5 cm, so neighbouring vertices that took their weights from different
+    // shirt vertices (e.g. either side of the centre back) don't pull apart into dents when the shoulders move
+    { const ni = M.bones.indexOf('neck_01'), si = cm.geometry.getAttribute('skinIndex') as THREE.BufferAttribute, sw = cm.geometry.getAttribute('skinWeight') as THREE.BufferAttribute;
+      const pa = cm.geometry.getAttribute('position') as THREE.BufferAttribute, n = pa.count, Hc = 0.015, grid = new Map<number, number[]>();
+      const key = (x: number, y: number, z: number) => ((Math.floor(x / Hc) + 512) * 1024 + Math.floor(y / Hc) + 512) * 1024 + Math.floor(z / Hc) + 512;
+      for (let v = 0; v < n; v++) { const k = key(pa.getX(v), pa.getY(v), pa.getZ(v)); const l = grid.get(k); if (l) l.push(v); else grid.set(k, [v]); }
+      const outI = new Uint16Array(n * 4), outW = new Float32Array(n * 4);
+      for (let v = 0; v < n; v++) {
+        const x = pa.getX(v), y = pa.getY(v), z = pa.getZ(v), acc = new Map<number, number>();
+        const cx = Math.floor(x / Hc), cy = Math.floor(y / Hc), cz = Math.floor(z / Hc);
+        for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c2 = -1; c2 <= 1; c2++) {
+          const l = grid.get(((cx + a + 512) * 1024 + cy + b + 512) * 1024 + cz + c2 + 512); if (!l) continue;
+          for (const u of l) {
+            const d2 = (pa.getX(u) - x) ** 2 + (pa.getY(u) - y) ** 2 + (pa.getZ(u) - z) ** 2; if (d2 > Hc * Hc) continue;
+            const g = Math.exp(-d2 / (0.5 * Hc * Hc));
+            for (let k = 0; k < 4; k++) { const bi = si.getComponent(u, k), w = sw.getComponent(u, k) * g * (bi === ni ? 0.4 : 1); if (w > 0) acc.set(bi, (acc.get(bi) ?? 0) + w); }
+          }
+        }
+        const top = [...acc].sort((p1, p2) => p2[1] - p1[1]).slice(0, 4), tot = top.reduce((t, e) => t + e[1], 0) || 1;
+        top.forEach(([bi, w], k) => { outI[v * 4 + k] = bi; outW[v * 4 + k] = w / tot; });
+      }
+      cm.geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(outI, 4)); cm.geometry.setAttribute('skinWeight', new THREE.BufferAttribute(outW, 4));
+    }
     bits.forEach(b => b.geometry.dispose());
   }
   // belt (tucked-in shirt): a 3.5 cm mid-brown pebbled leather belt laid on the shorts' waistband and skinned
