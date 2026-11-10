@@ -421,7 +421,7 @@ export class Hud {
     this.q('#clubSlot').innerHTML = `<button type="button" class="hud-panel club-btn" data-act="club" aria-label="Club: ${cname}, ${M.label} shot, ${M.max(id)} yards. Change club or shot"><span class="eyebrow-h">Club</span><span class="big${badge.length > 2 ? ' sm' : ''}">${badge}</span><span class="yds">${M.max(id)}<small>yds</small></span><span class="cap">${cname}${this.mode !== 'full' ? ` · <em>${M.label}</em>` : ''}</span></button>`;
     this.q('#modeSlot').innerHTML = '';
     const L = LIES[this.lie];
-    const [word, q, kind] = LIE_WORD[L.name] ?? ['Okay', 'ok', 'fairway'];
+    const [, , kind] = LIE_WORD[L.name] ?? ['Okay', 'ok', 'fairway'];
     const where = L.side ? (L.side < 0 ? 'ball above feet, starts left' : 'ball below feet, starts right') : 'flat';
     this.q('#lieSlot').innerHTML = this.skin === 'f'
       ? `<button type="button" class="hud-panel lie-card lie-w lie-c" data-act="lie" aria-label="Lie: ${L.name}, ${L.lo} to ${L.hi} percent distance${L.slope ? `, ${L.slope} degree slope, ball ${where}` : ', flat'}. Tap for another sample lie">
