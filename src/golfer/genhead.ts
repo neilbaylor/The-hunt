@@ -349,10 +349,10 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     const tgt: Partial<Record<MK, number>> = {};
     if (speech.length && now < speechEnd && now >= speechT0) {
       const st = now - speechT0; let k = 0; while (k < speech.length - 1 && speech[k + 1].t <= st) k++;
-      // the lips part along a smooth cut (head.py): the jaw drops for real while talking (jawOpen 1 ≈ 14 mm at the lower lip)
+      // (the lip split is still coarse: talking keeps the jaw drop small so the teeth don't show through a ragged gap)
       // a voice clip's loudness (when given) scales the jaw: loud syllables open wider, quiet ones barely part the lips
       const loud = jawCurve ? 0.35 + 1.0 * (jawCurve[Math.min(jawCurve.length - 1, Math.floor(st * jawFps))] ?? 0) : 1;
-      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.55, w_ * talkK * 0.5 * loud) : Math.min(1.2, w_ * talkK);
+      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.16, w_ * talkK * 0.25 * loud) : Math.min(1.2, w_ * talkK);
       nodV += ((speech[k].v === 'A' || speech[k].v === 'O' ? 0.035 : 0) - nodV) * (1 - Math.exp(-dt * 6));
     } else nodV += (0 - nodV) * (1 - Math.exp(-dt * 4));
     {
@@ -382,7 +382,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     face.teeth.value = Math.min(1, 0.4 + face.mouthOpen.value);
     // (the eyelid geometry from the transferred blink closes one eye more than the other: the drawn lids alone blink, evenly)
     if (dict.blink !== undefined) infl[dict.blink] = 0;
-    if (mouthParts) { const jo = expr.jawOpen + vis.jawOpen; mouthParts.lower.parent!.visible = jo > 0.02 || expr.smile > 0.85 || vis.wide > 0.05; }
+    if (mouthParts) { const jo = expr.jawOpen + vis.jawOpen; mouthParts.lower.parent!.visible = jo > 0.22 || expr.smile > 0.85; }
     if (mouthParts) mouthParts.lower.position.copy(mouthParts.lowerBase).addScaledVector(mouthParts.jaw, Math.max(0, expr.jawOpen + vis.jawOpen) + 0.25 * vis.pucker);
   };
   const ctl: FaceController = {
