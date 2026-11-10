@@ -100,7 +100,7 @@ const HA_DRV = +(globalThis.location ? new URLSearchParams(globalThis.location.s
 const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search) : null, _fv = (n: string, d: number[]) => _fq?.get(n)?.split(',').map(Number) ?? d;
 // held-finish targets in the chest's frame (URL-tunable on golfer.html: fg = hands from the neck, fs = shaft back/down
 // added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
-const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.38, 0.5]), pl: _fv('fpl', [0.45, -0.35, 0.55]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
+const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.38, 0.5]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
 const TRAIL_W = +(_fq?.get('tw') ?? 0);
 const ARC12 = _fv('a12', [-0.5, -0.68, 0.6]), ARC33 = _fv('a33', [-0.5, -0.28, 0.83]), ARC55 = _fv('a55', [0.05, 0.5, 0.8]);
