@@ -286,13 +286,15 @@ export class Golfer {
     void k;
   }
 
-  private feet(p: BodyPose, heel: number, shift: number) {
+  private feet(p: BodyPose, heel: number, shift: number, hipTurn = 0) {
+    p.footUpL = undefined;
     const k = this.k, st = SHOT_STYLE[this.mode];
     // stance (ankle joints): ~36 cm with a wedge, ~42 cm with a 7 iron, ~54 cm with the driver
     const half = 0.5 * (0.36 + 0.667 * Math.max(0, this.club.length - 0.9)) * k * st.stance;
     // ankles just ahead of the hip joints (tour set-up from behind: knees over the balls of the feet, not a squat)
     const fz = this.pelvisBase.z + 0.04 * k;
-    const flareL = 0.38 + st.open, flareR = -0.12;
+    // lead foot flared ~29° toward the target for balance (and kept), trail foot square
+    const flareL = 0.5 + st.open, flareR = -0.12;
     const openBack = st.open * 0.12; // open stance: lead foot pulled back from the line
     const J = this.body.skel.joint, T = this.body.skel.tail;
     p.ankleL.set(this.stanceX + half, J[BONE.footL].y, fz - openBack);
@@ -301,9 +303,17 @@ export class Golfer {
     const fL = T[BONE.footL].clone().sub(J[BONE.footL]), fR = T[BONE.footR].clone().sub(J[BONE.footR]);
     fL.x = 0; fR.x = 0;
     p.toeL.copy(p.ankleL).add(fL.applyAxisAngle(new THREE.Vector3(0, 1, 0), flareL));
+    // as the hips turn over the lead foot in the finish it rolls a little onto its outside edge (the target side):
+    // the top of the foot tilts toward the target
+    const leadRoll = 0.16 * smooth(1.0, 1.65, hipTurn);
+    if (leadRoll > 1e-4) {
+      const toeDirL = p.toeL.clone().sub(p.ankleL).setY(0).normalize();
+      p.footUpL = new THREE.Vector3(0, 1, 0).applyAxisAngle(toeDirL, -leadRoll);
+      if (p.footUpL.x < 0) p.footUpL.copy(new THREE.Vector3(0, 1, 0).applyAxisAngle(toeDirL, leadRoll));
+    }
     p.toeR.copy(p.ankleR).add(fR.applyAxisAngle(new THREE.Vector3(0, 1, 0), flareR));
     // trail heel comes up and the trail knee kicks in toward the target in the follow-through
-    p.footUpL = undefined; p.footUpR = undefined;
+    p.footUpR = undefined;
     this.trailToeFlat.copy(p.toeR).sub(p.ankleR).setY(0).normalize();
     if (heel > 0) {
       // Trail foot after impact, as a tour player's: the heel comes up first and the foot rolls onto its inside edge
@@ -371,7 +381,7 @@ export class Golfer {
     // clavicles: within anatomical limits (±0.11 rad keeps the shoulder joint within 2 cm of its rest place)
     const clav = (v: number) => Math.max(-0.1, Math.min(0.1, v));
     p.shrugL = clav(key.shrug); p.shrugR = clav(-key.shrug * 0.5 + key.pro);
-    this.feet(p, key.heel, key.shift);
+    this.feet(p, key.heel, key.shift, key.hipTurn);
 
     // hands on the circle, carried round the body by beta; club rotated in the plane by phi + hinge
     const hands = this.circleC.clone()
