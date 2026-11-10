@@ -46,7 +46,7 @@ function frameAtAngle(t0: number, t1: number, a: number) {
 }
 const A_BA = angAt(EV.BA), A_TB = angAt(EV.TB), A_BI = angAt(EV.BI), A_FIN = angAt(EV.FIN);
 
-const _r1 = new Float32Array(S), _r2 = new Float32Array(S);
+const _r1 = new Float32Array(S);
 /** the clip row for a swing state; t is the clip frame it came from (the downswing's, when two are blended) */
 export function sampleSwing(phase: 'back' | 'down' | 'follow', phi: number, topPhi: number, finish: number, out = new Float32Array(S)) {
   let t: number;

@@ -1014,6 +1014,12 @@ if REAL and 'mv_cams' in globals():
     for cam in mv_cams:
         if not any(n_ in os.path.basename(cam['photo']) for n_ in REAL): continue
         img = np.asarray(ImageOps.exif_transpose(Image.open(cam['photo'])).convert('RGB')).astype(np.float32)
+        # a relit / restored copy with the SAME pixel geometry (tools/character/relight.py; kept beside the photo, outside the
+        # repo) replaces the colours of that photo and counts --clean-weight times in the median
+        cw_ = 1.0; _cl = cam['photo'] + '.clean.jpg'
+        if A.clean_weight > 0 and os.path.exists(_cl):
+            _ci = np.asarray(Image.open(_cl).convert('RGB')).astype(np.float32)
+            if _ci.shape == img.shape: img, cw_ = _ci, A.clean_weight; print('  (using the relit copy of', os.path.basename(cam['photo'])[:8] + ')')
         Hh2, Ww2 = img.shape[:2]
         K_, R_, t_ = np.array(cam['K']), np.array(cam['R']), np.array(cam['t'])
         def proj_(P): c_ = P @ R_.T + t_; return np.c_[K_[0, 0] * c_[:, 0] / c_[:, 2] + K_[0, 2], K_[1, 1] * c_[:, 1] / c_[:, 2] + K_[1, 2]], c_[:, 2]
