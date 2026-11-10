@@ -19,7 +19,14 @@ const URLS = import.meta.glob('../assets/voice/*.mp3', { query: '?url', import: 
 const urlOf = (id: string) => URLS[`../assets/voice/${id}.mp3`];
 const CLIPS = (manifest as unknown as { clips: VoiceLine[] }).clips.filter(c => urlOf(c.id));
 
-let cleanOnly = false, volume = 0.9, muted = false;
+// settings persist per device (localStorage); ?voice=off mutes, ?clean=1 skips the swearing
+const QS = new URLSearchParams(location.search);
+const load = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
+const save = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* storage blocked */ } };
+let cleanOnly = QS.get('clean') === '1' || load('hunt.voice.clean') === '1', volume = 0.9;
+let muted = QS.get('voice') === 'off' || load('hunt.voice.muted') === '1';
+/** nothing plays before the player's first touch (iOS/Android autoplay rules; and no surprise audio) */
+let unlocked = false;
 const audios = new Map<string, HTMLAudioElement>();
 const lastId: Partial<Record<VoiceOutcome, string>> = {};
 let playing: { line: VoiceLine; el: HTMLAudioElement; t0: number } | null = null;
@@ -32,14 +39,17 @@ function audio(id: string) {
 
 export const voice = {
   /** skip the lines with swearing */
-  setClean(on: boolean) { cleanOnly = on; },
+  setClean(on: boolean) { cleanOnly = on; save('hunt.voice.clean', on ? '1' : '0'); },
+  get clean() { return cleanOnly; },
   setVolume(v: number) { volume = Math.max(0, Math.min(1, v)); },
-  setMuted(m: boolean) { muted = m; if (m) voice.stop(); },
+  setMuted(m: boolean) { muted = m; save('hunt.voice.muted', m ? '1' : '0'); if (m) voice.stop(); },
+  get muted() { return muted; },
   /** call from the first touch: starts loading the clips (mobile browsers only play audio after a gesture) */
-  unlock() { for (const c of CLIPS) audio(c.id).load(); },
+  unlock() { if (unlocked) return; unlocked = true; if (!muted) for (const c of CLIPS) audio(c.id).load(); },
   lines(outcome?: VoiceOutcome) { return CLIPS.filter(c => (!outcome || c.outcomes.includes(outcome)) && (!cleanOnly || c.clean)); },
   /** play a random line for the outcome (never the same one twice running); returns it, or null if there is none */
   speak(outcome: VoiceOutcome): VoiceLine | null {
+    if (muted || !unlocked) return null;   // silent: the caller falls back to its own text and letter-timed talk
     const pool = voice.lines(outcome);
     if (!pool.length) return null;
     const choices = pool.length > 1 ? pool.filter(c => c.id !== lastId[outcome]) : pool;
@@ -51,7 +61,7 @@ export const voice = {
     voice.stop();
     const el = audio(line.id);
     el.currentTime = 0; el.volume = volume;
-    if (!muted) void el.play().catch(() => { /* not unlocked yet: the face still lip-syncs to the clock */ });
+    if (!muted && unlocked) void el.play().catch(() => { /* not unlocked yet: the face still lip-syncs to the clock */ });
     playing = { line, el, t0: performance.now() / 1000 };
     return line;
   },
