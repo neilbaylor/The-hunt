@@ -34,8 +34,8 @@ export const MODES: Record<ShotMode, { label: string; rule: string; ok: (id: str
  *  and worse lies have a wider range */
 export interface Lie { name: string; pct: number; lo: number; hi: number; slope: number; side: -1 | 0 | 1; txt: string }
 export const LIES: Lie[] = [
-  { name: 'Tee box', pct: 100, lo: 98, hi: 100, slope: 0, side: 0, txt: 'Flat lie' },
-  { name: 'Fairway', pct: 98, lo: 95, hi: 100, slope: 3, side: -1, txt: 'Ball above feet · starts left' },
+  { name: 'Tee box', pct: 100, lo: 100, hi: 100, slope: 0, side: 0, txt: 'Flat lie' },
+  { name: 'Fairway', pct: 100, lo: 100, hi: 100, slope: 3, side: -1, txt: 'Ball above feet · starts left' },
   { name: 'First cut', pct: 91, lo: 88, hi: 95, slope: 2, side: 1, txt: 'Ball below feet · starts right' },
   { name: 'Rough', pct: 77.5, lo: 70, hi: 85, slope: 5, side: -1, txt: 'Ball above feet · starts left' },
   { name: 'Fairway bunker', pct: 85, lo: 78, hi: 92, slope: 1, side: 1, txt: 'Ball below feet · starts right' },
