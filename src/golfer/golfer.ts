@@ -103,7 +103,7 @@ const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search
 const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.38, 0.5]), pl: _fv('fpl', [0.45, -0.35, 0.55]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
 const TRAIL_W = +(_fq?.get('tw') ?? 0);
-const ARC12 = _fv('a12', [0.08, -0.72, 0.69]), ARC33 = _fv('a33', [0.3, -0.25, 0.92]), ARC55 = _fv('a55', [0.45, 0.45, 0.77]);
+const ARC12 = _fv('a12', [-0.5, -0.68, 0.6]), ARC33 = _fv('a33', [-0.5, -0.28, 0.83]), ARC55 = _fv('a55', [0.05, 0.5, 0.8]);
 const GRIP_B = _fv('gb', [0.65, 0.32]);
 const LEAN = 0.075;             // shaft lean at impact, radians (hands ~6 cm ahead of the ball)
 
@@ -406,6 +406,7 @@ export class Golfer {
     const clav = (v: number) => Math.max(-0.1, Math.min(0.1, v));
     p.shrugL = clav(key.shrug); p.shrugR = clav(-key.shrug * 0.5 + key.pro);
     this.feet(p, key.heel, key.shift, key.hipTurn);
+    (p.shoulderR ??= new THREE.Vector3()).set(0, 0, 0);
     // steady head: from address to impact the head stays where it was at address (within a couple of cm); the spine
     // takes up the hips' turn and slide with a little more or less side bend and forward bend. Faded out after
     // impact so the head rises into the finish.
@@ -600,6 +601,13 @@ export class Golfer {
     }
     // both hands stay on the club: if either arm can't reach its wrist target, move the club (both hands) toward
     // that shoulder (the trail arm used to fall short of the grip in the through-swing)
+    // (the trail shoulder blade reaches first: its joint slides up to 4.5 cm toward the grip)
+    for (let pass = 0; pass < 3; pass++) {
+      const need = p.wristR.clone().sub(this.rig.wristPos.R);
+      if (need.lengthSq() < 1e-7) break;
+      p.shoulderR!.add(need.multiplyScalar(1.05)).clampLength(0, 0.045);
+      this.rig.apply(p);
+    }
     for (let pass = 0; pass < 4; pass++) {
       const miss = this.rig.wristPos.L.clone().sub(p.wristL).addScaledVector(this.rig.wristPos.R.clone().sub(p.wristR), TRAIL_W);
       if (miss.lengthSq() < 1e-7) break;

@@ -17,6 +17,8 @@ export interface BodyPose {
   /** optional: the direction the top of each foot faces (default up); needed when a foot stands on its toe */
   footUpL?: THREE.Vector3; footUpR?: THREE.Vector3;
   shrugL: number; shrugR: number;  // clavicle forward/back (protraction) in radians
+  /** optional: the shoulder joint slid from its place (char space, a few cm): the shoulder blade reaching for the club */
+  shoulderL?: THREE.Vector3; shoulderR?: THREE.Vector3;
 }
 
 const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
@@ -99,6 +101,8 @@ export class Rig {
     Q[BONE.clavL].copy(qChest).multiply(_q.setFromAxisAngle(Y, -p.shrugL));
     Q[BONE.clavR].copy(qChest).multiply(_q.setFromAxisAngle(Y, p.shrugR));
     this.fk(BONE.clavL); this.fk(BONE.clavR); this.fk(BONE.upperL); this.fk(BONE.upperR);
+    if (p.shoulderL) P[BONE.upperL].add(p.shoulderL);
+    if (p.shoulderR) P[BONE.upperR].add(p.shoulderR);
     // neck + head: look at a point, keep "up" close to the chest's up
     this.fk(BONE.neck);
     const chestUp = _b.set(0, 1, 0).applyQuaternion(qChest).clone();
@@ -157,6 +161,10 @@ export class Rig {
       else bones[i].quaternion.copy(_q2.copy(Q[par]).invert().multiply(Q[i]));
     }
     bones[BONE.pelvis].position.copy(p.pelvis);
+    for (const [bi, o] of [[BONE.upperL, p.shoulderL], [BONE.upperR, p.shoulderR]] as const) {
+      bones[bi].position.copy(this.off[bi]);
+      if (o) bones[bi].position.add(_a.copy(o).applyQuaternion(_q2.copy(Q[PARENT[bi]]).invert()));
+    }
   }
 
   /** world-ish (character space) position of the head joint and the eyes after apply() */
