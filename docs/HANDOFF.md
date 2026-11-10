@@ -178,3 +178,9 @@ The container restarted and stopped all agents mid-round; their committed work i
 - the med perf budget.
 
 **Style:** default = "soft"/polished (subtle). Options via `?style=`; the owner hasn't picked.
+
+- **HUD face badge = a SEPARATE head instance (owner's decision):** a second, independent copy of the generated head (head.bin, head.jpg, hair, visor), rendered alone into the badge with its own small camera and light rig.
+  - It does NOT follow the golfer's head pose mid-swing. It's always front-on, level and well lit.
+  - It has its own expression and animation state: idle blinks, glances at the player, reactions (grin, grimace, brows), and talking (visemes and `say()`) synced to the speech bubble. The golfer in the world doesn't need to do any of that.
+  - Share geometry and textures with the main head; only the morph and expression state differs.
+  - Keep it cheap: render about every other frame into a 192 px target, and pause when idle and static.
