@@ -260,7 +260,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const chest = J[M.bones.indexOf('spine_02')];
     const side = p.handed === 'left' ? -1 : 1;
     const cz = M.collar.reduce((a, c) => Math.max(a, c[2]), -9) - 0.01;
-    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.088, M.collar.reduce((a, c) => (c[2] > a[2] ? c : a))[1] - 0.112, cz)   /* as on the shirt: ~9 cm out, level with the foot of the placket */ : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.05 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
+    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.088, M.collar.reduce((a, c) => (c[2] > a[2] ? c : a))[1] - 0.098, cz)   /* as on the shirt: ~9 cm out, its foot level with the foot of the placket */ : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.05 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
   }
   const shirtMesh = add('shirt', shirtMat);
   // the shells are split along their UV seams; average the normals across those splits so the fabric shades
@@ -446,7 +446,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   // folded piece round the neck, no seam at the back. Built as a closed cross-section swept round the neckline:
   // the stand rises off the neckline hugging the neck (a few mm clear of it), rolls over a soft, visibly thick
   // fold (doubled fabric), and the leaf drapes down over the stand and onto the shirt, ending in an outer edge
-  // that turns under (2.4 mm thick) to a darker underside. At the front the leaf ends in two long straight-edged
+  // that turns under (1.6 mm thick) to a darker underside. At the front the leaf ends in two long straight-edged
   // points that nearly meet over the top of the placket and point down and slightly out, lying on the chest.
   // A thin dark skirt under every free edge reads as the soft shadow line on the shirt; the stand's foot is dark
   // (the neck opening), the roll and outer edge a touch lighter where the fold catches the light.
@@ -502,14 +502,14 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       return p;
     };
     const COLS = 128, NS = 5, NF = 6, NL = 16, KU = 5;            // columns; stand, fold, leaf rows; the underside runs back to leaf row KU
-    const rr = 0.0028, thick = 0.0024;                              // roll radius (the doubled fabric over the fold), leaf thickness at the edge
-    const open = 0.0055 / R(0);                                     // the two collar ends nearly meet over the placket
+    const rr = 0.0022, thick = 0.0016;                              // roll radius (the doubled fabric over the fold), leaf thickness at the edge
+    const open = 0.012 / R(0);                                      // the collar ends open a small V over the placket
     const A: number[] = [], S: THREE.Vector3[] = [], P: THREE.Vector3[] = [], SH: number[] = [], EW: number[] = [];
     for (let i = 0; i <= COLS; i++) {
       const s = i / COLS, a = open + s * (2 * Math.PI - 2 * open);   // a = 0 at the front, PI at the back
       const endw = Math.max(0, 1 - Math.min(s, 1 - s) / 0.17), fr = Math.max(0, Math.cos(a));
       // stand: 3 cm at the back, a little lower round the front of the neck, down to ~8 mm where the ends meet
-      const sh = 0.03 - 0.005 * fr - 0.017 * Math.pow(endw, 1.4);
+      const sh = 0.026 - 0.004 * fr - 0.016 * Math.pow(endw, 1.4);
       A.push(a); EW.push(endw); SH.push(sh);
       S.push(neck(a, -0.004, -0.006));                               // the foot of the stand, tucked into the neckline
       // the top of the stand: hugging the neck 4.5 mm clear of it (the neck narrows above the shirt's opening)
@@ -538,17 +538,17 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     // each column's frame: up the stand, and out (away from the neck)
     const TU = P.map((p, i) => p.clone().sub(S[i]).normalize());
     const OU = TU.map((t, i) => { const r = radial(A[i]); return r.addScaledVector(t, -r.dot(t)).normalize(); });
-    // the leaf's outer edge: ~4.4 cm from the fold all round (so ~1.4 cm onto the shirt beyond the stand's foot);
+    // the leaf's outer edge: ~4.2 cm from the fold all round (so ~1.4 cm onto the shirt beyond the stand's foot);
     // at the front it runs straight from over the shoulder down to the point. The points: ~7.5 cm from the side
-    // of the neck to the tip, tips 4 cm either side of the centre and 5 cm below the neckline's front
+    // of the neck to the tip, tips 3.5 cm either side of the centre and 4.7 cm below the neckline's front
     const a1 = 1.15;
-    const E = A.map((a, i) => walk(a, Math.max(0.008, 0.044 + 0.002 * Math.abs(Math.sin(a)) - SH[i])));
+    const E = A.map((a, i) => walk(a, Math.max(0.008, 0.042 + 0.002 * Math.abs(Math.sin(a)) - SH[i])));
     for (let pass = 0; pass < 2; pass++) {
       const e0 = E.map(v => v.clone());
       for (let i = 1; i < COLS; i++) onShirt(E[i].copy(e0[i]).multiplyScalar(0.5).addScaledVector(e0[i - 1], 0.25).addScaledVector(e0[i + 1], 0.25), 0);
     }
     for (const sg of [1, -1]) {
-      const tip = onShirt(new V3(c.x + sg * 0.04, Y(0) - 0.052, c.z + R(0) + 0.02), 0);
+      const tip = onShirt(new V3(c.x + sg * 0.035, Y(0) - 0.047, c.z + R(0) + 0.02), 0);
       const base = walk(sg > 0 ? a1 : 2 * Math.PI - a1, Math.max(0.008, 0.046 - 0.03 + 0.005 * Math.cos(a1)));
       for (let i = 0; i <= COLS; i++) {
         const al = sg > 0 ? A[i] : 2 * Math.PI - A[i];
@@ -579,7 +579,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const f = Math.min(1, Math.max(0, (t - st[k][0]) / (st[k + 1][0] - st[k][0] || 1))), need = st[k][1] + (st[k + 1][1] - st[k][1]) * f + 2.3 * rr;
       const have = v.clone().sub(S[i]).dot(OU[i]); if (have < need) v.addScaledVector(OU[i], need - have);
     };
-    const gapAt = (i: number, k: number) => { const u = k / NL; return 0.0024 + 0.0012 * u * u * u + 0.0016 * EW[i] * u * u; };   // the edges, and most the points, lift a hair
+    const gapAt = (i: number, k: number) => { const u = k / NL; return 0.0018 + 0.0006 * u * u * u + 0.0006 * EW[i] * u * u; };   // the edges, and most the points, lift a hair
     for (let pass = 0; pass < 3; pass++) {
       for (let i = 0; i <= COLS; i++) for (let k = 1; k <= NL; k++) {
         clearStand(i, L[i][k]);
@@ -651,7 +651,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
         gx.fillStyle = '#' + cc.getHexString(); gx.fillRect(0, y, 4, 1);
       }
     }, true, 1);
-    const collarTex = ramp([[0, 0.22], [0.05, 0.62], [0.16, 0.86], [0.2, 1.0], [0.235, 1.1], [0.27, 1.0], [0.72, 1.0], [0.8, 1.12], [0.835, 0.9], [0.86, 0.5], [1, 0.42]], 512);
+    const collarTex = ramp([[0, 0.22], [0.05, 0.62], [0.16, 0.86], [0.2, 0.97], [0.27, 1.0], [0.72, 1.0], [0.8, 1.04], [0.835, 0.85], [0.86, 0.5], [1, 0.42]], 512);
     collarTex.wrapS = collarTex.wrapT = THREE.ClampToEdgeWrapping; collarTex.repeat.set(1, 1);
     const collarMat = new THREE.MeshPhysicalMaterial({ map: collarTex, roughness: 0.9, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(shirtC, 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide });
     const bits: THREE.Mesh[] = [new THREE.Mesh(g, collarMat), new THREE.Mesh(capG, collarMat)];   // collar, its shadow line, placket and buttons: baked into one mesh below
@@ -679,7 +679,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
     // placket: a stitched strip laid on the shirt from the neckline down, with two white four-hole buttons
     const top = neck(0);
-    const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.12)'; g.setLineDash([5, 4]); g.lineWidth = 1.2; g.strokeRect(5, -10, 54, 258); g.beginPath(); g.moveTo(5, 238); g.lineTo(59, 238); g.stroke(); }, true, 1);   // edge stitching, a stitched box at the foot
+    const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.32)'; g.setLineDash([5, 3]); g.lineWidth = 1.6; g.strokeRect(4, -10, 56, 261); g.beginPath(); g.moveTo(4, 236); g.lineTo(60, 236); g.stroke(); }, true, 1);   // edge stitching, a stitched box at the foot
     plkTex.wrapS = plkTex.wrapT = THREE.ClampToEdgeWrapping; plkTex.repeat.set(1, 1);
     const plkMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, map: plkTex, roughness: 0.84, sheen: 0.35, sheenColor: collarMat.sheenColor, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const pg = new THREE.PlaneGeometry(0.033, 0.12, 4, 16);
@@ -702,7 +702,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
     // one skinned mesh, one atlas: one draw call; too small to need a shadow of its own
     const baked = bakeAtlas(bits, 512);
-    const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.88, sheen: 0.2, sheenColor: collarMat.sheenColor, sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.95, specularIntensity: 0.35, sheen: 0.08, sheenColor: collarMat.sheenColor, sheenRoughness: 0.8, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const cm = skinned(baked.geometry, bitsMat); cm.name = 'collar'; cm.castShadow = false;
     // the collar rides on the shoulders more than the shirt's neckline does (40% of the neck's weight), so the
     // lead point isn't dragged round by the chin at the top
