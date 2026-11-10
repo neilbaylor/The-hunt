@@ -239,6 +239,10 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
         const ar = (img.height || 800) / (img.width || 1000), w = N * 0.86, h = w * ar * 1.2, x = (N - w) / 2, y = (N - h) / 2;
         const shape = document.createElement('canvas'); shape.width = shape.height = N;
         const sg = shape.getContext('2d')!; sg.drawImage(img, x, y, w, h);
+        // a touch bolder than the trace (about one font-weight step): stamp the letter round a small ring
+        const thick = document.createElement('canvas'); thick.width = thick.height = N; const tg = thick.getContext('2d')!;
+        for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; tg.drawImage(img, x + Math.cos(a) * 6, y + Math.sin(a) * 6, w, h); }
+        tg.drawImage(img, x, y, w, h); sg.clearRect(0, 0, N, N); sg.drawImage(thick, 0, 0);
         const tint = (col: string) => { const c = document.createElement('canvas'); c.width = c.height = N; const cg = c.getContext('2d')!; cg.drawImage(shape, 0, 0); cg.globalCompositeOperation = 'source-in'; cg.fillStyle = col; cg.fillRect(0, 0, N, N); return c; };
         g.clearRect(0, 0, N, N);
         g.save(); g.filter = 'blur(5px)'; g.globalAlpha = 0.35; g.drawImage(tint('#000'), 5, 8); g.restore();   // thread shadow on the knit

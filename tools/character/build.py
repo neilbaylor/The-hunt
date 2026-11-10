@@ -371,8 +371,10 @@ for vi in body_idx:
     shirt_lo = belt_y - (C.get('untuckedDrop', 0.0) if C.get('untucked') else C.get('tuckDepth', 0.035))
     if y > shirt_lo and neckw < 0.5 and y < neck_y + 0.01:
         sleeve_ok = True
-        if arm_l > 0.5: sleeve_ok = along(vi, 'upperarm_l', 'lowerarm_l') < C['sleeve']
-        if arm_r > 0.5: sleeve_ok = along(vi, 'upperarm_r', 'lowerarm_r') < C['sleeve']
+        # the sleeve is cut square across the arm: anything even partly arm-weighted past the sleeve line is cut, so
+        # the torso-weighted skin under the armpit doesn't leave a triangular tongue hanging below the hem
+        if arm_l > 0.12 and along(vi, 'upperarm_l', 'lowerarm_l') >= C['sleeve']: sleeve_ok = False
+        if arm_r > 0.12 and along(vi, 'upperarm_r', 'lowerarm_r') >= C['sleeve']: sleeve_ok = False
         # (below the waist the untucked shirt also covers the thigh-weighted hips, so its hem goes level all round)
         if sleeve_ok and (torso > 0.3 or arm_l > 0.3 or arm_r > 0.3 or (legs > 0.3 and y < belt_y + 0.03 and max(arm_l, arm_r) < 0.3)):
             shirt[vi] = True
@@ -502,11 +504,11 @@ _bd = [vi for vi in np.nonzero(shirt)[0] if any(not shirt[n] for n in NB[vi])]
 for vi in _bd:
     arm = None
     for sfx in 'lr':
-        if wsum(vi, [f'upperarm_{sfx}', f'lowerarm_{sfx}', f'hand_{sfx}']) > 0.5: arm = sfx
+        if wsum(vi, [f'upperarm_{sfx}', f'lowerarm_{sfx}', f'hand_{sfx}']) > 0.12: arm = sfx
     if arm:
         a0, a1 = joint[BONES.index(f'upperarm_{arm}')], joint[BONES.index(f'lowerarm_{arm}')]; ax = a1 - a0
         t = float(np.dot(Vshirt[vi] - a0, ax) / np.dot(ax, ax))
-        if abs(t - C['sleeve']) < 0.12: Vshirt[vi] = Vshirt[vi] - ax * (t - C['sleeve'])
+        if abs(t - C['sleeve']) < 0.2: Vshirt[vi] = Vshirt[vi] - ax * (t - C['sleeve'])
     elif Vshirt[vi, 1] < _lo + 0.06:
         Vshirt[vi, 1] = _lo
 
