@@ -123,7 +123,7 @@ export class FaceBadge {
       const right = new THREE.Vector3().crossVectors(this.up, this.fwd).normalize();
       const sway = this.shake > 0 ? Math.sin(this.t * 22) * 0.1 * this.shake : 0;
       const look = eye.clone().addScaledVector(this.up, -0.035);                    // just below the nose bridge: face + a little shoulder
-      this.cam.position.copy(look).addScaledVector(this.fwd, 1.0).addScaledVector(right, 0.2 + sway).addScaledVector(this.up, 0.02);   // slight ¾
+      this.cam.position.copy(look).addScaledVector(this.fwd, 0.97).addScaledVector(right, 0.2 + sway).addScaledVector(this.up, 0.32);   // from a little above: arms raised under the chin (top, impact) drop below the face   // slight ¾
       this.cam.up.copy(this.up); this.cam.lookAt(look);
       // its own key and fill, riding with the camera, so it's never dark
       this.key.position.copy(this.cam.position).addScaledVector(this.up, 0.5).addScaledVector(right, -0.4); this.key.target.position.copy(look);
