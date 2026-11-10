@@ -727,7 +727,7 @@ if 'jawOpen' in morph_d:
             d2 = np.r_[dv, np.zeros((nnew, 3))]
             for v, nv in newid.items():
                 d2[nv] = dv[v]
-                if k_ not in ('jawOpen', 'smile', 'wide', 'pucker', 'grimace'): continue   # the rest shapes keep the lips together
+                if k_ not in ('jawOpen', 'wide', 'pucker', 'grimace'): continue   # the rest shapes (and the rest smile) keep the lips together
                 if upper_n[v]: d2[v] = dv[upper_n[v]].mean(0)
                 if lower_n[v]: d2[nv] = dv[lower_n[v]].mean(0)
             morph_d[k_] = d2
