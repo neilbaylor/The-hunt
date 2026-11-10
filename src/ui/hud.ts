@@ -168,11 +168,12 @@ export function padSVG(skin: Skin) {
     <path d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 1 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="rgba(6,20,43,.45)" stroke-width="15" stroke-linecap="round"/>
     <path class="power-arc" d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 1 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="url(#${id}p)" stroke-width="15" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100" opacity="0"/>
     ${beads}
-    <g class="pfull"><g class="pf-lab" transform="translate(${(Math.cos(262*Math.PI/180)*80).toFixed(1)} ${(Math.sin(262*Math.PI/180)*80).toFixed(1)})"><rect x="-16" y="-9" width="32" height="18" rx="9" fill="#fffaf0" stroke="#13294b" stroke-width="1.2"/><text y="4.5" text-anchor="middle">165</text></g></g>
-    <g class="ptarget" visibility="hidden"><line class="pt-ring" stroke="#ff4fa3" stroke-width="5" stroke-linecap="round"/><line class="pt-track" x1="-21" x2="21" stroke="#ff4fa3" stroke-width="4" stroke-linecap="round"/><g class="pt-lab"><rect x="-17" y="-9" width="34" height="18" rx="9" fill="#ff4fa3" stroke="#fff" stroke-width="1.5"/><text y="4.5" text-anchor="middle">150</text></g></g>
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="url(#${id}g)"/>
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="3"/>
     <rect x="-15.5" y="-72.5" width="31" height="163" rx="15.5" fill="none" stroke="rgba(255,246,227,.22)" stroke-width="1.2"/>
+    <!-- the yardage marks sit above the track and its rims, so the slot never cuts across them -->
+    <g class="pfull"><g class="pf-lab" transform="translate(${(Math.cos(262*Math.PI/180)*80).toFixed(1)} ${(Math.sin(262*Math.PI/180)*80).toFixed(1)})"><rect x="-16" y="-9" width="32" height="18" rx="9" fill="#fffaf0" stroke="#13294b" stroke-width="1.2"/><text y="4.5" text-anchor="middle">165</text></g></g>
+    <g class="ptarget" visibility="hidden"><line class="pt-ring" stroke="#ff4fa3" stroke-width="5" stroke-linecap="round"/><line class="pt-track" x1="-21" x2="21" stroke="#ff4fa3" stroke-width="4" stroke-linecap="round"/><g class="pt-lab"><rect x="-17" y="-9" width="34" height="18" rx="9" fill="#ff4fa3" stroke="#fff" stroke-width="1.5"/><text y="4.5" text-anchor="middle">150</text></g></g>
     <g class="hint"><path d="M-10 26 L0 36 L10 26" fill="none" stroke="#ffd23f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M-10 39 L0 49 L10 39" fill="none" stroke="#ffd23f" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/></g>
     <path class="trail-b" d="" fill="#ffd23f" opacity=".95"/>
     <path class="trail-d" d="" fill="#5ff0a0" opacity=".95"/>
