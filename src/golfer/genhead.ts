@@ -152,7 +152,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     sh.uniforms.uIris = { value: irisCol }; sh.uniforms.uIrisTex = irisU; sh.uniforms.uSclera = { value: sclera }; sh.uniforms.uLid = { value: new THREE.Color(G.skinColor[0], G.skinColor[1], G.skinColor[2]).convertSRGBToLinear().multiplyScalar(0.85) };
     sh.uniforms.uFill = face.fill; sh.uniforms.uMouthOpen = face.mouthOpen; sh.uniforms.uTeeth = face.teeth;
     // mostly the photo-baked texture itself (it already carries his real light and shade), a soft lit share for form
-    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = mix(outgoingLight, diffuseColor.rgb * vec3(1.0, 0.97, 0.94), uFill);\n#include <opaque_fragment>');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = mix(outgoingLight, diffuseColor.rgb * vec3(1.05, 0.96, 0.88), uFill);\n#include <opaque_fragment>');
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 eyeA; attribute vec2 eyeB; varying vec4 vEyeA; varying vec2 vEyeB; attribute vec3 mouthA; varying vec3 vMouth;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEyeA = eyeA; vEyeB = eyeB; vMouth = mouthA;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec4 vEyeA; varying vec2 vEyeB; uniform vec2 uGaze; uniform float uBlink; uniform vec3 uIris; uniform vec3 uLid; uniform sampler2D uIrisTex; uniform vec3 uSclera; uniform float uFill; varying vec3 vMouth; uniform float uMouthOpen; uniform float uTeeth;')
@@ -334,7 +334,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     const tgt: Partial<Record<MK, number>> = {};
     if (speech.length && now < speechEnd && now >= speechT0) {
       const st = now - speechT0; let k = 0; while (k < speech.length - 1 && speech[k + 1].t <= st) k++;
-      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = Math.min(1.2, w_ * talkK);
+      // (the lip split is still coarse: talking keeps the jaw drop small so the teeth don't show through a ragged gap)
+      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.16, w_ * talkK * 0.25) : Math.min(1.2, w_ * talkK);
       nodV += ((speech[k].v === 'A' || speech[k].v === 'O' ? 0.035 : 0) - nodV) * (1 - Math.exp(-dt * 6));
     } else nodV += (0 - nodV) * (1 - Math.exp(-dt * 4));
     {
@@ -364,6 +365,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     face.teeth.value = Math.min(1, 0.4 + face.mouthOpen.value);
     // (the eyelid geometry from the transferred blink closes one eye more than the other: the drawn lids alone blink, evenly)
     if (dict.blink !== undefined) infl[dict.blink] = 0;
+    if (mouthParts) { const jo = expr.jawOpen + vis.jawOpen; mouthParts.lower.parent!.visible = jo > 0.22 || expr.smile > 0.85; }
     if (mouthParts) mouthParts.lower.position.copy(mouthParts.lowerBase).addScaledVector(mouthParts.jaw, Math.max(0, expr.jawOpen + vis.jawOpen) + 0.25 * vis.pucker);
   };
   const ctl: FaceController = {

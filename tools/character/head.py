@@ -1218,7 +1218,12 @@ Mf = np.zeros((T, T), np.float32); Ms = np.zeros((T, T), np.float32); Mf[ty, tx]
 Mf = cv2.GaussianBlur(Mf, (0, 0), 2)[..., None]; Ms = cv2.GaussianBlur(Ms, (0, 0), 2)[..., None]
 bil = cv2.bilateralFilter(tex, 7, 22, 3).astype(np.float32); med = cv2.medianBlur(cv2.bilateralFilter(tex, 9, 30, 4), 5).astype(np.float32)
 tex = np.clip(tex * (1 - 0.6 * Mf) + bil * 0.6 * Mf, 0, 255)
-tex = np.clip(tex * (1 - Ms) + med * Ms, 0, 255).astype(np.uint8)
+tex = np.clip(tex * (1 - Ms) + med * Ms, 0, 255)
+# brows: the photo median leaves them as flat dark bands; soften (blur) and lift them a touch toward the skin
+w_brow = _near([70, 63, 105, 66, 107, 336, 296, 334, 293, 300, 46, 53, 52, 65, 55, 276, 283, 282, 295, 285], 0.012) * (w_face > 0.2)
+Mb = np.zeros((T, T), np.float32); Mb[ty, tx] = w_brow; Mb = cv2.GaussianBlur(Mb, (0, 0), 3)[..., None]
+soft = cv2.GaussianBlur(tex.astype(np.float32), (0, 0), 2.2) * 0.85 + np.array(skin_c, np.float32) * 0.15
+tex = np.clip(tex * (1 - 0.7 * Mb) + soft * 0.7 * Mb, 0, 255).astype(np.uint8)
 Image.fromarray(tex).save(os.path.join(A.out, 'head.jpg'), quality=88, optimize=True)
 dbg('head_tex.png', tex)
 
