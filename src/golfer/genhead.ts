@@ -63,6 +63,11 @@ export interface FaceController {
   talking(): boolean;
   /** a small nod (radians, + = chin down) the caller may add to the head while talking */
   nod(): number;
+  /** procedural head motion to add on top of the pose (radians: pitch + = chin down, yaw, roll): talking nods,
+   *  drifting tilts and turns, emphasis bobs, a lean on questions/exclamations, breathing sway at idle */
+  headMotion(): { pitch: number; yaw: number; roll: number };
+  /** scale the talking mouth shapes (a small HUD badge wants ~2x) */
+  setTalkScale(k: number): void;
 }
 
 /** builds the head in the body's bind space. eye / ipd: the body's eye centre and eyeball spacing now
@@ -288,7 +293,12 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     : 'mbp'.includes(ch) ? 'M' : 'fv'.includes(ch) ? 'F' : /[a-z]/.test(ch) ? 'C' : '_';
   let speech: { t: number; v: string }[] = [], speechT0 = 0, speechEnd = 0;
   const vis: Record<MK, number> = Object.fromEntries(MORPHS.map(k => [k, 0])) as Record<MK, number>;
-  let nodV = 0, lastGx = 0, blinkTwice = false;
+  let nodV = 0, lastGx = 0, blinkTwice = false, talkK = 1;
+  // head motion: critically damped springs toward targets made of layered slow noise + speech events
+  const hm = { p: 0, y: 0, r: 0, vp: 0, vy: 0, vr: 0 };
+  let lean = 0, emph = 0, browE = 0;
+  const nz = (t: number, f: number, ph: number) => Math.sin(t * f + ph) * 0.6 + Math.sin(t * f * 2.13 + ph * 1.7) * 0.3 + Math.sin(t * f * 4.7 + ph * 0.3) * 0.1;
+  const spring = (x: number, v: number, target: number, w: number, dt: number) => { const a = w * w * (target - x) - 2 * w * v; v += a * dt; return [x + v * dt, v]; };
   let target: THREE.Vector3 | null = null, forced: THREE.Vector2 | null = null;
   let nextBlink = 1.5 + Math.random() * 3, blinkT = -1, nextGlance = 1, last = -1;
   const idleGaze = new THREE.Vector2(), cur = new THREE.Vector2();
@@ -296,7 +306,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   const eyeBind = eye.clone(), m4 = new THREE.Matrix4(), tb = new THREE.Vector3();
   const mirroredX = (G as any).mirrored ? -1 : 1;
   mesh.onBeforeRender = () => {
-    const now = faceNow(), dt = last < 0 ? 0 : Math.min(0.1, now - last); last = now;
+    const now = faceNow(), dt = last < 0 ? 0 : Math.max(0, Math.min(0.1, now - last)); last = now;
     // blink
     // natural blinks: every 2-6 s, sometimes twice in a row
     if (blinkT < 0 && now > nextBlink) { blinkT = 0; blinkTwice = Math.random() < 0.2; nextBlink = now + 2 + Math.random() * 4; }
@@ -324,14 +334,25 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     const tgt: Partial<Record<MK, number>> = {};
     if (speech.length && now < speechEnd && now >= speechT0) {
       const st = now - speechT0; let k = 0; while (k < speech.length - 1 && speech[k + 1].t <= st) k++;
-      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = w_;
+      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = Math.min(1.2, w_ * talkK);
       nodV += ((speech[k].v === 'A' || speech[k].v === 'O' ? 0.035 : 0) - nodV) * (1 - Math.exp(-dt * 6));
     } else nodV += (0 - nodV) * (1 - Math.exp(-dt * 4));
+    {
+      const talkingH = now < speechEnd;
+      const amp = talkingH ? 1 : 0.35;                                  // idle: breathing sway and small drifts
+      let tp = (talkingH ? 0.035 * nz(now, 1.3, 0.4) : 0.012 * Math.sin(now * 1.6)) + nodV * 1.2 + 0.05 * emph - 0.03 * lean;
+      let ty = 0.1 * amp * nz(now, 0.45, 1.1), tr = 0.05 * amp * nz(now, 0.37, 2.3);
+      emph *= Math.exp(-dt * 5); lean += ((talkingH ? lean : 0) - lean) * (1 - Math.exp(-dt * 1.5));
+      if (!talkingH) { tp = tp * 0.6; }
+      const w = 7, dts = Math.min(dt, 0.05);
+      [hm.p, hm.vp] = spring(hm.p, hm.vp, tp, w, dts); [hm.y, hm.vy] = spring(hm.y, hm.vy, ty, w * 0.7, dts); [hm.r, hm.vr] = spring(hm.r, hm.vr, tr, w * 0.7, dts);
+      browE += (emph * 0.8 - browE) * (1 - Math.exp(-dt * 10));
+    }
     const kv = 1 - Math.exp(-dt * 22);
     for (const n of MORPHS) vis[n] += ((tgt[n] ?? 0) - vis[n]) * kv;
     const talkingNow = now < speechEnd + 0.15;
     for (const n of MORPHS) if (dict[n] !== undefined) {
-      let v = expr[n] + vis[n];
+      let v = expr[n] + vis[n] + (n === 'browUp' ? browE * 0.6 : 0);
       if (talkingNow && (n === 'cornerLift' || n === 'unpout')) v *= 0.6;          // talking relaxes the rest shaping
       if (n === 'press' && (expr.jawOpen + vis.jawOpen) > 0.2) v = 0;
       infl[dict[n]] = Math.max(-1, Math.min(1.2, v));
@@ -356,9 +377,12 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       for (const ch of chars) { const v = vOf(ch); speech.push({ t, v }); t += v === '_' ? (/[,.!?;:]/.test(ch) ? per * 3.5 : per * 1.4) : per; }
       speech.push({ t, v: '_' });
       speechT0 = faceNow(); speechEnd = speechT0 + t;
+      emph = 1; lean = /[?!]/.test(text) ? 1 : 0.3;                  // an emphasis bob at the start, a lean in on ?/!
     },
     talking() { return faceNow() < speechEnd; },
     nod() { return nodV; },
+    headMotion() { return { pitch: hm.p, yaw: hm.y, roll: hm.r }; },
+    setTalkScale(k) { talkK = k; },
   };
   return { mesh, seam, visor, tint: new THREE.Color(G.skinTint[0], G.skinTint[1], G.skinTint[2]), skin: { xform: G.skinXform, tone: G.seamTone }, face: ctl };
 }
