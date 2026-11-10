@@ -105,6 +105,7 @@ const LEAN_K = _fv('lk', [0.35, 1.3]);
 // short clubs: weight a little on the lead side, the chest over the ball (pelvis this far toward the target with a wedge)
 const PEL_FWD = +(_fq?.get('pf') ?? 0.04);
 const HA_K = +(_fq?.get('hk') ?? 0.16);
+const MOCAP_PELVIS = new THREE.Vector3(...(_fv('mp', [0.55, 0.5, 1]) as [number, number, number]));
 const SIDE_ADJ = _fv('sa', [-0.2, 0.06]);
 const FIN = { g: _fv('fg', [0.15, 0.22, -0.17]), s: _fv('fs', [0.8, 0.6]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
@@ -715,12 +716,18 @@ export class Golfer {
     const phase = s.phase as 'back' | 'down' | 'follow';
     const { row, t } = sampleSwing(phase, s.phi, s.topPhi, st.finish, this.mocapRow), r0 = this.mocapRow0;
     // around mid-backswing, blend toward the hand-keyed swing at the same hands angle (body, arms and club)
-    const wK = phase === 'back' ? keyedMBWeight(t) : 0;
+    // ...and at address and through impact: there the keyed swing carries the per-club set-up, the attack angle and the
+    // body's reach to the ball, and its club keeps MOVING through the ball (a fixed impact pose made the head stall there)
+    const pin = pinWeights(phase, t);
+    // ...and into the held finish, which is the keyed one (Rory's: stacked over the lead foot, club wrapped behind the neck)
+    const fK = phase === 'follow' ? Math.min(1, -s.phi / Math.abs(PHI_FINISH)) : 0;
+    const wK = Math.max(phase === 'back' ? keyedMBWeight(t) : 0, pin.address, pin.impact, smooth(0.5, 0.85, fK));
     let kp: { pose: BodyPose; pos: THREE.Vector3; quat: THREE.Quaternion } | null = null;
+    let kToe: THREE.Vector3 | null = null;
     if (wK > 1e-3) {
       this.mocapBusy = true; this.update(s); this.mocapBusy = false;
       const c: any = {}; for (const [k, v] of Object.entries(p)) c[k] = v instanceof THREE.Vector3 ? v.clone() : v;
-      kp = { pose: c as BodyPose, pos: g.position.clone(), quat: g.quaternion.clone() };
+      kp = { pose: c as BodyPose, pos: g.position.clone(), quat: g.quaternion.clone() }; kToe = this.trailToeFlat.clone();
     }
     const d = (n: string) => num(row, n) - num(r0, n);
     const f = phase === 'follow' ? Math.min(1, -s.phi / Math.abs(PHI_FINISH)) : 0;
@@ -730,27 +737,46 @@ export class Golfer {
     p.chestTilt = A.chestTilt + this.tiltAdj * (1 - smooth(0.25, 0.9, f)) + d('chestTilt');
     p.chestSide = A.chestSide + this.sideAdj * (1 - smooth(0.1, 0.6, f)) + d('chestSide');
     const leg = rig.len.thigh + rig.len.shin, v = new THREE.Vector3();
-    p.pelvis.copy(this.pelvisBase).addScaledVector(vec(row, 'pelvis', v), leg);
-    p.shrugL = p.shrugR = 0;
+    // (the capture's hip travel is large for this body: 20 cm of slide by impact, 30 by the finish and a 13 cm drop put
+    // the head 40 cm behind the ball in the downswing; scaled to a tour-like 11 cm at impact, 17 at the finish)
+    p.pelvis.copy(this.pelvisBase).add(vec(row, 'pelvis', v).multiplyScalar(leg).multiply(MOCAP_PELVIS));
+    p.shrugL = p.shrugR = 0; (p.shoulderR ??= new THREE.Vector3()).set(0, 0, 0);
     const heel = num(row, 'heel');
     this.feet(p, heel, 0, p.hipTurn);
     rig.apply(p);
     // lead knee: along the clip's thigh, facing the way the foot points
     p.kneePoleL.copy(rig.P[BONE.thighL]).addScaledVector(vec(row, 'kneeL', v), 0.5).addScaledVector(v.copy(p.toeL).sub(p.ankleL).setY(0).normalize(), 0.5);
     this.legReach(p);
+    // steady head, as in the keyed swing: from address to impact the head stays over its address spot (the spine takes
+    // up the hips' slide and drop with a little side and forward bend), released into the follow-through
+    const headW = phase === 'follow' ? 1 - smooth(0.04, 0.3, f) : 1;
+    if (headW > 0.001 && this.headAnchor) { this.steadyHead(p, headW, 0, 0); this.steadyHead(p, headW, 0, 0); }
     // arms and head are read in the chest's frame, so they stay with this body's chest
     const toRig = rig.Q[BONE.chest].clone().multiply(clipChest(row, new THREE.Quaternion()).invert());
     const dir = (n: string) => vec(row, n, new THREE.Vector3()).applyQuaternion(toRig).normalize();
     const shL = rig.P[BONE.upperL], shR = rig.P[BONE.upperR], arm = rig.len.upper + rig.len.fore;
-    const wristL = shL.clone().addScaledVector(dir('leadDir'), Math.min(0.997, num(row, 'leadExt')) * arm);
+    // the lead arm stays straight from the takeaway until well after impact (monocular capture under-reads it by a few
+    // per cent, which shows as a bent elbow); it folds as captured from a third of the way into the follow-through
+    const straight = phase === 'follow' ? 1 - smooth(0.33, 0.5, f) : 1;
+    const ext = Math.max(num(row, 'leadExt'), 0.995 * straight);
+    const wristL = shL.clone().addScaledVector(dir('leadDir'), Math.min(0.997, ext) * arm);
     // club: shaft as captured, carried by the lead hand; held to the keyed club at address and through impact
     const qc = clubAt(ref.track, t, new THREE.Quaternion());
     g.position.copy(wristL).sub(this.hands.wristLead.clone().applyQuaternion(qc));
     p.poleL.copy(shL).add(dir('leadElbow')); p.poleR.copy(shR).add(dir('trailElbow'));
-    const pin = pinWeights(phase, t);
-    for (const [w, r] of [[pin.address, ref.addr], [pin.impact, ref.imp]] as const) {
-      if (w < 1e-4) continue;
-      qc.slerp(r.quat, w); g.position.lerp(r.pos, w); p.poleL.lerp(r.poleL, w); p.poleR.lerp(r.poleR, w);
+    // delivery slot: coming down, the trail elbow leads in front of the trail hip (the capture leaves it behind the
+    // hip, a depth error of the face-on view); strongest between lead-arm-horizontal and mid-downswing
+    if (phase === 'down') {
+      const wSlot = smooth(EV.EDA, EV.ED + 0.5 * (EV.MD - EV.ED), t) * (1 - smooth(EV.MD, EV.BI, t));
+      if (wSlot > 1e-3) p.poleR.lerp(rig.P[BONE.thighR].clone().add(new THREE.Vector3(0.05, -2.2, 0.4)), wSlot);
+    }
+    void ref.imp;
+    // the blends above move the hands along chords round the lead shoulder, which would bend the lead elbow: put the
+    // lead wrist back out at the arm's extension (not at address / impact themselves, where the keyed club is exact)
+    {
+      const wl = this.hands.wristLead.clone().applyQuaternion(qc).add(g.position), dv = wl.sub(shL), dist = dv.length();
+      const want = Math.min(0.997, ext) * arm, wPush = 1 - Math.max(pin.address, pin.impact) ** 4;
+      if (dist < want && dist > 1e-4) g.position.addScaledVector(dv, (want / dist - 1) * wPush);
     }
     // the club head never goes below where it sat at address (the takeaway brushes the turf, it doesn't dig): if the
     // captured shaft would put it lower, tip the club up about the lead wrist
@@ -772,6 +798,7 @@ export class Golfer {
         else if (K[k] instanceof THREE.Vector3 && P[k]) P[k].lerp(K[k], wK);
       }
       g.position.lerp(kp.pos, wK); qc.slerp(kp.quat, wK);
+      if (kToe) this.trailToeFlat.lerp(kToe, wK).normalize();   // the toes turn with the keyed foot
     }
     g.quaternion.copy(qc);
     p.wristL.copy(this.hands.wristLead).applyQuaternion(qc).add(g.position);
@@ -780,11 +807,31 @@ export class Golfer {
     if (s.lookAt) p.look.copy(this.char.worldToLocal(s.lookAt.clone()));
     rig.apply(p);
     // both hands stay on the club (same as the keyed swing): if an arm can't reach, the club comes to the shoulder
+    // (as the keyed swing does: the trail shoulder blade reaches first, sliding up to 4.5 cm toward the grip, so the
+    // lead arm isn't bent to bring the club to a short trail arm)
+    for (let pass = 0; pass < 3; pass++) {
+      const need = p.wristR.clone().sub(rig.wristPos.R);
+      if (need.lengthSq() < 1e-7) break;
+      p.shoulderR!.add(need.multiplyScalar(1.05)).clampLength(0, 0.045);
+      rig.apply(p);
+    }
     for (let pass = 0; pass < 4; pass++) {
-      const miss = rig.wristPos.L.clone().sub(p.wristL).addScaledVector(rig.wristPos.R.clone().sub(p.wristR), 0.5);
+      const miss = rig.wristPos.L.clone().sub(p.wristL).addScaledVector(rig.wristPos.R.clone().sub(p.wristR), 0.12);
       if (miss.lengthSq() < 1e-7) break;
       g.position.add(miss); p.wristL.add(miss); p.wristR.add(miss);
       rig.apply(p);
+    }
+    // what's left of a bent lead elbow (the hands held to the keyed club at impact while this body stands a little
+    // closer than the keyed one): the body gives, moving back from the hands up to 6 cm, rather than the arm folding
+    {
+      const want = Math.min(0.997, ext) * arm - 0.0005, base = p.pelvis.clone();
+      for (let it = 0; it < 4; it++) {
+        const dv = p.wristL.clone().sub(rig.P[BONE.upperL]), lack = want - dv.length();
+        if (lack < 5e-4) break;
+        p.pelvis.addScaledVector(dv.normalize(), -lack * 1.05);
+        if (p.pelvis.distanceTo(base) > 0.06) p.pelvis.sub(base).setLength(0.06).add(base);
+        rig.apply(p);
+      }
     }
     this.poseHands(qc, heel);
     this.char.updateMatrixWorld(true);
