@@ -28,7 +28,7 @@ const IN = 0.0254;
 const GRIP_R = 0.0115;
 // finger flexion on a grip (radians, MCP/PIP/DIP; index, middle, ring, pinky; thumb unused), traced with MediaPipe
 // Hand Landmarker from a tour-style overlap grip photo: the index least curled (trigger finger), middle/ring peaking at PIP
-const GRIP_CURL = [[0, 0, 0], [0.23, 0.58, 0.7], [0.61, 1.31, 1.06], [1.15, 1.41, 1.06], [1.15, 0.99, 1.38]].map(r => r.map(v => v * 0.92)); // grip radius under the hands (it tapers 9.8 → 12.8 mm in club.ts)
+const GRIP_CURL = [[0, 0, 0], [0.38, 1.1, 0.95], [0.61, 1.31, 1.06], [1.15, 1.41, 1.06], [1.15, 0.99, 1.38]].map(r => r.map(v => v * 0.92)); // grip radius under the hands (it tapers 9.8 → 12.8 mm in club.ts)
 
 // Body keyframes. Turns and forward bend traced from tour swing sequences (MediaPipe pose landmarks, three
 // down-the-line sequences, outliers dropped); side bend and pelvis shift, which a down-the-line camera can't
@@ -43,8 +43,8 @@ const K = (o: Partial<Keys>, base: Keys): Keys => ({ ...base, ...o });
 const A: Keys = { lift: 0, reach: 1, hipTurn: 0.04, hipTilt: 0.28, hipSide: 0.07, chestTurn: 0.04, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15, hinge: 0, beta: 0 };
 const TAKE = K({ hipTurn: -0.16, hipSide: 0.05, chestTurn: -0.7, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.32, beta: -0.16 }, A);
 const HALF = K({ lift: 0.06, reach: 1.06, hipTurn: -0.4, hipSide: 0.02, chestTurn: -1.15, chestTilt: 0.67, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.1 }, A);
-const B3Q = K({ lift: 0.18, reach: 1.3, hipTurn: -0.6, hipTilt: 0.26, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.69, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.28 }, A);
-const T: Keys = { lift: 0.3, reach: 1.42, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.25, pro: 0.1, hinge: 0.98, beta: -0.32 };
+const B3Q = K({ lift: 0.18, reach: 1.3, hipTurn: -0.6, hipTilt: 0.26, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.69, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 1.06, beta: -0.28 }, A);
+const T: Keys = { lift: 0.3, reach: 1.42, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.72, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.25, pro: 0.1, hinge: 1.24, beta: -0.32 };
 // downswing: the hips lead (they're already unwinding while the chest is still turned), the trail side drops
 const TRANS = K({ lift: 0.28, reach: 1.38, hipTurn: -0.58, hipSide: 0.0, chestTurn: -1.56, chestSide: 0.15, shift: 0.025, shrug: 0.16 }, T);
 const DOWN = K({ lift: -0.04, reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestTurn: -1.02, chestTilt: 0.64, chestSide: 0.28, shift: 0.055, shrug: 0.08, pro: 0.0, hinge: 0.56, beta: -0.16 }, T);
@@ -58,11 +58,11 @@ const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36,
 const THRU = K({ hipTurn: 1.1, hipTilt: 0.12, hipSide: 0.05, chestTurn: 0.9, chestTilt: 0.3, chestSide: 0.32, shift: 0.13, drop: -0.035, heel: 0.66, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
 const T3Q = K({ hipTurn: 1.5, hipTilt: 0.06, hipSide: 0.02, chestTurn: 1.75, chestTilt: 0.03, chestSide: 0.2, shift: 0.16, drop: -0.04, heel: 0.82, shrug: -0.12, pro: -0.02, hinge: -0.85, beta: 0.42 }, I);
 // full finish: belt buckle and chest past the target, weight on the lead leg, upright with a slight reverse-C
-const F: Keys = { lift: 0, reach: 1, hipTurn: 1.58, hipTilt: 0.08, hipSide: 0.0, chestTurn: 1.9, chestTilt: 0.18, chestSide: 0.1, shift: 0.17, drop: -0.02, heel: 0.97, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.52 };
+const F: Keys = { lift: 0, reach: 1, hipTurn: 1.58, hipTilt: 0.08, hipSide: 0.0, chestTurn: 2.05, chestTilt: 0.18, chestSide: 0.1, shift: 0.17, drop: -0.02, heel: 0.97, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.52 };
 // held finish: fully rotated (buckle and chest a little past the target), all the weight on a straight lead leg,
 // trail foot up on its toe with the knee against the lead knee, tall and stacked (spine only ~7° away from the
 // target, no backward bow), hands by the head
-const HOLD: Keys = { lift: 0, reach: 1, hipTurn: 1.72, hipTilt: 0.07, hipSide: -0.02, chestTurn: 2.05, chestTilt: 0.16, chestSide: 0.12, shift: 0.19, drop: -0.02, heel: 1, shrug: -0.12, pro: 0, hinge: -1.0, beta: 0.6 };
+const HOLD: Keys = { lift: 0, reach: 1, hipTurn: 1.72, hipTilt: 0.05, hipSide: -0.02, chestTurn: 2.3, chestTilt: 0.1, chestSide: 0.12, shift: 0.19, drop: -0.02, heel: 1, shrug: -0.12, pro: 0, hinge: -1.0, beta: 0.6 };
 // where each key sits: back/follow by the hands' angle as a fraction of a full top/finish, down by fraction of this top
 const KF_BACK: [number, Keys][] = [[0, A], [0.3, TAKE], [0.55, HALF], [0.8, B3Q], [1, T]];
 const KF_DOWN: [number, Keys][] = [[0, T], [0.15, TRANS], [0.45, DOWN], [0.62, DELIV], [0.8, LATE], [1, I]];
@@ -101,11 +101,11 @@ const HA_DRV = +(globalThis.location ? new URLSearchParams(globalThis.location.s
 const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search) : null, _fv = (n: string, d: number[]) => _fq?.get(n)?.split(',').map(Number) ?? d;
 // held-finish targets in the chest's frame (URL-tunable on golfer.html: fg = hands from the neck, fs = shaft back/down
 // added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
-const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.38, 0.5]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
+const FIN = { g: _fv('fg', [0.15, 0.22, -0.17]), s: _fv('fs', [0.8, 0.6]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
 const TRAIL_W = +(_fq?.get('tw') ?? 0);
 const ARC12 = _fv('a12', [-0.5, -0.68, 0.6]), ARC33 = _fv('a33', [-0.5, -0.28, 0.83]), ARC55 = _fv('a55', [0.05, 0.5, 0.8]);
-const GRIP_A = _fv('ga', [0.8, 0.85]);
+const GRIP_A = _fv('ga', [0.6, 0.7]);
 const GRIP_B = _fv('gb', [0.85, 0.55]);
 const LEAN = 0.075;             // shaft lean at impact, radians (hands ~6 cm ahead of the ball)
 
