@@ -813,7 +813,7 @@ golfer.root.traverse(o => o.layers.enable(AVATAR_LAYER));
 // intro layout c shows the live 3D face (the badge) in its medallion until the tap
 if (INTRO === 'c') intro.querySelector('.il-medal')?.appendChild(faceBadge.el);
 requestAnimationFrame(t => { last = t; frame(t); });
-(window as any).__game = { faceBadge, wind, camera, range,
+(window as any).__game = { faceBadge, wind, camera, range, post, scene, renderer, fill, introRim,
   golfer, ball, hud, aim, aimCtl, shotcam, get state() { return state; }, skipToLanding, skipToLandingNow,
   /** debug (storyboards): stop the RAF loop and step the game by hand: manual(true); tick(ms) */
   manual(on: boolean) { manualClock = on; if (!on) requestAnimationFrame(t => { last = t; frame(t); }); },
