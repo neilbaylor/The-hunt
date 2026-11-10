@@ -53,6 +53,8 @@ const LIE_WORD: Record<string, [string, 'good' | 'ok' | 'meh' | 'bad', 'tee' | '
   'Rough': ['Heavy', 'bad', 'rough'], 'Fairway bunker': ['Sandy', 'meh', 'sand'],
 };
 /** a tiny illustrated scene: ball sitting on a tilted strip of turf, an arrow for where it will start */
+/** the lie range's colour: green ≥ 95, yellow-green 88-95, amber 78-90, red when the low end drops under 78 */
+const lieBand = (L: { lo: number; hi: number }) => { const m = (L.lo + L.hi) / 2; return L.lo < 78 ? 'bad' : m >= 95 ? 'good' : m >= 88 ? 'ok' : 'meh'; };
 /** a crisp little Pro V1x for the lie tile (front face, slight tilt), cached */
 let lieBallCache = '';
 const lieBallURL = () => { if (!lieBallCache) { const m = mat3Identity(); mat3Rotate(m, 0.25, 0.35); lieBallCache = shadeBall(72, m).toDataURL(); } return lieBallCache; };
@@ -422,10 +424,10 @@ export class Hud {
     const [word, q, kind] = LIE_WORD[L.name] ?? ['Okay', 'ok', 'fairway'];
     const where = L.side ? (L.side < 0 ? 'ball above feet, starts left' : 'ball below feet, starts right') : 'flat';
     this.q('#lieSlot').innerHTML = this.skin === 'f'
-      ? `<button type="button" class="hud-panel lie-card lie-w" data-act="lie" aria-label="Lie: ${L.name}, ${word}, ${L.pct} percent distance, ${L.slope} degree slope, ball ${where}. Tap for another sample lie">
+      ? `<button type="button" class="hud-panel lie-card lie-w lie-c" data-act="lie" aria-label="Lie: ${L.name}, ${L.lo} to ${L.hi} percent distance${L.slope ? `, ${L.slope} degree slope, ball ${where}` : ', flat'}. Tap for another sample lie">
         ${lieScene(L.slope, L.side, kind)}
-        <span class="lie-txt"><span class="lie-name${L.name.length > 10 ? ' long' : ''}">${L.name}</span><span class="lie-q ${q}">${word} · ${L.pct}%</span>
-        <span class="lie-slope ${L.slope === 0 ? 'flat' : L.slope <= 3 ? 'mid' : 'steep'}"><b>${L.slope}°</b><small>${L.slope === 0 ? 'flat' : `${L.side < 0 ? '▲ above feet' : '▼ below feet'}`}</small></span></span></button>`
+        <span class="lie-txt"><span class="lie-name">${L.name}</span><span class="lie-q ${lieBand(L)}">${L.lo === L.hi ? L.lo : `${L.lo}–${L.hi}`}%</span>
+        ${L.slope ? `<span class="lie-slope ${L.slope <= 3 ? 'mid' : 'steep'}"><b>${L.slope}°</b><small>${L.side < 0 ? '▲' : '▼'}</small></span>` : ''}</span></button>`
       : `<button type="button" class="hud-panel lie-card" data-act="lie" aria-label="Lie: ${L.name}, ${L.pct} percent, slope ${L.slope} degrees. Tap for another sample lie"><span class="eyebrow-h">Lie</span>
       <span class="lie-top">${lieRing(L.pct)}<span><span class="big" style="display:block">${L.name}</span><span class="sub">${L.pct}% distance</span></span></span>
       <span class="slope">${slopeIcon(L.slope, L.side)}<span class="deg">${L.slope}°</span><span class="sub">${L.txt}</span></span></button>`;

@@ -641,3 +641,14 @@ body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-orig
 .pad-f .pfull.target rect { fill: #ff4fa3; stroke: #fff; }
 .pad-f .pfull.target text { fill: #fff; }
 .pad-f.on-target .pfull.target line { stroke: #5ff0a0; } .pad-f.on-target .pfull.target rect { fill: #17a558; }
+
+/* compact lie chip: the tile, the % range pill, a small slope only when it isn't flat */
+.hud.skin-f .lie-card.lie-w.lie-c { width: auto; height: auto; padding: 5px 9px 5px 5px; grid-template-columns: 40px auto; gap: 7px; border-radius: 16px; }
+.lie-c .lie-scene { width: 40px; height: 34px; border-radius: 10px; }
+.lie-c .lie-txt { gap: 3px; }
+.lie-c .lie-name { font-size: 11.5px; line-height: 1; }
+.lie-c .lie-q { font-size: 11px; padding: 3px 7px; }
+.lie-c .lie-q.ok { background: #8cbf2f; }
+.lie-c .lie-slope b { font-size: 12px; }
+.lie-c .lie-slope small { font-size: 9px; }
+.lie-c .lie-txt:not(:has(.lie-slope)) { align-content: center; }
