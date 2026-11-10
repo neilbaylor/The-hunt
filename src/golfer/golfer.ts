@@ -257,7 +257,7 @@ export class Golfer {
   /** one hand's frame on the grip, in club space: its long axis, palm normal and wrist position */
   private gripFrame(side: 'L' | 'R', grip: THREE.Vector3) {
         const k = this.k, sd = this.club.shaftDir.clone().normalize();
-        const beta = side === 'L' ? 0.65 : 0.32, alpha = side === 'L' ? 0.8 : 0.85;   // strong grip: lead ~37° on top (2.5-3 knuckles), trail ~18° under
+        const beta = side === 'L' ? 0.5 : 0.25, alpha = side === 'L' ? 0.8 : 0.85;   // strong grip: lead ~37° on top (2.5-3 knuckles), trail ~18° under
         const palm = (side === 'L' ? new THREE.Vector3(-Math.cos(beta), 0, Math.sin(beta)) : new THREE.Vector3(Math.cos(beta), 0, -Math.sin(beta)));
         palm.addScaledVector(sd, -palm.dot(sd)).normalize();
         const under = new THREE.Vector3().crossVectors(palm, sd).normalize();
