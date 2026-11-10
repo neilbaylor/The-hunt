@@ -603,7 +603,7 @@ function frame(now: number) {
     const M = SHOT_MODES[hud.mode], max = M.max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].pct / 100, pw = aim.distanceYds / Math.max(1, max);
     const f = hud.mode === 'full' ? (pw - FULL_MIN) / (1 - FULL_MIN) : pw;
     const hint = hud.mode === 'full' && f < 0 ? (CLUB_SPECS[hud.club].id.match(/PW|°/) ? 'Too short for a full swing · try Pitch' : 'Too short for a full swing · try Punch') : '';
-    hud.setPowerTarget(f >= 0.97 ? null : clamp(f, 0, 1), aim.distanceYds, hint);
+    hud.setPowerTarget(f >= 0.97 || f < 0 ? null : clamp(f, 0, 1), aim.distanceYds, hint);   // too short for the mode: just the hint
   } else {
     hud.setPowerTarget(null, 0);
     if (state === 'flight') hud.edLive(Math.hypot(ball.pos.x - ball.start.x, ball.pos.z - ball.start.z) / YD);
