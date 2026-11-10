@@ -81,3 +81,28 @@ Playful, not corporate, and minimal data (details behind a "Shot details" sheet)
 - The machine is shared and slow: render one frame at a time, use one browser.
 - Show the owner screenshots of every UI and visual change, often.
 - Puffy repo: don't touch it (golf was removed from it on purpose).
+
+## Latest owner feedback (open items as of this handoff)
+**Swing**
+- Finish: wrap the club further round like Rory. The shaft ends roughly parallel to the shoulder line, behind the neck, with the clubhead out past the trail shoulder, not resting on the shoulder. Hands high, behind the lead ear; the face stays visible.
+- Lead (front) foot flared 20–30° toward the target at address, kept through the finish. It isn't square at 90°.
+- Glove (RIGHT, lead) hand grip STRONGER: 2.5–3 knuckles showing, the V to the trail shoulder. Refs: Rory, https://thegratefulgolfer.com/wp-content/uploads/2015/01/strong-golf-grips.jpg?w=676
+- The clubface looked closed at delivery: square to the plane, toe-up.
+- Earlier, done: delivery trail-arm slot, Rory-style stacked finish, driver setup and tee. The assertion scripts live in the swing agent's scratchpad; recreate them (elbow angles, trail elbow in front of the hip, finish stack, foot pivot).
+
+**Face**
+- The owner preferred the UNLIT render in the A/B: the face should be shaded mostly from the baked real-photo texture (largely unlit/emissive plus soft lighting for form), with low spec and normal strength.
+- Clean up the texture: remove the dark hair strand on the forehead, smooth the artifacts on the lips and nose, and fix the right eyebrow.
+- Ears: proper geometry, about 6.5 cm, close to the head, angled back.
+- Rest face: a small closed-mouth smile, real painted eyes (no glassy shader iris), hair thinner on top with receding temples and some grey.
+
+**Clothes**
+- The shirt is "really bad": it looks like an inflated sack. It needs a fitted polo with shoulder seams, less standoff, real folds. Rory's polo in tools/refs/swing/rory_finish.jpg is the fit reference.
+- Shorts: no pocket and hip bulge ("I don't have hands in my pockets"); straight legs, a flat fly with drag folds, and a back seam.
+
+**UI**
+- When aiming short of the club's max, show a target line on the swing-stick power meter at the pull depth for that distance (account for FULL_MIN and the mode max), with near-target feedback, and suggest Punch/Pitch when it's below the full-swing minimum.
+
+**Style**: the finish is still "way too hand-drawn" in course renders; the default must be very subtle (no outline, no hatching, light grain, gentle painterly smoothing).
+
+**Bag**: the first Jones Rover model was crude. Rebuild it as a soft, tapered fabric bag and place it further back as a background detail.
