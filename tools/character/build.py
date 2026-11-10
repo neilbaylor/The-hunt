@@ -514,14 +514,22 @@ for vi in _bd:
 for sfx in 'lr':
     hip = joint[BONES.index(f'thigh_{sfx}')]; ank = joint[BONES.index(f'foot_{sfx}')]; knee = joint[BONES.index(f'calf_{sfx}')]
     ax = ank - hip; L2 = float(np.dot(ax, ax))
+    # shorts: one straight tube per leg, a little wider than the widest part of the thigh, falling to the hem
+    r_tube = 0.0
+    for vi in np.nonzero(pants)[0]:
+        if wsum(vi, [f'thigh_{sfx}', f'calf_{sfx}']) < 0.5: continue
+        t = float(np.dot(Vpants[vi] - hip, ax) / L2)
+        if 0.12 < t < 0.36:
+            c = hip + ax * t; r_tube = max(r_tube, float(np.linalg.norm(Vpants[vi] - c)) + pants_off[vi])
+    r_tube += C.get('shortsEase', 0.008)
     for vi in np.nonzero(pants)[0]:
         if wsum(vi, [f'thigh_{sfx}', f'calf_{sfx}']) < 0.5 or Vpants[vi, 1] > hip[1] + 0.02:
             continue
         t = float(np.clip(np.dot(Vpants[vi] - hip, ax) / L2, 0, 1)); c = hip + ax * t
         r = Vpants[vi] - c; rl = np.linalg.norm(r)
         rmin = np.interp(t, [0, 0.45, 1.0], [C['thighR'], C['kneeR'], C['hemR']])
-        if C.get('shorts'): rmin = np.interp(t, [0, 0.4], [C['thighR'], C['shortsHemR']])  # roomy, straight leg opening
-        want = max(rl + pants_off[vi], rmin)
+        if C.get('shorts'): rmin = r_tube * (1 - 0.05 * min(1.0, t / 0.4))   # straight, a touch of taper to the hem
+        want = max(rl + pants_off[vi] + 0.002, rmin)
         dirv = r / max(rl, 1e-6)
         # inner side near the crotch: don't cross the body's midline
         inward = -np.sign(c[0]) * dirv[0]
@@ -540,6 +548,19 @@ for vi in np.nonzero(pants)[0]:
     if Vpants[vi, 1] < hem_y + 0.15 and any(not pants[n] for n in NB[vi]):
         Vpants[vi] = Vpants[vi] + N[vi] * pants_off[vi]; pants_off[vi] = 0.0; Vpants[vi, 1] = hem_y; _nh += 1
 print('shorts hem: levelled', _nh, 'boundary vertices at y', round(float(hem_y), 3))
+# flat front: the fly lies as a flat placket from the waistband down to the crotch instead of a rounded bulge
+_pv = np.nonzero(pants)[0]
+_Pf = Vpants[_pv] + N[_pv] * pants_off[_pv][:, None]
+_wf = _Pf[(np.abs(_Pf[:, 0]) < 0.03) & (np.abs(_Pf[:, 1] - (belt_y - 0.04)) < 0.015)]
+if len(_wf):
+    zf = float(_wf[:, 2].max()); _cr = float(min(_Pf[(np.abs(_Pf[:, 0]) < 0.02), 1].min() + 0.02, belt_y - 0.1))
+    for k, vi in enumerate(_pv):
+        p_ = _Pf[k]
+        if p_[2] < 0.02 or not (_cr - 0.03 < p_[1] < belt_y - 0.03) or abs(p_[0]) > 0.11: continue
+        plane = zf - 0.12 * max(0.0, (belt_y - 0.04) - p_[1])          # leans back gently towards the crotch
+        if p_[2] > plane:
+            w = math.exp(-(p_[0] / 0.07) ** 2) * C.get('flatFront', 0.8)
+            Vpants[vi, 2] -= w * (p_[2] - plane)
 
 # tucked in: a soft blousing of fabric just above the belt (more at the back and sides, in a few soft vertical
 # folds where it gathers into the waistband); below the belt line it stays inside the shorts

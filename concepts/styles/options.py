@@ -9,6 +9,7 @@ ff = [int(v) for v in sys.argv[3].split(',')]
 here = os.path.dirname(os.path.abspath(__file__))
 V = [
   ('none', 'Real', 'Today\'s plain render, for comparison.'),
+  ('soft', 'Polished (new default)', 'Gentle edge-preserving paint smoothing that hides CG flaws, soft specular roll-off, a touch of warmth. No lines, no hatching.'),
   ('painterly', 'Painterly light', 'Edge-preserving paint smoothing, soft brush texture in flat areas, a faint silhouette line.'),
   ('gouache', 'Gouache', 'Flatter value bands, matte chalky finish, warm shadows, no lines. Illustrated golf poster.'),
   ('inkwash', 'Ink + wash', 'Faint warm ink silhouette over a soft watercolour wash, paper edges darkening.'),
@@ -39,7 +40,7 @@ for r, (key, name, desc) in enumerate(V):
         sheet.paste(fc, (x, y)); x += FW + 6
     figs = ''.join(f'<figure><img src="{uri(img(f"{f}-{key}"), 520)}" alt="{name}: {lab}"><figcaption>{lab}</figcaption></figure>' for f, lab in FR)
     faces = ''.join(f'<figure class="face"><img src="{uri(crop(img(f"{f}-{key}"), box), 520)}" alt="{name}: face, {lab}"><figcaption>Face · {lab}</figcaption></figure>' for f, box, lab in (('intro', fi, 'intro'), ('flight', ff, 'follow-through')))
-    tag = '' if key == 'none' else f'<code>?style={key}</code>'
+    tag = '<code>?style=real</code>' if key == 'none' else ('<code>default</code>' if key == 'soft' else f'<code>?style={key}</code>')
     cards.append(f'<article class="v{" real" if key == "none" else ""}"><header><h2>{name}</h2>{tag}<p>{desc}</p></header><div class="faces">{faces}</div><div class="frames">{figs}</div></article>')
 sheet.save(f'{src}/options-sheet.jpg', quality=82)
 html = '''<title>Hand-Drawn Finish Options</title>
