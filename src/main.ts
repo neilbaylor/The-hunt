@@ -121,7 +121,7 @@ const aimCtl = new AimController({
 });
 hud.onLie = () => { sound.ui(); teeUp(); aimCtl.clubChanged(); };   // a new lie changes the reach: re-aim at its full distance
 // ?lie=3 or ?lie=rough: start on that sample lie (HUD checks)
-{ const l = QS.get('lie'); if (l) { const i = /^\d+$/.test(l) ? +l : LIES.findIndex(x => x.name.toLowerCase().replace(/\s+/g, '').startsWith(l.toLowerCase())); if (i >= 0 && i < LIES.length) { hud.lie = i; hud.render(null); aimCtl.clubChanged(); } } }
+{ const l = QS.get('lie'); if (l) { const i = /^\d+$/.test(l) ? +l : LIES.findIndex(x => x.name.toLowerCase().replace(/\s+/g, '').startsWith(l.toLowerCase())); if (i >= 0 && i < LIES.length) { hud.lie = i; hud.render(null); aim.distanceYds = Math.round(SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id) * LIES[i].pct / 100); } } }
 
 function teeUp() {
   // off the tee box: driver teed high (ball's equator at the top of the face, ~3.7 cm of tee showing),
@@ -725,7 +725,7 @@ function frame(now: number) {
   // the hand-drawn finish keeps his face clean: it needs the head's screen position each frame
   if (post.finish === 'hand' && golfer.body.bones[5]) post.setFace(golfer.body.bones[5].getWorldPosition(_faceHead), 0.15);
   post.render(dt);
-  faceBadge.draw((state !== 'intro' || INTRO === 'c' || QS.has('badge')) && (!aimCtl.active || QS.has('badge')) && !document.hidden);   // ?badge: draw it everywhere (badge checks)
+  faceBadge.draw((state !== 'intro' || INTRO === 'c' || QS.has('badge')) && !document.hidden);   // in the aim view too: the badge always shows his face
   (window as any).__frameMs = performance.now() - r0;
   if (!manualClock) requestAnimationFrame(frame);
 }
