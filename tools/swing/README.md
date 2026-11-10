@@ -1,7 +1,7 @@
 # Swing capture: real 3D motion from video → the game rig
 
-The golfer's swing can play from a clip recovered in 3D from pro swing videos instead of the hand-keyed poses.
-Turn it on with `?swing=mocap` (golfer.html or the game), or `golfer.swingSource = 'mocap'`. The hand-keyed swing stays the default.
+The golfer's swing plays a clip recovered in 3D from pro swing videos. **This is the default.** The old hand-keyed
+swing is still there: `?swing=keyed` (golfer.html or the game), or `golfer.swingSource = 'keyed'`.
 
 ## What is here
 | Path | What |
@@ -96,6 +96,13 @@ not used. The club's roll about its shaft is not observed: the game solves it so
   the clip's thigh.
 - Club: shaft as above, carried by the lead hand; blended to the keyed club at address (BA→MB) and through impact
   (MD→BI→MF) so the head sits behind the ball and meets it.
+- Club roll (face): follows the plane. The face normal is shaft × lead forearm, which gives toe up at MB, and at the
+  top the face parallel to the lead forearm, toe hanging down, leading edge ~45° and the head down the target line.
+  Around MF the toe is held straight up (the forearm rule would leave the face rolled over there). Square at BI comes
+  from the impact pin. `node clubcheck.mjs 0 out/clubheads_events.png` asserts this at every event and renders
+  clubhead close-ups (face-on over down-the-line).
+- Mid-backswing: the owner prefers the hand-keyed MB, so around MB the pose blends to the hand-keyed swing at the same
+  hands angle (body, arms and club), feathered in from 20% of the way BA→MB and out by 75% of the way MB→LBA.
 - Timeline: the game's hands angle maps onto the clip by lead-arm angle (back BA→TB, down TB→BI, follow BI→FIN).
 
 ## Known limits

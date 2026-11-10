@@ -11,11 +11,12 @@ while True:
     fr.append(f)
 def tiles(path):
     im = cv2.imread(path)[22:]; w = im.shape[1] // n; return [im[:, i * w:(i + 1) * w] for i in range(n)]
-rows = [tiles(strip)] + ([tiles(sys.argv[5])] if len(sys.argv) > 5 else []); labels = [label] + (['hand-keyed'] if len(sys.argv) > 5 else [])
+rows = [tiles(strip)] + ([tiles(sys.argv[5])] if len(sys.argv) > 5 else []); labels = [label] + ([sys.argv[6] if len(sys.argv) > 6 else 'hand-keyed'] if len(sys.argv) > 5 else [])
 tw, th = rows[0][0].shape[1], rows[0][0].shape[0]; cols = []
 for i, k in enumerate(names):
-    f = cv2.flip(fr[int(round(D['events'][k]))], 1); s = tw / f.shape[1]; f = cv2.resize(f, (tw, int(f.shape[0] * s)))
-    y0 = int(f.shape[0] * 0.02); f = f[y0:y0 + th] if f.shape[0] >= th + y0 else cv2.copyMakeBorder(f, 0, th - f.shape[0], 0, 0, cv2.BORDER_CONSTANT)
+    f = cv2.flip(fr[int(round(D['events'][k]))], 1); s = max(tw / f.shape[1], th / f.shape[0])   # fill the tile, centre-crop
+    f = cv2.resize(f, (max(tw, round(f.shape[1] * s)), max(th, round(f.shape[0] * s)))); x0 = (f.shape[1] - tw) // 2; y0 = (f.shape[0] - th) // 2
+    f = f[y0:y0 + th, x0:x0 + tw].copy()
     cv2.rectangle(f, (0, 0), (tw, 26), (0, 0, 0), -1); cv2.putText(f, f'{k}  ref (mirrored)', (6, 19), 0, 0.55, (0, 255, 255), 1, cv2.LINE_AA)
     col = [f]
     for r, lab in zip(rows, labels):

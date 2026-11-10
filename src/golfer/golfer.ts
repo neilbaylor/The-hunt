@@ -104,7 +104,8 @@ const ARM_SCALE = +(_fq?.get('arm') ?? 1.08);
 const LEAN_K = _fv('lk', [0.35, 1.3]);
 // short clubs: weight a little on the lead side, the chest over the ball (pelvis this far toward the target with a wedge)
 const PEL_FWD = +(_fq?.get('pf') ?? 0.04);
-const SIDE_ADJ = _fv('sa', [-0.16, 0.1]);
+const HA_K = +(_fq?.get('hk') ?? 0.16);
+const SIDE_ADJ = _fv('sa', [-0.2, 0.06]);
 const FIN = { g: _fv('fg', [0.15, 0.22, -0.17]), s: _fv('fs', [0.8, 0.6]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
 const TRAIL_W = +(_fq?.get('tw') ?? 0);
@@ -225,7 +226,7 @@ export class Golfer {
     const wristAddrR = this.extras ? this.clubAt.clone().add(this.gripFrame('R', this.club.gripLead.clone().lerp(this.club.gripTrail, GRIP_DOWN[1]).add(sdn)).wrist.applyQuaternion(qLean)) : null;
     // how far the hands hang ahead of the shoulder: more with the longer clubs (toes ~49 cm from the ball with a wedge,
     // ~53 with a 7 iron, ~68 with the driver)
-    const handsAhead = (0.03 + 0.09 * lt ** 0.8) * k;
+    const handsAhead = (0.03 + HA_K * lt ** 1.2) * k;
     const solveZ = () => {
       let lo = -1.2, hi = -0.1;
       for (let it = 0; it < 20; it++) {
@@ -253,10 +254,10 @@ export class Golfer {
       if (this.tiltAdj > -0.2) break;
     }
     solveZ();
-    // the trail hand has to reach too (it's lower on the grip): if the trail arm comes up more than 2 cm short, the trail
+    // the trail hand has to reach too (it's lower on the grip): if the trail arm comes up more than 3.5 cm short (the shoulder blade gives that much), the trail
     // shoulder drops (more spine tilt away from the target) and the bend is re-found
     for (let it = 0; it < 6 && wristAddrR; it++) {
-      if (this.rig.P[BONE.upperR].distanceTo(wristAddrR) - armLen <= 0.02) break;
+      if (this.rig.P[BONE.upperR].distanceTo(wristAddrR) - armLen <= 0.035) break;
       this.sideAdj += 0.03;
       let tlo = -0.25, thi = 0.35;
       for (let j = 0; j < 12; j++) { this.tiltAdj = (tlo + thi) / 2; if (solveZ() > armLen * 0.999) tlo = this.tiltAdj; else thi = this.tiltAdj; }

@@ -42,11 +42,12 @@ for (const [i, ps] of EVENTS.entries()) {
     await page.evaluate(({ s, shot }) => {
       const g = window.__g, V = g.root.position.constructor; g.update({ topPhi: 2.6, idleT: 0, ...s });
       const cam = window.__cam, head = g.club.group.localToWorld(new V(0, 0, 0)), lx = g.root.scale.x < 0 ? -1 : 1;
-      const dir = shot === 1 ? new V(-lx, 0.15, 0) : new V(0, 0.2, 1);
-      cam.clearViewOffset?.(); cam.fov = 14; cam.aspect = 390 / 844; cam.updateProjectionMatrix();
-      cam.position.copy(head).addScaledVector(dir.normalize(), 1.1); cam.lookAt(head); window.__render();
+      const grip = g.club.group.localToWorld(g.club.gripLead.clone()), aim = head.clone().lerp(grip, 0.1);
+      const dir = shot === 1 ? new V(-lx, 0.12, 0) : new V(0, 0.15, 1);
+      cam.clearViewOffset?.(); cam.fov = 22; cam.aspect = 390 / 844; cam.updateProjectionMatrix();
+      cam.position.copy(aim).addScaledVector(dir.normalize(), 1.6); cam.lookAt(aim); window.__render();
     }, { s: state(ps), shot });
-    const f = `${shots}.${i}.${shot}.png`; await page.screenshot({ path: f, clip: { x: 45, y: 272, width: 300, height: 300 } }); files.push(f);
+    const f = `${shots}.${i}.${shot}.png`; await page.screenshot({ path: f, clip: { x: 0, y: 197, width: 390, height: 450 } }); files.push(f);
   }
 }
 await browser.close();
