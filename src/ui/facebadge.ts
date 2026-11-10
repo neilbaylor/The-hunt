@@ -4,6 +4,7 @@
 // one-liner while the jaw moves. Reactions drive the generated head's expressions (smile via the golfer, the rest
 // via body.face) and a little head shake (the badge camera sways).
 import * as THREE from 'three';
+import { speak } from '../game/voice';
 
 export const AVATAR_LAYER = 5;
 
@@ -74,7 +75,8 @@ export class FaceBadge {
 
   /** react to a shot: expression, head shake, a one-liner typed into the bubble */
   react(o: Outcome, extra = '') {
-    const pick = LINES[o][Math.floor(Math.random() * LINES[o].length)];
+    const v = speak(o);   // the golfer says it out loud (src/game/voice.ts); the bubble shows what he says
+    const pick = v ? v.text : LINES[o][Math.floor(Math.random() * LINES[o].length)];
     const E = this.exT; E.smile = 0; E.grimace = 0; E.browUp = 0; E.jawOpen = 0;
     if (o === 'pure') { E.smile = 1; E.browUp = 0.3; }
     else if (o === 'good') E.smile = 0.7;
