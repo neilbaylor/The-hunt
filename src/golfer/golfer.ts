@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { buildBody, BONE, type Body } from './body';
 import { Rig, type BodyPose } from './rig';
-import { buildClub, buildHands, CLUB_SPECS, type ClubModel } from './club';
+import { buildClub, buildHands, CLUB_SPECS, clubLengthT, attackAngleDeg, type ClubModel } from './club';
 import type { GolferProfile } from './profile';
 import { buildHumanBody, type HumanData, type HumanExtras } from './human';
 import { sampleSwing, pinWeights, clipChest, buildClubTrack, clubAt, rowAt, num, vec, EV } from './mocap';
@@ -96,11 +96,11 @@ export const SHOT_STYLE: Record<ShotMode, { back: number; finish: number; stance
 export const PHI_TOP = 2.6;     // hands angle at the top of a full swing
 export const PHI_FINISH = -3.2; // hands angle at a full finish
 const ROLL_TOP = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('roll') ?? 1.2 : 1.2); const ROLL_SIGN = -1; // forearm rotation (radians of club roll at the top)
-const ADDRESS_TOE_UP = { driver: +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('toeup') ?? 10 : 10), wood: 6, hybrid: 3 };
-const HA_DRV = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('ha') ?? 0.06 : 0.06);
+const ADDRESS_TOE_UP = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('toeup') ?? 10 : 10);   // degrees, driver
 const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search) : null, _fv = (n: string, d: number[]) => _fq?.get(n)?.split(',').map(Number) ?? d;
 // held-finish targets in the chest's frame (URL-tunable on golfer.html: fg = hands from the neck, fs = shaft back/down
 // added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
+const SIDE_ADJ = _fv('sa', [-0.1, 0.1]);
 const FIN = { g: _fv('fg', [0.15, 0.22, -0.17]), s: _fv('fs', [0.8, 0.6]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
 const TRAIL_W = +(_fq?.get('tw') ?? 0);
@@ -173,9 +173,9 @@ export class Golfer {
     if (this.club) { this.char.remove(this.club.group); this.club.group.traverse(o => (o as THREE.Mesh).geometry?.dispose?.()); }
     const extra = Math.max(0, Math.round((this.profile.heightM - 1.8) / 0.1)) * 0.5 * IN; // fitted: +0.5" per 10 cm over 1.80 m (+0.5" at 6'3")
     // the long clubs sit a little toe-up at address (the hands hang lower than the spec lie, as a tour player's do with
-    // a driver; DTL shaft angle ~47°): flatter by 10° for the driver, 6° for the woods, 3° for the hybrids. Our rig's arms
+    // a driver; DTL shaft angle ~47°): flatter by 10° for the driver, ~6° for the woods, ~2° for the hybrids, nothing for the irons (continuous by length). Our rig's arms
     // are short for his height, so without it the driver's hands sit too high for a straight lead arm
-    const toeUp = (ADDRESS_TOE_UP as Record<string, number>)[spec.kind] ?? 0;
+    const toeUp = ADDRESS_TOE_UP * clubLengthT(spec) ** 2;
     this.club = buildClub(toeUp ? { ...spec, lie: spec.lie - toeUp } : spec, extra, this.body.materials.glove, this.body.materials.skin);
     this.char.add(this.club.group);
     this.setupAddress();
@@ -196,9 +196,11 @@ export class Golfer {
     // ball position (ahead of the stance centre): driver just inside the lead heel, 3 wood two balls back, middle
     // irons a touch ahead of centre, wedges in the middle
     const L = this.club.length;
-    const ahead = spec.kind === 'driver' ? 0.215 : spec.kind === 'wood' ? 0.13 : Math.max(0, Math.min(0.07, (L - 0.9) * 0.6));
+    const lt = clubLengthT(spec); void L;
+    const ahead = 0.215 * lt ** 1.25;   // continuous by club length: wedge 0, 7 iron ~3 cm, 3 wood ~15 cm, driver 21.5 cm
     this.stanceX = -ahead * k;
-    this.sideAdj = spec.kind === 'driver' ? 0.1 : spec.kind === 'wood' ? 0.06 : 0;
+    // shoulder tilt at address (trail shoulder low): most with the driver, a small tilt with a wedge
+    this.sideAdj = SIDE_ADJ[0] + (SIDE_ADJ[1] - SIDE_ADJ[0]) * lt;
     // set-up like a tour player: arms hang (shoulder sockets roughly above the hands), relaxed and nearly
     // straight. Find the distance from the ball that puts the lead shoulder over the hands, then bend more or
     // less from the hips until the lead arm is ~98% extended.
@@ -207,7 +209,7 @@ export class Golfer {
     const wristAddr = this.extras ? this.clubAt.clone().add(this.gripFrame('L', this.club.gripLead).wrist) : this.gripAddr.clone();
     // how far the hands hang ahead of the shoulder: more with the longer clubs (toes ~49 cm from the ball with a wedge,
     // ~53 with a 7 iron, ~68 with the driver)
-    const handsAhead = (0.03 + 0.03 * Math.min(1, Math.max(0, (this.club.length - 0.9) / 0.1)) + (spec.kind === 'driver' ? HA_DRV : spec.kind === 'wood' ? HA_DRV * 0.6 : 0)) * k;
+    const handsAhead = (0.03 + 0.09 * lt ** 0.8) * k;
     const solveZ = () => {
       let lo = -1.2, hi = -0.1;
       for (let it = 0; it < 20; it++) {
@@ -273,13 +275,17 @@ export class Golfer {
     this.headAnchor = null; this.legAddr = { L: 9, R: 9 };
     this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
     this.headAnchor = this.headCentre();
+    this.aoaFix = 0;
+    { const nat = this.pathAngleDeg(); this.aoaFix = Math.tan(THREE.MathUtils.degToRad(this.attackAngleDeg())) - Math.tan(THREE.MathUtils.degToRad(nat)); }
+    this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
     { const m = this.legMiss(this.pose); this.legAddr = { L: m.L + 1e-3, R: m.R + 1e-3 }; }
   }
 
   /** one hand's frame on the grip, in club space: its long axis, palm normal and wrist position */
   private gripFrame(side: 'L' | 'R', grip: THREE.Vector3) {
         const k = this.k, sd = this.club.shaftDir.clone().normalize();
-        const beta = side === 'L' ? GRIP_B[0] : GRIP_B[1], alpha = side === 'L' ? GRIP_A[0] : GRIP_A[1];   // strong grip: lead ~37° on top (2.5-3 knuckles), trail ~18° under
+        const beta = (side === 'L' ? GRIP_B[0] : GRIP_B[1]) + 0.1 * (clubLengthT(this.club.spec) - 0.3),   // a touch stronger with the long clubs
+          alpha = side === 'L' ? GRIP_A[0] : GRIP_A[1];   // strong grip: lead ~37° on top (2.5-3 knuckles), trail ~18° under
         const palm = (side === 'L' ? new THREE.Vector3(-Math.cos(beta), 0, Math.sin(beta)) : new THREE.Vector3(Math.cos(beta), 0, -Math.sin(beta)));
         palm.addScaledVector(sd, -palm.dot(sd)).normalize();
         const under = new THREE.Vector3().crossVectors(palm, sd).normalize();
@@ -602,6 +608,13 @@ export class Golfer {
       p.poleR.lerp(neck.clone().add(L(...FIN.pr as [number, number, number])), finW);   // trail arm across the face, elbow forward
       this.rig.apply(p);
     }
+    // attack angle: through impact the head's path is tilted to this club's attack angle (down with the wedges, level
+    // with a long iron, up with the teed driver) by raising or lowering the hands a little either side of the ball;
+    // nothing at the ball itself, fading out within ~half a metre
+    if ((s.phase === 'down' || s.phase === 'follow') && this.aoaFix) {
+      const x = g.position.x - this.clubAt.x, dy = this.aoaFix * x * Math.exp(-((x / 0.3) ** 2));
+      if (Math.abs(dy) > 1e-5) { g.position.y += dy; p.wristL.y += dy; p.wristR.y += dy; this.rig.apply(p); }
+    }
     // both hands stay on the club: if either arm can't reach its wrist target, move the club (both hands) toward
     // that shoulder (the trail arm used to fall short of the grip in the through-swing)
     // (the trail shoulder blade reaches first: its joint slides up to 4.5 cm toward the grip)
@@ -698,6 +711,16 @@ export class Golfer {
     return this.club.group.localToWorld(this.clubHeadWorld.set(0, 0, 0));
   }
 
+  /** this club's attack angle at impact, degrees (+ = up): driver +3, 3 iron 0, wedges −5 */
+  attackAngleDeg() { return attackAngleDeg(this.club.spec); }
+  /** slope added to the head's path through impact so it meets the ball at the club's attack angle (set in setupAddress) */
+  private aoaFix = 0;
+  /** the head's path angle through the ball as posed, degrees (+ = rising) */
+  pathAngleDeg() {
+    const at = (s: Partial<SwingState>) => { this.update({ phase: 'down', phi: 0, topPhi: PHI_TOP, idleT: 0, ...s }); return this.club.group.position.clone(); };
+    const a = at({ phase: 'down', phi: 0.05 }), b = at({ phase: 'follow', phi: -0.05 });
+    return THREE.MathUtils.radToDeg(Math.atan2(b.y - a.y, Math.hypot(b.x - a.x, b.z - a.z)));
+  }
   /** head centre (char space) after rig.apply: the base of the neck plus an offset up the chest's frame, so it doesn't
    *  depend on where the eyes look */
   headCentre(out = new THREE.Vector3()) { return out.set(0, 0.18, 0).applyQuaternion(this.rig.Q[BONE.chest]).add(this.rig.P[BONE.neck]); }

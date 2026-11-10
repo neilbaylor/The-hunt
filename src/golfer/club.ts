@@ -25,6 +25,19 @@ export const CLUB_SPECS: ClubSpec[] = [
   { id: '60°', name: '60° wedge', kind: 'wedge', length: 35 * IN, lie: 64, loft: 60 },
 ];
 
+/** 0 for the shortest club (lob wedge) → 1 for the driver, by length: everything about the set-up that scales with
+ *  the club (stand distance, ball position, shoulder tilt, grip) reads this */
+export function clubLengthT(spec: ClubSpec) {
+  const ls = CLUB_SPECS.map(c => c.length), lo = Math.min(...ls), hi = Math.max(...ls);
+  return Math.min(1, Math.max(0, (spec.length - lo) / (hi - lo)));
+}
+/** Attack angle at impact, degrees (+ = hitting up): driver off a tee +3, a 3 iron (39") level, wedges −5; by length.
+ *  Divots and launch can read this (a steeper attack takes a bigger divot). */
+export function attackAngleDeg(spec: ClubSpec) {
+  const inch = spec.length / IN;
+  return inch >= 39 ? Math.min(3, (inch - 39) / (45.5 - 39) * 3) : Math.max(-5, (inch - 39) / (39 - 35.5) * 5);
+}
+
 export interface ClubModel {
   spec: ClubSpec;
   group: THREE.Group;        // pose this
