@@ -688,3 +688,5 @@ body[data-coin="d"] .hud .pop .seg button[aria-pressed="true"] { background: lin
 .pad-f .dial-l { opacity: 0; transition: opacity .3s ease; }
 .pad-f:not([data-dial]) .dial-l[data-k="mown"], .pad-f[data-dial="mown"] .dial-l[data-k="mown"], .pad-f[data-dial="cut"] .dial-l[data-k="cut"], .pad-f[data-dial="rough"] .dial-l[data-k="rough"], .pad-f[data-dial="sand"] .dial-l[data-k="sand"] { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .pad-f .dial-l { transition: none; } }
+/* the strike label matches the club chip's caption ("7 Iron"): same face, weight and navy, sentence case, a touch bigger */
+.hud.skin-f .strike-btn span { font: 700 13px/1 var(--h-body); letter-spacing: 0; text-transform: none; color: var(--navy); padding: 4px 10px; }

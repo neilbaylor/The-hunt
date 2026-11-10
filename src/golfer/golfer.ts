@@ -51,7 +51,7 @@ const DOWN = K({ lift: -0.04, reach: 1.12, hipTurn: -0.12, hipSide: 0.04, chestT
 const LATE = K({ lift: -0.1, reach: 1.01, hipTurn: 0.4, hipTilt: 0.18, hipSide: 0.07, chestTurn: -0.42, chestTilt: 0.6, chestSide: 0.32, shift: 0.075, drop: 0.0, heel: 0.33, shrug: 0.0, pro: -0.02, hinge: 0.45, beta: -0.08 }, T);
 // delivery: lead arm about parallel on the way down, shaft lagging ~45° behind the hands on plane, hips already open,
 // trail elbow tucked in front of the trail hip
-const DELIV = K({ lift: -0.34, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.6, chestTilt: 0.62, chestSide: 0.44, shift: 0.11, drop: 0.0, heel: 0.3, shrug: 0.04, pro: -0.04, hinge: 0.42, beta: -0.15 }, T);
+const DELIV = K({ lift: -0.34, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.6, chestTilt: 0.62, chestSide: 0.44, shift: 0.09, drop: 0.0, heel: 0.3, shrug: 0.04, pro: -0.1, hinge: 0.42, beta: -0.15 }, T);
 const I: Keys = { lift: 0, reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.24, shift: 0.08, drop: 0.02, heel: 0.36, shrug: 0.1, pro: -0.11, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
 const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.45, hinge: -0.08, beta: 0.08, pro: -0.02 }, I);
@@ -822,7 +822,7 @@ export class Golfer {
   private steadyHead(p: BodyPose, w: number, offX = 0, offY = 0) {
     const H = new THREE.Vector3(), at = () => { this.rig.apply(p); return this.headCentre(H).clone(); };
     const d = 0.02;
-    for (let it = 0; it < 2; it++) {
+    for (let it = 0; it < 4; it++) {
       const h0 = at();
       const ex = (this.headAnchor!.x + offX - h0.x) * w, ey = (this.headAnchor!.y + offY - h0.y) * w;
       if (Math.abs(ex) + Math.abs(ey) < 0.002) break;
