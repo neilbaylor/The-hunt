@@ -24,7 +24,7 @@ export class AimPreview {
     this.mat = new THREE.ShaderMaterial({
       uniforms: { t: { value: 0 }, op: { value: 1 } },
       vertexShader: 'attribute float s; varying float vS; void main(){ vS = s; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      // soft white-cyan, fading in off the ball and out toward the landing, with a slow pulse running along it
+      // warm yellow, fading in off the ball and out toward the landing, with a slow pulse running along it
       fragmentShader: `uniform float t; uniform float op; varying float vS;
         void main(){
           float a = smoothstep(0.0, 0.08, vS) * (1.0 - smoothstep(0.8, 1.0, vS)) * 0.55 + 0.12 * smoothstep(0.0, 0.03, vS);
