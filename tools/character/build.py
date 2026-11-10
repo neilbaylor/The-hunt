@@ -619,12 +619,17 @@ if C.get('shirtWeightSmooth', 0):
         Wm[vi] /= max(Wm[vi].sum(), 1e-9)
     _nbs = {vi: [n for n in NB[vi] if shirt[n]] for vi in _ids}
     W0 = Wm.copy(); _pin = np.array([vi for vi in _ids if V[vi, 1] < belt_y + 0.05], dtype=int)
+    # the sleeves keep the arm's own weights (blended in over the armhole), so they follow the arm instead of
+    # standing off it stiffly; the shoulders and upper back blend less far, so they don't move as one padded block
+    _armw = np.array([wsum(vi, ['upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r']) for vi in range(NV)])
+    _keepw = np.clip((_armw - C.get('sleevePinFrom', 0.35)) / 0.4, 0, 1)
     for _ in range(C['shirtWeightSmooth']):
         W2 = Wm.copy()
         for vi in _ids:
             ns = _nbs[vi]
             if ns: W2[vi] = 0.5 * Wm[vi] + 0.5 * Wm[ns].mean(0)
         if not C.get('untucked'): W2[_pin] = W0[_pin]   # tucked: the waist keeps the body's weights so it moves with the shorts
+        W2[_ids] = W2[_ids] * (1 - _keepw[_ids, None]) + W0[_ids] * _keepw[_ids, None]
         Wm = W2
     for vi in _ids:
         o = np.argsort(-Wm[vi])[:4]; ws = Wm[vi][o]; ws = ws / max(ws.sum(), 1e-9)
