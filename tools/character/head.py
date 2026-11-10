@@ -1354,7 +1354,7 @@ def _tex_map(vals, blur=0):
     return cv2.GaussianBlur(m_, (0, 0), blur) if blur else m_
 _hair_t = H_ if 'H_' in globals() else np.zeros(len(cp))
 # the face (real-photo or unwrap-sourced alike): in front of the cheek sides, chin to the brow-top, no hair
-_faceF = (_hair_t < 0.3) & (cp[:, 2] > min(lm_f[234, 2], lm_f[454, 2]) + 0.005) & (cp[:, 1] > lm_f[152, 1] + 0.004) & (cp[:, 1] < lm_f[10, 1] - 0.01)
+_faceF = ((_hair_t < 0.3) | (cp[:, 1] < min(lm_f[133, 1], lm_f[362, 1]) - 0.01)) & (cp[:, 2] > min(lm_f[234, 2], lm_f[454, 2]) + 0.005) & (cp[:, 1] > lm_f[152, 1] + 0.004) & (cp[:, 1] < lm_f[10, 1] - 0.01)
 # protected features
 _prot = np.zeros(len(cp))
 # the nose base, wing to wing (its nostrils and creases are settled by the mirrored repaint above)
@@ -1368,6 +1368,12 @@ for _ec in _EYEC:                                                             # 
 _LIPL = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308]; _LIPL2 = [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308]
 _lipline = (lm_f[_LIPL] + lm_f[_LIPL2]) / 2
 _prot = np.maximum(_prot, np.clip(1 - (_poly_d(cp, _lipline) - 0.0012) / 0.001, 0, 1))
+# the lips themselves (inside the outer lip contour, 1 mm round): their own colour, never "dark outliers"
+_LIPO = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185, 61]
+_lpoly = (lm_f[_LIPO][:, :2] * 1e4).astype(np.float32)
+_lsd = np.array([cv2.pointPolygonTest(_lpoly, (float(x_ * 1e4), float(y_ * 1e4)), True) for x_, y_ in cp[_faceF & (np.abs(cp[:, 1] - lm_f[13, 1]) < 0.025), :2]]) / 1e4
+_lm_ = np.zeros(len(cp)); _lm_[_faceF & (np.abs(cp[:, 1] - lm_f[13, 1]) < 0.025)] = np.clip((_lsd + 0.0015) / 0.001, 0, 1)
+_prot = np.maximum(_prot, _lm_ * (cp[:, 2] > lm_f[13, 2] - 0.02))
 _BROW_U = ([70, 63, 105, 66, 107], [300, 293, 334, 296, 336]); _BROW_L = ([46, 53, 52, 65, 55], [276, 283, 282, 295, 285])
 _brow_core = np.zeros(len(cp)); _brow_near = np.zeros(len(cp))
 for _bu, _bl in zip(_BROW_U, _BROW_L):
@@ -1429,6 +1435,12 @@ _Lb = cv2.GaussianBlur(_texF.mean(2), (0, 0), 4)
 _detail = (_texF.mean(2) / np.maximum(_Lb, 1))[..., None]
 _ow2 = _tex_map(np.clip((_ref * 0.95 - _Lt) / (_ref * 0.3), 0, 1) * _skinz * 0.9, 2.0)[..., None]
 _texF = _texF * (1 - _ow2) + np.clip(_refc[None, None] * _detail, 0, 255) * _ow2
+# and their hue (the selfies' olive and tan casts round the sockets and over the brow ridge): toward the skin's own
+# hue at the texel's own lightness, whatever its darkness
+_Lc = _texF.mean(2, keepdims=True)
+_hue = np.clip(_refc[None, None] / max(_refc.mean(), 1) * _Lc, 0, 255)
+_ow3 = _tex_map(_skinz * 0.6, 2.0)[..., None]
+_texF = _texF * (1 - _ow3) + _hue * _ow3
 # soften the brow band's edges (a gentle blur where core falls off), leaving the hair texture in the middle
 _edge = _tex_map(np.clip(_brow_core * (1 - _brow_core) * 4, 0, 1) * _faceF, 1.0)[..., None]
 _texF = _texF * (1 - 0.6 * _edge) + cv2.GaussianBlur(_texF, (0, 0), 1.6) * 0.6 * _edge

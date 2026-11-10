@@ -47,6 +47,8 @@ export interface Post {
   setFinish(f: Finish): void;
   /** the golfer's head (world), so the hand-drawn finish keeps the face clean; null for none */
   setFace(pos: THREE.Vector3 | null, radius?: number): void;
+  /** scale the grade's bloom strength (1 = as graded): close-ups of the sunlit golfer turn it down so the visor keeps detail */
+  setBloomScale(k: number): void;
   readonly finish: Finish;
   readonly quality: Quality;
 }
@@ -198,6 +200,7 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
   let face: { pos: THREE.Vector3; r: number } | null = null;
   const dof = { amount: 0, target: 0, start: 90, end: 420 };
   let time = 0;
+  let bloomScale = 1;
 
   function applyGrade() {
     const G = GRADES[grade];
@@ -207,7 +210,7 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
       u.lift.value.set(...G.lift); u.gamma.value.set(...G.gamma); u.gain.value.set(...G.gain);
       u.saturation.value = G.saturation; u.contrast.value = G.contrast; u.vignette.value = G.vignette;
     }
-    if (bloom) bloom.strength = G.bloom;
+    if (bloom) bloom.strength = G.bloom * bloomScale;
   }
 
   function build() {
@@ -265,6 +268,7 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
     get quality() { return quality; },
     get finish() { return finish; },
     setFinish(f) { if (f !== finish) { finish = f; build(); } },
+    setBloomScale(k) { if (Math.abs(k - bloomScale) < 1e-3) return; bloomScale = k; if (bloom) bloom.strength = GRADES[grade].bloom * k; },
     setFace(pos, radius = 0.14) { face = pos ? { pos: (face?.pos ?? new THREE.Vector3()).copy(pos), r: radius } : null; handPass?.setFace(pos, radius); },
     render(dt) {
       time += dt;

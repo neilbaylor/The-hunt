@@ -96,6 +96,9 @@ const tracer = new Tracer(); scene.add(tracer.mesh);
 // a soft key/fill light that follows the camera so the golfer reads in golden-hour backlight (TV-style)
 const fill = new THREE.DirectionalLight('#fff3e6', 0.9);
 scene.add(fill, fill.target);
+// intro A: a warm low rim light from behind him (golden hour on the hair, ear and shoulder edge), only on the intro
+const introRim = new THREE.DirectionalLight('#ffb35c', 3.2); introRim.visible = false;
+scene.add(introRim, introRim.target);
 
 // ── HUD + sound ──
 const hud = new Hud(document.body, profile);
@@ -598,11 +601,15 @@ function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
     // b: a wide, high golden-hour shot
     const T = now / 1000;
     const th = INTRO === 'a' ? introAngle() + 0.05 * Math.sin(T * 0.21) : (golfer.lefty ? Math.PI : 0) + 0.75 * side + 0.04 * Math.sin(T * 0.25);
-    const R = INTRO === 'a' ? 1.85 - 0.08 * Math.sin(T * 0.16) : 8.5;
+    const R = INTRO === 'a' ? 1.38 - 0.06 * Math.sin(T * 0.16) : 8.5;
     pos.set(head.x + Math.cos(th) * R, 0, head.z + Math.sin(th) * R);
-    pos.y = INTRO === 'a' ? head.y - 0.1 + 0.025 * Math.sin(T * 0.27) : 2.6;
+    pos.y = INTRO === 'a' ? head.y - 0.08 + 0.02 * Math.sin(T * 0.27) : 2.6;
     pos.y = Math.max(pos.y, (range?.heightAt(pos.x, pos.z) ?? 0) + 1.0);
-    if (INTRO === 'a') look.set(head.x, head.y - 0.2, head.z);   // face in the upper half, the lockup under the chin
+    if (INTRO === 'a') {
+      look.set(head.x, head.y - 0.13, head.z);   // a tight ¾ head and shoulders: the face in the upper half, the lockup under the chin
+      // the rim light sits behind him, opposite the camera and off to one side, a little high
+      introRim.position.set(head.x - Math.cos(th + 0.6) * 4, head.y + 1.6, head.z - Math.sin(th + 0.6) * 4); introRim.target.position.copy(head); introRim.target.updateMatrixWorld();
+    }
     else look.copy(piv).add(new THREE.Vector3(-1.6 * side, 1.9, -0.6));   // him small, low right; the sky and the course take the frame
     return;
   }
@@ -748,6 +755,9 @@ function frame(now: number) {
   { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 0.8 : 2.4) : swingView === 'front' && camMode === 'address' ? 0.25 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   // the sunlit side of him (intro A, the face-on swing cam) sits a touch lower in exposure so the cream visor and skin keep detail
   const expK = state === 'intro' && INTRO === 'a' ? 0.84 : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.8 : 1;
+  post.setBloomScale(expK < 1 ? 0.2 : 1);
+  introRim.visible = state === 'intro' && INTRO === 'a';
+  fill.color.set(state === 'intro' && INTRO === 'a' ? '#ffd6a0' : '#fff3e6');   // warmer key on the close-up
   if (expK < 1) { if (introExp0 < 0) introExp0 = renderer.toneMappingExposure; renderer.toneMappingExposure = introExp0 * expK; }
   else if (introExp0 > 0) { renderer.toneMappingExposure = introExp0; introExp0 = -1; }
   tracer.update(camera, state === 'ready' ? 0.6 : 1);
