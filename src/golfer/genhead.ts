@@ -34,7 +34,7 @@ export interface GenHead {
   mesh: THREE.SkinnedMesh;
   seam: { p: THREE.Vector3; n: THREE.Vector3 };
   /** visor fit measured on the new head (same form as character.bin's meta.visor) */
-  visor: { center: number[]; rx: number; rz: number; profile: number[]; opts?: { gap?: number; dilate?: boolean; droop?: number } };
+  visor: { center: number[]; rx: number; rz: number; profile: number[]; opts?: { gap?: number; dilate?: boolean; droop?: number; backDrop?: number; reach?: number } };
   tint: THREE.Color;
   skin: { xform?: number[][]; tone?: number[] };
   face: FaceController;
@@ -181,8 +181,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   // radius per angle (90th percentile, so a stray hair spike doesn't push it out); the band then sits 4 mm off it
   const prof: (number | null)[] = [];
   for (let s = 0; s < 64; s++) {
-    const a = -Math.PI + (s / 64) * 2 * Math.PI, back = Math.max(0, -Math.cos(a)), front = Math.max(0, Math.cos(a));
-    const yb = visorY - 0.006 * front - 0.012 * back;
+    const a = -Math.PI + (s / 64) * 2 * Math.PI, back = Math.max(0, -Math.cos(a));
+    const yb = visorY - 0.004 * (0.5 + 0.5 * Math.cos(a)) - 0.03 * back;   // the band's own tilt (backDrop below)
     const rs: number[] = [];
     for (let i = 0; i < pos.length; i += 3) {
       if (Math.abs(pos[i + 1] - yb) > 0.02 * (0.55 + 0.45 * (0.5 + 0.5 * Math.cos(a)))) continue;   // the band's whole height there
@@ -195,7 +195,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   }
   for (let i = 0; i < 64; i++) if (prof[i] === null) for (let j = 1; j < 64; j++) { const q = prof[(i + j) % 64]; if (q !== null) { prof[i] = q; break; } }
   const pr = prof.map(x => x ?? 0.09);
-  const visor = { center: [vc.x, vc.y, vc.z], rx: (xmax - xmin) / 2 + 0.0115, rz: (zmax - zmin) / 2 + 0.0125, profile: pr, opts: { gap: 0.004, dilate: false, droop: 0.28 } };
+  const visor = { center: [vc.x, vc.y, vc.z], rx: (xmax - xmin) / 2 + 0.0115, rz: (zmax - zmin) / 2 + 0.0125, profile: pr, opts: { gap: 0.004, dilate: false, droop: 0.22, backDrop: 0.03, reach: 0.06 } };
 
   // ── the face's life: idle blinks every 2–6 s (~120 ms), small glances, a look-at target, expressions ──
   mesh.updateMorphTargets();

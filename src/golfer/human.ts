@@ -431,18 +431,25 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     };
     return { near, skinned, nearest6 };
   };
-  // polo collar: one continuous piece of shirt fabric round the neck (no seam at the back). A stand rises off
-  // the neckline, rolls softly over and falls as a leaf onto the shoulders, ending in two points that lie on the
-  // collarbones either side of the placket. The leaf is laid onto the shirt surface so it never cuts into it.
+  // polo collar (Malbon Fairway: a self-fabric jersey collar, same smooth matte green as the body): one continuous
+  // folded piece round the neck, no seam at the back. Built as a closed cross-section swept round the neckline:
+  // the stand rises off the neckline hugging the neck (a few mm clear of it), rolls over a soft, visibly thick
+  // fold (doubled fabric), and the leaf drapes down over the stand and onto the shirt, ending in an outer edge
+  // that turns under (2.4 mm thick) to a darker underside. At the front the leaf ends in two long straight-edged
+  // points that nearly meet over the top of the placket and point down and slightly out, lying on the chest.
+  // A thin dark skirt under every free edge reads as the soft shadow line on the shirt; the stand's foot is dark
+  // (the neck opening), the roll and outer edge a touch lighter where the fold catches the light.
   {
-    // the shirt surface near the neck (bind space), for laying things onto it
-    const ring0 = M.collar.map(a => new THREE.Vector3(a[0], a[1], a[2]));
-    const c = ring0.reduce((a, b) => a.add(b), new THREE.Vector3()).multiplyScalar(1 / ring0.length);
-    const loY = Math.min(...ring0.map(q => q.y)) - 0.16;
-    const inside = new THREE.Vector3(c.x, c.y - 0.16, c.z - 0.02);
+    const V3 = THREE.Vector3;
+    const ring0 = M.collar.map(a => new V3(a[0], a[1], a[2]));
+    const c = ring0.reduce((a, b) => a.add(b), new V3()).multiplyScalar(1 / ring0.length);
+    const loY = Math.min(...ring0.map(q => q.y)) - 0.16, hiY = Math.max(...ring0.map(q => q.y));
+    const inside = new V3(c.x, c.y - 0.16, c.z - 0.02);
     const armBone = new Set(M.bones.map((n, i) => (/upperarm|lowerarm|hand/.test(n) ? i : -1)).filter(i => i >= 0));   // the collar never follows the arms
     // collar, placket and buttons are skinned like the shirt under them, so they move with the fabric through the swing
     const { near, skinned } = surfaceOf(shirtMesh!, (x, y, z) => y > loY && Math.hypot(x - c.x, z - c.z) < 0.24, () => inside, armBone);
+    // the neck and upper back (skin), so the stand hugs the neck and nothing of the collar cuts into the body
+    const skinNear = surfaceOf(skin, (x, y, z) => y > loY + 0.08 && y < hiY + 0.04 && Math.hypot(x - c.x, z - c.z) < 0.17, q => new V3(c.x, q.y - 0.04, c.z)).near;
     // the neckline as a smooth closed curve: a low-order Fourier fit of radius and height against angle round the neck
     const sam = ring0.map(q => ({ a: Math.atan2(q.x - c.x, q.z - c.z), r: Math.hypot(q.x - c.x, q.z - c.z), y: q.y })).sort((x, y) => x.a - y.a);
     const fit = (key: 'r' | 'y', NH = 3) => {
@@ -455,55 +462,161 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       return (a: number) => co.reduce((s, [ca, sa], k) => s + ca * Math.cos(k * a) + (k ? sa * Math.sin(k * a) : 0), 0);
     };
     const R = fit('r'), Y = fit('y');
-    const neck = (a: number, dr = 0, dy = 0) => new THREE.Vector3(c.x + Math.sin(a) * (R(a) + dr), Y(a) + dy, c.z + Math.cos(a) * (R(a) + dr));
-    const open = Math.asin(Math.min(0.9, 0.0165 / R(0)));      // the opening is the placket's width
-    const COLS = 120, pos: number[] = [], idx: number[] = [];
-    let rows = 0;
+    const neck = (a: number, dr = 0, dy = 0) => new V3(c.x + Math.sin(a) * (R(a) + dr), Y(a) + dy, c.z + Math.cos(a) * (R(a) + dr));
+    const radial = (a: number) => new V3(Math.sin(a), 0, Math.cos(a));
+    const offSurf = (nr: typeof near) => (v: THREE.Vector3, gap: number) => { const { q, n } = nr(v); const d = v.clone().sub(q).dot(n); if (d < gap) v.addScaledVector(n, gap - d); return v; };
+    const shirtLift = offSurf(near), skinLift = offSurf(skinNear);
+    const onShirt = (v: THREE.Vector3, gap: number) => { const { q, n } = near(v); return v.addScaledVector(n, gap - v.clone().sub(q).dot(n)); };
+    // from the neckline, `dist` along the shirt surface, outward and down (over the shoulders, down the back)
+    const walk = (a: number, dist: number) => {
+      const p = onShirt(neck(a, 0.003, -0.002), 0), dir = radial(a).add(new V3(0, -0.8, 0)).normalize();
+      for (let left = dist; left > 1e-5; left -= 0.003) {
+        const { n } = near(p), d = dir.clone().addScaledVector(n, -dir.dot(n)).normalize();
+        onShirt(p.addScaledVector(d, Math.min(0.003, left)), 0);
+      }
+      return p;
+    };
+    const COLS = 128, NS = 5, NF = 6, NL = 16, KU = 5;            // columns; stand, fold, leaf rows; the underside runs back to leaf row KU
+    const rr = 0.0028, thick = 0.0024;                              // roll radius (the doubled fabric over the fold), leaf thickness at the edge
+    const open = 0.0055 / R(0);                                     // the two collar ends nearly meet over the placket
+    const A: number[] = [], S: THREE.Vector3[] = [], P: THREE.Vector3[] = [], SH: number[] = [], EW: number[] = [];
     for (let i = 0; i <= COLS; i++) {
-      const s = i / COLS, a = open + s * (2 * Math.PI - 2 * open);       // a = 0 at the front, PI at the back
-      const sg = Math.sin(a) >= 0 ? 1 : -1;
-      const end = Math.max(0, 1 - Math.min(s, 1 - s) / 0.16);             // 1 at the collar points, 0 away from them
-      const fr = Math.max(0, Math.cos(a));
-      // a real polo collar: a clear stand all round (taller at the back), a soft roll, then a leaf about 4 cm deep
-      // that lies close to the shirt; at the front it ends in two neat points about 7 cm long, pointing down and
-      // only slightly out, either side of the placket (not flared wings)
-      const standH = 0.03 - 0.009 * fr, rr = 0.003;
-      const leafH = 0.038 + 0.004 * Math.abs(Math.sin(a)) + 0.03 * end * end, leafOut = 0.016 + 0.008 * Math.abs(Math.sin(a)) + 0.004 * fr;
-      // cross-section (out, up) from the neck seam: stand, the soft roll over the top, then the leaf
-      const prof: [number, number, number][] = [];   // [out, up, u along the leaf for the point's sweep]
-      prof.push([-0.0025, -0.004, 0], [-0.0028, standH * 0.5, 0], [-0.0025, standH - 0.002, 0]);
-      const cx = -0.0025 + rr;
-      for (let k = 1; k <= 5; k++) { const ph = Math.PI - (k / 6) * Math.PI; prof.push([cx + rr * Math.cos(ph), standH - 0.002 + rr * Math.sin(ph), 0]); }
-      const L0 = cx + rr;
-      for (let k = 0; k <= 8; k++) { const u = k / 8; prof.push([L0 + leafOut * Math.sin(u * Math.PI / 2), standH - 0.002 - leafH * Math.pow(u, 1.15), u]); }
-      rows = prof.length;
-      for (const [o, up, u] of prof) {
-        // towards the points the leaf turns out to the side, so the points lie on the collarbones
-        const aa = a + sg * 0.22 * end * end * u;
-        const q = neck(aa, o, up);
-        pos.push(q.x, q.y, q.z);
-      }
+      const s = i / COLS, a = open + s * (2 * Math.PI - 2 * open);   // a = 0 at the front, PI at the back
+      const endw = Math.max(0, 1 - Math.min(s, 1 - s) / 0.17), fr = Math.max(0, Math.cos(a));
+      // stand: 3 cm at the back, a little lower round the front of the neck, down to ~8 mm where the ends meet
+      const sh = 0.03 - 0.005 * fr - 0.017 * Math.pow(endw, 1.4);
+      A.push(a); EW.push(endw); SH.push(sh);
+      S.push(neck(a, -0.0015, -0.006));                              // the foot of the stand, tucked into the neckline
+      // the top of the stand: hugging the neck 4.5 mm clear of it (the neck narrows above the shirt's opening)
+      const G = neck(a, -0.002, sh), { q, n } = skinNear(G), H = q.addScaledVector(n, 0.0045);
+      const hug = 1 - endw * endw;
+      P.push(new V3(G.x + (H.x - G.x) * hug, G.y, G.z + (H.z - G.z) * hug));
     }
-    // lay the leaf on the shirt: anything inside the fabric (+3 mm) is pushed out along the surface normal
-    const P = (i: number, r: number) => new THREE.Vector3(pos[(i * rows + r) * 3], pos[(i * rows + r) * 3 + 1], pos[(i * rows + r) * 3 + 2]);
-    const setP = (i: number, r: number, v: THREE.Vector3) => { pos[(i * rows + r) * 3] = v.x; pos[(i * rows + r) * 3 + 1] = v.y; pos[(i * rows + r) * 3 + 2] = v.z; };
-    const lift = (v: THREE.Vector3, gap: number) => { const { q, n } = near(v); const d = v.clone().sub(q).dot(n); if (d < gap) v.addScaledVector(n, gap - d); return v; };
+    for (let pass = 0; pass < 4; pass++) {   // a smooth stand line
+      const p0 = P.map(v => v.clone());
+      for (let i = 1; i < COLS; i++) { P[i].x = 0.5 * p0[i].x + 0.25 * (p0[i - 1].x + p0[i + 1].x); P[i].z = 0.5 * p0[i].z + 0.25 * (p0[i - 1].z + p0[i + 1].z); }
+    }
+    for (let i = 0; i <= COLS; i++) skinLift(P[i], 0.0035);
+    // each column's frame: up the stand, and out (away from the neck)
+    const TU = P.map((p, i) => p.clone().sub(S[i]).normalize());
+    const OU = TU.map((t, i) => { const r = radial(A[i]); return r.addScaledVector(t, -r.dot(t)).normalize(); });
+    // the leaf's outer edge: ~4.4 cm from the fold all round (so ~1.4 cm onto the shirt beyond the stand's foot);
+    // at the front it runs straight from over the shoulder down to the point. The points: ~7.5 cm from the side
+    // of the neck to the tip, tips 3.6 cm either side of the centre and 5 cm below the neckline's front
+    const a1 = 1.15;
+    const E = A.map((a, i) => walk(a, Math.max(0.008, 0.044 + 0.002 * Math.abs(Math.sin(a)) - SH[i])));
     for (let pass = 0; pass < 2; pass++) {
-      for (let i = 0; i <= COLS; i++) for (let r = 9; r < rows; r++) setP(i, r, lift(P(i, r), 0.0035));
-      // relax along the collar so the laid leaf stays smooth
-      const cp = pos.slice();
-      for (let i = 1; i < COLS; i++) for (let r = 9; r < rows; r++) for (let k = 0; k < 3; k++) {
-        const j = (i * rows + r) * 3 + k; pos[j] = 0.5 * cp[j] + 0.25 * (cp[j - rows * 3] + cp[j + rows * 3]);
+      const e0 = E.map(v => v.clone());
+      for (let i = 1; i < COLS; i++) onShirt(E[i].copy(e0[i]).multiplyScalar(0.5).addScaledVector(e0[i - 1], 0.25).addScaledVector(e0[i + 1], 0.25), 0);
+    }
+    for (const sg of [1, -1]) {
+      const tip = onShirt(new V3(c.x + sg * 0.036, Y(0) - 0.05, c.z + R(0) + 0.02), 0);
+      const base = walk(sg > 0 ? a1 : 2 * Math.PI - a1, Math.max(0.008, 0.046 - 0.03 + 0.005 * Math.cos(a1)));
+      for (let i = 0; i <= COLS; i++) {
+        const al = sg > 0 ? A[i] : 2 * Math.PI - A[i];
+        if (al > a1 || (sg > 0) !== (A[i] < Math.PI)) continue;
+        const t = (al - open) / (a1 - open);
+        E[i] = onShirt(tip.clone().lerp(base, t), 0);
       }
     }
-    for (let i = 0; i < COLS; i++) for (let r = 0; r < rows - 1; r++) { const a = i * rows + r, b = a + rows; idx.push(a, b, a + 1, a + 1, b, b + 1); }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-    const collarMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-    const bits: THREE.Mesh[] = [new THREE.Mesh(g, collarMat)];   // collar, rolled edge, placket and buttons: baked into one mesh below
-    // a little thickness: a soft rolled edge along the leaf's outer edge
-    const rim: THREE.Vector3[] = [];
-    for (let i = 0; i <= COLS; i++) rim.push(P(i, rows - 1));
-    bits.push(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim), COLS, 0.0016, 6), collarMat));
+    // the leaf's outer surface: from the outside of the roll, down over the stand, out onto the shirt to the edge
+    const L: THREE.Vector3[][] = [];
+    for (let i = 0; i <= COLS; i++) {
+      const t = TU[i], o = OU[i], L0 = P[i].clone().addScaledVector(o, 2 * rr);
+      const B1 = L0.clone().addScaledVector(t, -SH[i] * 0.55);
+      const B2 = neck(A[i], 0.002, 0.003).addScaledVector(o, 2 * rr + 0.003);
+      const col: THREE.Vector3[] = [L0];
+      for (let k = 1; k <= NL; k++) {
+        const u = k / NL, w = 1 - u;
+        col.push(L0.clone().multiplyScalar(w * w * w).addScaledVector(B1, 3 * w * w * u).addScaledVector(B2, 3 * w * u * u).addScaledVector(E[i], u * u * u));
+      }
+      L.push(col);
+    }
+    const gapAt = (i: number, k: number) => { const u = k / NL; return 0.0024 + 0.0012 * u * u * u + 0.0016 * EW[i] * u * u; };   // the edges, and most the points, lift a hair
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 0; i <= COLS; i++) for (let k = 1; k <= NL; k++) {
+        skinLift(L[i][k], k < NL / 2 ? 0.008 : 0.005);
+        if (k >= 0.3 * NL) shirtLift(L[i][k], gapAt(i, k));
+      }
+      if (pass === 2) break;
+      const l0 = L.map(cl => cl.map(v => v.clone()));
+      for (let i = 1; i < COLS; i++) for (let k = 1; k <= NL; k++) L[i][k].copy(l0[i][k]).multiplyScalar(0.5).addScaledVector(l0[i - 1][k], 0.25).addScaledVector(l0[i + 1][k], 0.25);
+      for (let i = 0; i <= COLS; i++) for (let k = 2; k < NL; k++) L[i][k].lerp(l0[i][k - 1].clone().add(l0[i][k + 1]).multiplyScalar(0.5), 0.3);
+    }
+    // the leaf's normals (out of the body), for its thickness
+    const LN = L.map((cl, i) => cl.map((v, k) => {
+      const ds = L[Math.min(COLS, i + 1)][k].clone().sub(L[Math.max(0, i - 1)][k]), du = cl[Math.min(NL, k + 1)].clone().sub(cl[Math.max(0, k - 1)]);
+      return du.cross(ds).normalize();
+    }));
+    { const mid = COLS >> 1; if (LN[mid][NL].dot(near(L[mid][NL]).n) < 0) LN.forEach(cl => cl.forEach(n => n.negate())); }
+    // the cross-section, in order: stand (inner face) → roll → leaf → turned edge → underside back up the leaf
+    const vs: number[] = [];
+    for (let k = 0; k < NS; k++) vs.push(0.18 * k / (NS - 1));
+    for (let k = 1; k <= NF; k++) vs.push(0.18 + 0.08 * k / NF);
+    for (let k = 1; k <= NL; k++) vs.push(0.26 + 0.54 * k / NL);
+    vs.push(0.815, 0.835);
+    for (let k = NL; k >= KU; k--) vs.push(0.85 + 0.15 * (NL - k) / (NL - KU));
+    const ROWS = vs.length, sec: THREE.Vector3[][] = [];
+    for (let i = 0; i <= COLS; i++) {
+      const t = TU[i], o = OU[i], row: THREE.Vector3[] = [];
+      for (let k = 0; k < NS; k++) row.push(S[i].clone().lerp(P[i], k / (NS - 1)));
+      for (let k = 1; k <= NF; k++) { const ph = Math.PI * k / NF; row.push(P[i].clone().addScaledVector(o, rr * (1 - Math.cos(ph))).addScaledVector(t, rr * Math.sin(ph))); }
+      row[NS + NF - 1] = L[i][0].clone();
+      for (let k = 1; k <= NL; k++) row.push(L[i][k].clone());
+      const e = L[i][NL], n = LN[i][NL], d = e.clone().sub(L[i][NL - 1]).normalize();
+      for (const ph of [Math.PI / 3, 2 * Math.PI / 3]) row.push(e.clone().addScaledVector(n, -thick / 2 + (thick / 2) * Math.cos(ph)).addScaledVector(d, (thick / 2) * Math.sin(ph)));
+      for (let k = NL; k >= KU; k--) row.push(L[i][k].clone().addScaledVector(LN[i][k], -thick * (0.4 + 0.6 * Math.min(1, (k - KU) / 4))));
+      sec.push(row);
+    }
+    const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    for (let i = 0; i <= COLS; i++) for (let r = 0; r < ROWS; r++) { const v = sec[i][r]; pos.push(v.x, v.y, v.z); uv.push(i / COLS, vs[r]); }
+    for (let i = 0; i < COLS; i++) for (let r = 0; r < ROWS - 1; r++) { const a = i * ROWS + r, b = a + ROWS; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+    // end caps: close the cross-section at the two front ends (the points' front edges show their thickness)
+    for (const i of [0, COLS]) {
+      const loop = sec[i], o0 = loop[0], ex = loop[NS + NF - 1 + NL].clone().sub(o0).normalize(), ey = loop[NS - 1].clone().sub(o0);
+      ey.addScaledVector(ex, -ey.dot(ex)).normalize();
+      const tri = THREE.ShapeUtils.triangulateShape(loop.map(v => new THREE.Vector2(v.clone().sub(o0).dot(ex), v.clone().sub(o0).dot(ey))), []);
+      const base = i * ROWS;
+      for (const [x, y, z] of tri) idx.push(base + x, base + y, base + z);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    // the collar's colour down the cross-section, painted (not lit): a dark neck opening at the stand's foot, the
+    // inside of the stand in its own shade, the roll and the outer edge a touch lighter, a dark underside
+    const shirtC = new THREE.Color(O.shirt);
+    const ramp = (stops: [number, number][], h: number) => canvasTex(4, h, gx => {
+      for (let y = 0; y < h; y++) {
+        const v = 1 - (y + 0.5) / h; let j = 0; while (j < stops.length - 2 && v > stops[j + 1][0]) j++;
+        const [v0, m0] = stops[j], [v1, m1] = stops[j + 1], f = Math.min(1, Math.max(0, (v - v0) / (v1 - v0 || 1)));
+        const m = m0 + (m1 - m0) * f * f * (3 - 2 * f), cc = shirtC.clone().multiplyScalar(m);
+        gx.fillStyle = '#' + cc.getHexString(); gx.fillRect(0, y, 4, 1);
+      }
+    }, true, 1);
+    const collarTex = ramp([[0, 0.22], [0.05, 0.62], [0.16, 0.86], [0.2, 1.0], [0.235, 1.1], [0.27, 1.0], [0.72, 1.0], [0.8, 1.12], [0.835, 0.9], [0.86, 0.5], [1, 0.42]], 512);
+    collarTex.wrapS = collarTex.wrapT = THREE.ClampToEdgeWrapping; collarTex.repeat.set(1, 1);
+    const collarMat = new THREE.MeshPhysicalMaterial({ map: collarTex, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(shirtC, 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide });
+    const bits: THREE.Mesh[] = [new THREE.Mesh(g, collarMat)];   // collar, its shadow line, placket and buttons: baked into one mesh below
+    // the shadow line: a thin skirt from under every free edge down onto the shirt, dark at the edge fading out
+    {
+      const sp: number[] = [], su: number[] = [], si: number[] = [];
+      const strip = (tops: THREE.Vector3[], feet: THREE.Vector3[]) => {
+        const b = sp.length / 3;
+        tops.forEach((t, j) => { sp.push(t.x, t.y, t.z, feet[j].x, feet[j].y, feet[j].z); su.push(j / (tops.length - 1), 1, j / (tops.length - 1), 0); });
+        for (let j = 0; j < tops.length - 1; j++) { const q = b + j * 2; si.push(q, q + 2, q + 1, q + 1, q + 2, q + 3); }
+      };
+      const foot = (v: THREE.Vector3, away: THREE.Vector3) => onShirt(v.clone().addScaledVector(away, 0.0016), 0.0006);
+      const under = (i: number, k: number) => L[i][k].clone().addScaledVector(LN[i][k], -thick * 0.9);
+      // along the outer edge, the whole way round
+      strip(L.map((_, i) => under(i, NL)), L.map((cl, i) => foot(cl[NL], cl[NL].clone().sub(cl[NL - 1]).normalize())));
+      // along each point's front edge, from the neck down to the tip
+      for (const [i, j] of [[0, 1], [COLS, COLS - 1]]) {
+        const ks = [...Array(NL - KU + 1).keys()].map(k => k + KU);
+        strip(ks.map(k => under(i, k)), ks.map(k => foot(L[i][k], L[i][k].clone().sub(L[j][k]).normalize())));
+      }
+      const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); sg.setAttribute('uv', new THREE.Float32BufferAttribute(su, 2)); sg.setIndex(si); sg.computeVertexNormals();
+      const shadowTex = ramp([[0, 0.62], [0.5, 0.45], [1, 0.3]], 32);
+      shadowTex.wrapS = shadowTex.wrapT = THREE.ClampToEdgeWrapping; shadowTex.repeat.set(1, 1);
+      bits.push(new THREE.Mesh(sg, new THREE.MeshPhysicalMaterial({ map: shadowTex })));
+    }
     // placket: a stitched strip laid on the shirt from the neckline down, with two white four-hole buttons
     const top = neck(0);
     const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.12)'; g.setLineDash([5, 4]); g.lineWidth = 1.2; g.strokeRect(5, -10, 54, 258); }, true, 1);
@@ -521,7 +634,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const btnTex = canvasTex(64, 64, g => { g.fillStyle = '#f4f2ec'; g.beginPath(); g.arc(32, 32, 30, 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 3; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.stroke(); g.fillStyle = 'rgba(0,0,0,.45)'; for (const [x, y] of [[26, 26], [38, 26], [26, 38], [38, 38]]) { g.beginPath(); g.arc(x, y, 3, 0, 7); g.fill(); } }, true, 1);
     btnTex.wrapS = btnTex.wrapT = THREE.ClampToEdgeWrapping; btnTex.repeat.set(1, 1);
     const rimMat = new THREE.MeshStandardMaterial({ color: '#e8e5dc', roughness: 0.35 }), faceMat = new THREE.MeshStandardMaterial({ map: btnTex, roughness: 0.3 });
-    for (const dy of [-0.032, -0.088]) {
+    for (const dy of [-0.02, -0.072]) {   // the top one just under the collar points, the second ~5 cm lower
       const { q, n } = near(new THREE.Vector3(top.x, top.y + dy, top.z + 0.02));
       const xf = new THREE.Matrix4().compose(q.clone().addScaledVector(n, 0.0028), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n), new THREE.Vector3(1, 1, 1));
       bits.push(new THREE.Mesh(new THREE.CylinderGeometry(0.0056, 0.0056, 0.0024, 20, 1, true).applyMatrix4(xf), rimMat));
@@ -924,7 +1037,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   }
   if (O.headwear?.kind === 'visor') {
     const v = gen ? gen.visor : M.visor;
-    const g = buildVisor(O.headwear, v.rx, v.rz, 0, 0, p.handed === 'left', v.profile, (v as { opts?: { gap?: number; dilate?: boolean; droop?: number } }).opts);
+    const g = buildVisor(O.headwear, v.rx, v.rz, 0, 0, p.handed === 'left', v.profile, (v as { opts?: { gap?: number; dilate?: boolean; droop?: number; backDrop?: number; reach?: number } }).opts);
     g.position.set(v.center[0], v.center[1], v.center[2]).sub(J[headBi]);
     bones[headBi].add(g); meshes.push(g);
   }

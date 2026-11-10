@@ -49,10 +49,10 @@ function logoTexture(kind: Headwear['logo'], base: string, sx = 1, under = base)
 
 /** A visor sized for a head of half-widths rx (side) and rz (front/back) at band height. */
 export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 0.032, mirrored = false, profile?: number[],
-  opts: { gap?: number; dilate?: boolean; droop?: number } = {}) {
+  opts: { gap?: number; dilate?: boolean; droop?: number; backDrop?: number; reach?: number } = {}) {
   // gap: how far the band stands off the measured surface; dilate: widen the profile over its neighbours first (a
   // measured hair shell is ragged); droop: how much the brim tips down at the front (seen from the front it shows)
-  const GAP = opts.gap ?? 0.011, DROOP = opts.droop ?? 0.06;
+  const GAP = opts.gap ?? 0.011, DROOP = opts.droop ?? 0.06, BACK = opts.backDrop ?? 0.012, REACH = opts.reach ?? 0.068;
   // measured radius of the head/hair round the band (64 angles from the back, a = -PI)
   // smoothed (closing: dilate then blur) so the band is a clean curve that never dips into the hair
   let prof = profile;
@@ -76,7 +76,7 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
     const z = pr !== null ? Math.cos(a) * (pr + GAP) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
     const front = 0.5 + 0.5 * Math.cos(a);
     const hh = height * (0.55 + 0.45 * front);
-    const tilt = -0.004 * front - 0.012 * back;                    // sits nearly level, a touch lower at the back
+    const tilt = -0.004 * front - BACK * back;                     // round the back it drops onto the head above the occiput
     pos.push(x, y0 + tilt - hh / 2, z, x * 0.985, y0 + tilt + hh / 2, z * 0.985 + zc * 0.015);
     const u = mirrored ? 1 - i / seg : i / seg; // a left-hander's body is mirrored, so mirror the logo back
     uv.push(u, 0, u, 1);
@@ -122,11 +122,11 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
     const pr = rAt(a), sideB = Math.abs(Math.sin(a)), back = Math.max(0, -Math.cos(a)), fr = Math.max(0, Math.cos(a));
     const x = pr !== null ? Math.sin(a) * (pr + GAP) : Math.sin(a) * (rx + 0.009 * sideB + 0.006 * back);
     const z = pr !== null ? Math.cos(a) * (pr + GAP) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
-    const front = 0.5 + 0.5 * Math.cos(a), hh = height * (0.55 + 0.45 * front), tilt = -0.004 * front - 0.012 * back;
+    const front = 0.5 + 0.5 * Math.cos(a), hh = height * (0.55 + 0.45 * front), tilt = -0.004 * front - BACK * back;
     return new THREE.Vector3(x, y0 + tilt - hh / 2, z);
   };
   const side0 = bandAt(Math.PI / 2), front0 = bandAt(0);
-  const Xo = Math.abs(side0.x) + 0.012, Zo = front0.z - zc + 0.068;  // outer edge: half-width and reach of the brim
+  const Xo = Math.abs(side0.x) + 0.012, Zo = front0.z - zc + REACH;  // outer edge: half-width and reach of the brim
   for (let r = 0; r <= rows; r++) for (let i = 0; i <= bs; i++) {
     const s = -1 + (i / bs) * 2, a = s * AE, t = r / rows;
     const inner = bandAt(a);
@@ -137,7 +137,7 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
     const L = Math.hypot(ex - inner.x, ez - inner.z) * t;
     const side = Math.abs(Math.sin(a));
     const tt = t * t * (3 - 2 * t) * 0.35 + t * 0.65;
-    bp.push(inner.x + (ex - inner.x) * tt, inner.y + 0.0006 - L * (DROOP * (1 - side) + 0.3 * side) - 0.004 * t * t, inner.z + (ez - inner.z) * tt);   // slopes gently down and away, so it never hides the band
+    bp.push(inner.x + (ex - inner.x) * tt, inner.y + 0.0006 - L * (DROOP * (1 - side) + 0.3 * side) - (0.004 + 0.008 * side) * t * t, inner.z + (ez - inner.z) * tt);   // slopes gently down and away, so it never hides the band
   }
   const tri = (flip: boolean) => { const o: number[] = []; for (let r = 0; r < rows; r++) for (let i = 0; i < bs; i++) { const a = r * (bs + 1) + i, b = a + 1, c = a + bs + 1, d = c + 1; if (flip) o.push(a, b, c, b, d, c); else o.push(a, c, b, b, c, d); } return o; };
   // the top surface faces up (checked, not assumed), the underside is a copy 2.5 mm below facing down
