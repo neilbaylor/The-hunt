@@ -2,7 +2,8 @@
 import { createRequire } from 'module';
 const require = createRequire('/opt/node-tools/node_modules/');
 const { chromium } = require('playwright');
-export const BASE = 'http://localhost:5230/golfer.html';
+export const SWING = process.env.SWING ?? "keyed";
+export const BASE = "http://localhost:5230/golfer.html";
 export async function launch(w = 540, h = 960) {
   const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage({ viewport: { width: w, height: h } });
@@ -14,6 +15,6 @@ export async function launch(w = 540, h = 960) {
   return { browser, page };
 }
 export async function open(page, qs) {
-  await page.goto(`${BASE}?${qs}`, { timeout: 240000 });
+  await page.goto(`${BASE}?swing=${SWING}&${qs}`, { timeout: 240000 });
   await page.waitForFunction(() => window.__ready === true, null, { timeout: 240000, polling: 500 });
 }
