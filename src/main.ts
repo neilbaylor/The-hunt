@@ -111,7 +111,8 @@ featureTarget();
 const aimCtl = new AimController({
   scene, camera, canvas: renderer.domElement, range, lefty: golfer.lefty,
   ballPos: () => golfer.ballWorld(new THREE.Vector3()),
-  carry: () => { const full = SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id); return { full, min: Math.max(5, Math.round(full * 0.35)), max: Math.round(full * 1.08) }; },
+  // the reachable band for the club and shot type: a full swing goes 60-100% of the club's carry; the other modes 30-100% of their own max
+  carry: () => { const full = SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id); return { full, min: Math.max(5, Math.round(full * (hud.mode === 'full' ? FULL_MIN : 0.3))), max: full }; },
   // the golfer turns to face the aim line (he stands round the ball, which sits at the origin)
   onChange: () => { golfer.root.rotation.y = -aim.dir; golfer.root.updateMatrixWorld(true); if (state === 'ready') teeUp(); },
 });
@@ -602,8 +603,7 @@ function frame(now: number) {
     // the stick's power target: the pull that carries the aim distance (full swings map the pull onto 60–100% of carry)
     const M = SHOT_MODES[hud.mode], max = M.max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].pct / 100, pw = aim.distanceYds / Math.max(1, max);
     const f = hud.mode === 'full' ? (pw - FULL_MIN) / (1 - FULL_MIN) : pw;
-    const hint = hud.mode === 'full' && f < 0 ? (CLUB_SPECS[hud.club].id.match(/PW|°/) ? 'Too short for a full swing · try Pitch' : 'Too short for a full swing · try Punch') : '';
-    hud.setPowerTarget(f >= 0.97 || f < 0 ? null : clamp(f, 0, 1), aim.distanceYds, hint);   // too short for the mode: just the hint
+    hud.setPowerTarget(f >= 0.97 ? null : clamp(f, 0, 1), aim.distanceYds);   // the aim is clamped to the reachable band, so f is always valid
   } else {
     hud.setPowerTarget(null, 0);
     if (state === 'flight') hud.edLive(Math.hypot(ball.pos.x - ball.start.x, ball.pos.z - ball.start.z) / YD);

@@ -561,7 +561,8 @@ if len(_wf):
         plane = zf - 0.12 * max(0.0, (belt_y - 0.04) - p_[1])          # leans back gently towards the crotch
         if p_[2] > plane:
             w = math.exp(-(p_[0] / 0.07) ** 2) * C.get('flatFront', 0.8)
-            Vpants[vi, 2] -= w * (p_[2] - plane)
+            zmin = float((V[vi] + N[vi] * 0.005)[2]) - float(N[vi, 2] * pants_off[vi])   # never back into the body
+            Vpants[vi, 2] = max(Vpants[vi, 2] - w * (p_[2] - plane), zmin)
 
 # tucked in: a soft blousing of fabric just above the belt (more at the back and sides, in a few soft vertical
 # folds where it gathers into the waistband); below the belt line it stays inside the shorts

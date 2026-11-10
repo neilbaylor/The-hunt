@@ -155,6 +155,7 @@ export class AimController {
   private wind = new THREE.Vector3();
   private rail: HTMLDivElement; private label: HTMLDivElement; private tip: HTMLDivElement;
   private tap: { id: number; x: number; y: number; t: number } | null = null;
+  private atEdge = false;
   private pan = new THREE.Vector3(); private pan0 = new THREE.Vector3(); private panAt: THREE.Vector3 | null = null;
   private ray = new THREE.Raycaster();
   private drag: 'ring' | 'bend' | null = null;
@@ -200,7 +201,8 @@ export class AimController {
   open() { if (!this.enabled || this.active) return; this.active = true; this.zoom = 1; this.pan.set(0, 0, 0); document.body.classList.add('aiming'); this.tip.classList.remove('off'); setTimeout(() => this.tip.classList.add('off'), 3800); }
   close() { this.active = false; this.drag = null; this.pts.clear(); document.body.classList.remove('aiming'); this.tip.classList.add('off'); }
   /** club or mode changed: keep the direction, reset distance to the new club's full carry */
-  clubChanged() { const c = this.o.carry(); aim.distanceYds = c.full; aim.distanceYds = clamp(aim.distanceYds, c.min, c.max); this.changed(); }
+  /** club or mode changed: aim at the new full distance (always inside the new reachable band) */
+  clubChanged() { const c = this.o.carry(); aim.distanceYds = clamp(c.full, c.min, c.max); this.changed(); }
   private changed() { this.o.onChange?.(); }
   /** the session wind (world m/s): shown as a subtle arrow beside the target ring in the aim view */
   setWind(w: THREE.Vector3) { this.wind.copy(w); }
@@ -278,7 +280,12 @@ export class AimController {
       const c = this.o.carry();
       const dx = w.x - b.x, dz = w.z - b.z;
       aim.dir = clamp(Math.atan2(dx, -dz), -0.62, 0.62);
-      aim.distanceYds = clamp(Math.hypot(dx, dz) / YD, c.min, c.max);
+      const want = Math.hypot(dx, dz) / YD;
+      aim.distanceYds = clamp(want, c.min, c.max);
+      // the ring stops at the club's reach: a little bump when it hits the end
+      const atEdge = want < c.min || want > c.max;
+      if (atEdge && !this.atEdge) { try { navigator.vibrate?.(12); } catch { /* not allowed */ } this.ring.group.scale.multiplyScalar(1.08); }
+      this.atEdge = atEdge;
       this.changed();
     } else if (this.drag === 'bend') {
       const T = this.targetPos(), D = Math.max(1, b.distanceTo(T));
