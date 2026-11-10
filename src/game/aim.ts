@@ -175,6 +175,8 @@ export interface AimOptions {
   carry: () => { min: number; max: number; full: number };
   lefty: boolean;
   onChange?: () => void;
+  /** a point on the drawn shot shape (the flight preview on the ground), 0..1 from the ball; null when not ready */
+  shapeAt?: (t: number, out: THREE.Vector3) => THREE.Vector3 | null;
 }
 
 export class AimController {
@@ -381,7 +383,9 @@ export class AimController {
       this.bullPop = Math.max(0, this.bullPop - dt * 3);
       this.bull.group.position.set(T.x, T.y + 0.06, T.z); this.bull.group.scale.setScalar(disp * (1 + 0.03 * Math.sin(this.t * 2.4) + 0.12 * this.bullPop));
       this.ring.chevron.rotation.y = -aim.dir; this.ring.chevron.children[0].scale.setScalar(clamp(w * 4.2 / disp, 0.3, 1.1));
-      this.shapePoint(0.5, this.handle.position); this.handle.position.y += 0.1; this.handle.scale.setScalar(w * 2.1);
+      // the bend handle rides the drawn shape (the preview's ground track) where it bows most, else the bezier
+      if (!this.o.shapeAt?.(0.6, this.handle.position)) this.shapePoint(0.5, this.handle.position);
+      this.handle.position.y = this.ground(this.handle.position.x, this.handle.position.z) + 0.16; this.handle.scale.setScalar(w * 2.1);
       // floating label above the ring
       const s = this.screenOf(T.clone().add(new THREE.Vector3(0, 0, 0)).addScaledVector(d, disp * 1.1));
       this.label.classList.toggle('off', !s.ok);

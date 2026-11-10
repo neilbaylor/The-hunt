@@ -116,6 +116,7 @@ const aimCtl = new AimController({
   carry: () => { const full = SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id); return { full, min: Math.max(5, Math.round(full * (hud.mode === 'full' ? FULL_MIN : 0.3))), max: full }; },
   // the golfer turns to face the aim line (he stands round the ball, which sits at the origin)
   onChange: () => { golfer.root.rotation.y = -aim.dir; golfer.root.updateMatrixWorld(true); if (state === 'ready') teeUp(); },
+  shapeAt: (t, out) => preview.pointAt(t, out),
 });
 hud.onLie = () => { sound.ui(); teeUp(); };
 // ?lie=3 or ?lie=rough: start on that sample lie (HUD checks)

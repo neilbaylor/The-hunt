@@ -80,6 +80,13 @@ export class AimPreview {
     this.tag.innerHTML = `${Math.round(yds)}<small>YDS</small>`;
   }
 
+  /** the ground track of the flight at fraction t (0 = ball, 1 = landing), by index along the path */
+  pointAt(t: number, out: THREE.Vector3): THREE.Vector3 | null {
+    const n = this.pts.length; if (n < 3) return null;
+    const f = Math.min(n - 1, Math.max(0, t * (n - 1))), i = Math.floor(f), j = Math.min(n - 1, i + 1);
+    return out.lerpVectors(this.pts[i], this.pts[j], f - i);
+  }
+
   /** flat: 0 = the flight in the air (swing view) .. 1 = laid on the ground as the shot shape (aim view); the camera
    *  flight between the two views drives it, so the swing view's tracer morphs into the aim view's line */
   update(dt: number, cam: THREE.Camera, canvas: HTMLElement, show: boolean, flat = 0) {

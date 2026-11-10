@@ -102,6 +102,8 @@ const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search
 // added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
 const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.38, 0.5]), pl: _fv('fpl', [0.45, -0.35, 0.55]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
+const TRAIL_W = +(_fq?.get('tw') ?? 0);
+const ARC12 = _fv('a12', [0.08, -0.72, 0.69]), ARC33 = _fv('a33', [0.3, -0.25, 0.92]), ARC55 = _fv('a55', [0.45, 0.45, 0.77]);
 const GRIP_B = _fv('gb', [0.65, 0.32]);
 const LEAN = 0.075;             // shaft lean at impact, radians (hands ~6 cm ahead of the ball)
 
@@ -537,9 +539,9 @@ export class Golfer {
         const L = (v: number[]) => new THREE.Vector3(v[0], v[1], v[2]).applyQuaternion(qChest);
         // [f, lead arm direction (chest frame), reach (fraction of arm length), shaft butt→head (chest frame)]
         const ARC = [
-          [0.12, [0.08, -0.72, 0.69], 0.997, [0.45, -0.22, 0.9]],   // release: both arms extended down the line, club low to the target
-          [0.33, [0.3, -0.25, 0.92], 0.999, [0.7, 0.6, 0.4]],       // through: arms still long, shaft up toward the target and the lead side
-          [0.55, [0.45, 0.45, 0.77], 0.82, [0.12, 0.75, -0.65]],   // 3/4: the lead elbow starts to fold, shaft up over the lead shoulder
+          [0.12, ARC12 as number[], 0.997, [0.45, -0.22, 0.9]],   // release: both arms extended down the line, club low to the target
+          [0.33, ARC33 as number[], 0.999, [0.7, 0.6, 0.4]],       // through: arms still long, shaft up toward the target and the lead side
+          [0.55, ARC55 as number[], 0.82, [0.12, 0.75, -0.65]],   // 3/4: the lead elbow starts to fold, shaft up over the lead shoulder
         ] as [number, number[], number, number[]][];
         let j = 0; while (j < ARC.length - 2 && f > ARC[j + 1][0]) j++;
         const t = smooth(ARC[j][0], ARC[j + 1][0], f);
@@ -599,7 +601,7 @@ export class Golfer {
     // both hands stay on the club: if either arm can't reach its wrist target, move the club (both hands) toward
     // that shoulder (the trail arm used to fall short of the grip in the through-swing)
     for (let pass = 0; pass < 4; pass++) {
-      const miss = this.rig.wristPos.L.clone().sub(p.wristL).add(this.rig.wristPos.R.clone().sub(p.wristR));
+      const miss = this.rig.wristPos.L.clone().sub(p.wristL).addScaledVector(this.rig.wristPos.R.clone().sub(p.wristR), TRAIL_W);
       if (miss.lengthSq() < 1e-7) break;
       g.position.add(miss);
       p.wristL.add(miss); p.wristR.add(miss);

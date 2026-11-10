@@ -1294,7 +1294,8 @@ def _tex_map(vals, blur=0):
     m_ = np.zeros((T, T), np.float32); m_[ty, tx] = vals
     return cv2.GaussianBlur(m_, (0, 0), blur) if blur else m_
 _hair_t = H_ if 'H_' in globals() else np.zeros(len(cp))
-_faceF = (w_face > 0.15) & (_hair_t < 0.3)
+# the face (real-photo or unwrap-sourced alike): in front of the cheek sides, chin to the brow-top, no hair
+_faceF = (_hair_t < 0.3) & (cp[:, 2] > min(lm_f[234, 2], lm_f[454, 2]) + 0.005) & (cp[:, 1] > lm_f[152, 1] + 0.004) & (cp[:, 1] < lm_f[10, 1] - 0.01)
 # protected features
 _prot = np.zeros(len(cp))
 for _nos in ([79, 166, 60, 75, 20, 238], [309, 392, 290, 305, 250, 458]):     # the nostrils
@@ -1362,12 +1363,16 @@ _texF = _texF * (1 + _gmap)
 # the shadowed skin: blended toward the skin colour, keeping its own fine texture (lightness over a local blur)
 _Lb = cv2.GaussianBlur(_texF.mean(2), (0, 0), 4)
 _detail = (_texF.mean(2) / np.maximum(_Lb, 1))[..., None]
-_ow2 = _tex_map(np.clip((_ref * 0.95 - _Lt) / (_ref * 0.3), 0, 1) * _skinz * 0.8, 2.0)[..., None]
+_ow2 = _tex_map(np.clip((_ref * 0.95 - _Lt) / (_ref * 0.3), 0, 1) * _skinz * 0.65, 2.0)[..., None]
 _texF = _texF * (1 - _ow2) + np.clip(_refc[None, None] * _detail, 0, 255) * _ow2
 # soften the brow band's edges (a gentle blur where core falls off), leaving the hair texture in the middle
 _edge = _tex_map(np.clip(_brow_core * (1 - _brow_core) * 4, 0, 1) * _faceF, 1.0)[..., None]
 _texF = _texF * (1 - 0.6 * _edge) + cv2.GaussianBlur(_texF, (0, 0), 1.6) * 0.6 * _edge
 tex = np.clip(_texF, 0, 255).astype(np.uint8)
+if DBG:   # the clean-up's masks painted on the texture (red: outliers, green: shadow lift, blue: protected)
+    _dm = tex.astype(np.float32) * 0.6
+    _dm[..., 0] += 255 * 0.4 * _tex_map(_out); _dm[..., 1] += 255 * 0.4 * _tex_map(_skinz); _dm[..., 2] += 255 * 0.4 * _tex_map(_prot)
+    Image.fromarray(np.clip(_dm, 0, 255).astype(np.uint8)).save(os.path.join(DBG, 'head_maskdbg.jpg'), quality=90)
 # the inner-lip strips: wet lip colour at the lip edge, darker and redder going back into the mouth
 if STRIP_F0 is not None:
     _st = tt >= STRIP_F0
