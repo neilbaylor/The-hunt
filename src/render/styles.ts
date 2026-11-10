@@ -413,7 +413,7 @@ const ZERO: HandParams = { paint: 0, paintFar: 1, sp: 1, brush: 0, bands: 0, ste
 export const HAND_STYLES: Record<HandStyle, { label: string; desc: string; p: HandParams }> = {
   // the default: reads as polished realistic; the painted quality only shows on a second look
   soft: { label: 'Polished (default)', desc: 'Gentle edge-preserving paint smoothing that hides CG flaws, a soft specular roll-off and a touch of warmth. No lines, no hatching.',
-    p: { ...ZERO, paint: 0.7, paintFar: 0.45, sheen: 0.7, warmHi: 0.25, grain: 0.1 } },
+    p: { ...ZERO, paint: 0.7, paintFar: 0.45, sheen: 0.4, warmHi: 0.1, grain: 0.1 } },   // lighter roll-off/warmth: the stronger ones washed bright greens to pastel mint
   painterly: { label: 'Painterly light', desc: 'Edge-preserving paint smoothing, soft brush texture in flat areas, a faint silhouette line.',
     p: { ...ZERO, paint: 1, brush: 1, bands: 0.22, sheen: 1, warmHi: 0.3, ink: 0.3, hatch: 0.09, grain: 0.3 } },
   gouache: { label: 'Gouache', desc: 'Flatter value bands, a matte chalky finish, warm shadows, no lines; illustrated golf poster.',
