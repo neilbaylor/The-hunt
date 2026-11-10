@@ -146,8 +146,8 @@ The container restarted and stopped all agents mid-round; their committed work i
 **Clothes: done** — shorts rise; belt; the tucked shirt.
 
 **Clothes: next**
-- the shirt rebuilt as a fitted polo (it reads as an inflated sack);
-- no shorts pocket bulge;
+- polo: the first fitted pass is in (a0e6f63: less standoff, seams, knit, folds). Keep refining against Rory's polo, checking it in motion;
+- shorts: straighter legs and a flat fly are in, but they still flare wide and boxy at the hip and thigh in the swing (s3 render). Slimmer, with no pocket bulge;
 - elbow and knee correctives rendered;
 - shoes against FootJoy.
 
