@@ -190,6 +190,10 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   };
 
   const O = p.outfit;
+  // the clothes' colours a touch deeper and richer than the swatch: the filmic tone mapping and the warm grade
+  // wash sunlit mid-tones toward pastel, which turned the forest-green polo mint and the khaki pale yellow face-on
+  const deep = (hex: string, ds: number, dl: number) => { const k = new THREE.Color(hex), hsl = { h: 0, s: 0, l: 0 }; k.getHSL(hsl); return k.setHSL(hsl.h, Math.min(1, hsl.s * ds), hsl.l * dl); };
+  const shirtCol = deep(O.shirt, 1.3, 0.8), pantsCol = deep(O.pants, 1.2, 0.88);
   const fu = { kneeY: J[M.bones.indexOf('calf_l')].y, ankleY: J[M.bones.indexOf('foot_l')].y, beltY: M.belt.y, backZ: M.belt.cz };
   const skinMat = new THREE.MeshPhysicalMaterial({ map: tex(data.skin), roughness: 0.5, sheen: 0.4, sheenColor: new THREE.Color('#ff8e6e'), sheenRoughness: 0.5, clearcoat: 0.06, clearcoatRoughness: 0.45 });
   const smileAmt = { value: 0 };
@@ -227,7 +231,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   if (genHair) { const hb = M.bones.indexOf('head'); genHair.geometry.translate(-J[hb].x, -J[hb].y, -J[hb].z); bones[hb].add(genHair); meshes.push(genHair); }
   const shirtTwist = { value: 0 };
   // matte: a faint sheen in the shirt's own colour and little sky reflection, so the green holds from every angle (no pale mint face-on)
-  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.9, specularIntensity: 0.6, envMapIntensity: 0.45, sheen: 0.08, sheenColor: new THREE.Color(O.shirt).multiplyScalar(1.3), sheenRoughness: 0.7, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const shirtMat = new THREE.MeshPhysicalMaterial({ color: shirtCol, roughness: 0.9, specularIntensity: 0.6, envMapIntensity: 0.45, sheen: 0.08, sheenColor: shirtCol.clone().multiplyScalar(1.3), sheenRoughness: 0.7, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
     // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
     // the Malbon script 'm' (vector, traced from the brand artwork) as white embroidery: a soft thread shadow,
@@ -285,7 +289,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     na.needsUpdate = true;
   };
   weldNormals(shirtMesh);
-  const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.88, specularIntensity: 0.6, envMapIntensity: 0.45, sheen: 0.06, sheenColor: new THREE.Color(O.pants), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const pantsMat = new THREE.MeshPhysicalMaterial({ color: pantsCol, roughness: 0.88, specularIntensity: 0.6, envMapIntensity: 0.45, sheen: 0.06, sheenColor: pantsCol.clone(), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   applyFabric(pantsMat, 'chino', fu);
   const pantsMesh = add('pants', pantsMat); weldNormals(pantsMesh);
   const glove = new THREE.MeshPhysicalMaterial({ color: O.glove, roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color('#ffffff'), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
@@ -649,7 +653,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const capG = new THREE.BufferGeometry(); capG.setAttribute('position', new THREE.Float32BufferAttribute(capP, 3)); capG.setAttribute('uv', new THREE.Float32BufferAttribute(capU, 2)); capG.setIndex(capI); capG.computeVertexNormals();
     // the collar's colour down the cross-section, painted (not lit): a dark neck opening at the stand's foot, the
     // inside of the stand in its own shade, the roll and the outer edge a touch lighter, a dark underside
-    const shirtC = new THREE.Color(O.shirt);
+    const shirtC = shirtCol.clone();
     const ramp = (stops: [number, number][], h: number) => canvasTex(4, h, gx => {
       for (let y = 0; y < h; y++) {
         const v = 1 - (y + 0.5) / h; let j = 0; while (j < stops.length - 2 && v > stops[j + 1][0]) j++;
@@ -688,7 +692,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const top = neck(0);
     const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.32)'; g.setLineDash([5, 3]); g.lineWidth = 1.6; g.strokeRect(4, -10, 56, 261); g.beginPath(); g.moveTo(4, 236); g.lineTo(60, 236); g.stroke(); }, true, 1);   // edge stitching, a stitched box at the foot
     plkTex.wrapS = plkTex.wrapT = THREE.ClampToEdgeWrapping; plkTex.repeat.set(1, 1);
-    const plkMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, map: plkTex, roughness: 0.84, sheen: 0.35, sheenColor: collarMat.sheenColor, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const plkMat = new THREE.MeshPhysicalMaterial({ color: shirtCol, map: plkTex, roughness: 0.84, sheen: 0.35, sheenColor: collarMat.sheenColor, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const pg = new THREE.PlaneGeometry(0.033, 0.12, 4, 16);
     const pa = pg.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < pa.count; i++) {
@@ -823,7 +827,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
         const g = new THREE.BoxGeometry(w, h, 0.006); g.translate(x, y, 0.001); g.applyMatrix4(fr); parts.push(new THREE.Mesh(g, silver));
       } }
     // belt loops: khaki strips over the belt
-    const khaki = mat({ color: O.pants });
+    const khaki = mat({ color: pantsCol });
     const r0 = Math.hypot(at(0).p.x - B.cx, at(0).p.z - B.cz);
     for (const a of [Math.asin(Math.min(0.9, 0.07 / r0)), -Math.asin(Math.min(0.9, 0.07 / r0)), 1.62, -1.62, 2.72, -2.72]) {
       const { p: lp, n: ln } = at(a), pos: number[] = [], idx: number[] = [];
