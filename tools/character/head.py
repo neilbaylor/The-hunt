@@ -46,6 +46,7 @@ ap.add_argument('--skin-lift', type=float, default=6.0, help='Lab L added to the
 ap.add_argument('--clean-weight', type=float, default=3.0, help="weight of a photo's relit copy (<photo>.clean.jpg, same geometry) in the face texture; 0 = ignore them")
 ap.add_argument('--ear-back', type=float, default=0.0, help='ears swung back about their roots (rad)')
 ap.add_argument('--ear-out', type=float, default=1.0, help='ear protrusion scale')
+ap.add_argument('--ear-scale', type=float, default=1.0, help='ears scaled about their roots (the Hunyuan3D-2.1 head from his photo already has ~6.5 cm ears close to the head: 1 = as generated)')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
 ap.add_argument('--no-lids', dest='lids', action='store_false', help='skip the geometric eyelid blink (the shader draws the lids)')
@@ -297,6 +298,16 @@ def reshape(P, q):
         x2 = d_[:, 0] * np.cos(th_) + d_[:, 2] * np.sin(th_); z2 = -d_[:, 0] * np.sin(th_) + d_[:, 2] * np.cos(th_)
         x2 = x2 * (1 - (1 - A.ear_out) * we_)
         P[:, 0] = root_[0] + x2; P[:, 2] = root_[2] + z2
+        # and their size: scaled toward the root (the whole ear, smoothly: full within 5 cm, none past 7.5 cm, only out
+        # from the side of the head), so they come out ~6.5 cm tall and sit closer in
+        if A.ear_scale != 1:
+            d3 = P - root_
+            w_r = 1 - sstep(0.05, 0.075, np.linalg.norm(d3 * [0.5, 1, 1], axis=1))
+            # height and depth: everything out at the side of the head (the lobe and the top of the ear sit close to it);
+            # protrusion: only what stands out from the head
+            w_yz = sstep(abs(root_[0]) - 0.024, abs(root_[0]) - 0.010, P[:, 0] * sx_) * w_r
+            w_x = sstep(abs(root_[0]) - 0.012, abs(root_[0]) - 0.002, P[:, 0] * sx_) * w_r
+            P = root_ + d3 * np.c_[1 - (1 - A.ear_scale) * w_x, 1 - (1 - A.ear_scale) * w_yz, 1 - (1 - A.ear_scale) * w_yz]
     # (no hollow under the cheekbones: the user wants the cheeks fuller)
     # fuller cheeks where his smile lifts them (the apples, upper/mid cheek), the jaw below stays defined
     apple = np.exp(-(((np.abs(x) - 0.036) / 0.016) ** 2 + ((y - (yN + 0.002)) / 0.016) ** 2)) * front
@@ -840,7 +851,7 @@ if 'jawOpen' in morph_d:
     # noisy at the seam, and each cut copy took one parent's delta): the open lip edges come out as smooth curves
     _nb = [[] for _ in range(len(LV))]
     for a_, b_, c_ in LF: _nb[a_] += [b_, c_]; _nb[b_] += [a_, c_]; _nb[c_] += [a_, b_]
-    _nb = [np.unique(n_) for n_ in _nb]
+    _nb = [np.unique(np.array(n_, np.int64)) for n_ in _nb]
     _rw = np.clip((half + 0.009 - np.abs(LV[:, 0] - mcx)) / 0.004, 0, 1) * np.clip((0.014 - np.abs(LV[:, 1] - seam_y_at(LV[:, 0]))) / 0.004, 0, 1) * (LV[:, 2] > zlip - 0.016)
     _ri = np.nonzero(_rw > 0)[0]
     for k_ in ('jawOpen', 'wide', 'pucker', 'grimace'):
@@ -1228,7 +1239,7 @@ for k_ in range(3):
 _has = _vn > 0.5; _vc[_has] /= _vn[_has, None]
 _nb = [[] for _ in range(len(LV))]
 for a_, b_, c_ in LF: _nb[a_] += [b_, c_]; _nb[b_] += [a_, c_]; _nb[c_] += [a_, b_]
-_nb = [np.unique(n_) for n_ in _nb]
+_nb = [np.unique(np.array(n_, np.int64)) for n_ in _nb]
 _known = _has.copy(); _cur = _vc.copy()
 for it in range(120):
     _new = np.array([(_cur[n_][_known[n_]].mean(0) if _known[n_].any() else _cur[i]) for i, n_ in enumerate(_nb)])

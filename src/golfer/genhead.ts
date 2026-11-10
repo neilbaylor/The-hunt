@@ -285,7 +285,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     const w = L.distanceTo(Rr), fwd = new THREE.Vector3(0, 0, 1);
     const rig = new THREE.Group(); rig.name = 'mouth-inside';
     const cav = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.07, 0.02, 0.02), side: THREE.BackSide }));
-    cav.scale.set(w * 0.52, 0.02, 0.022); cav.position.copy(c).addScaledVector(fwd, -0.022); rig.add(cav);
+    cav.scale.set(w * 0.4, 0.018, 0.02); cav.position.copy(c).addScaledVector(fwd, -0.026);   // inside the cheeks (wider, it poked out through them as dark arcs) rig.add(cav);
     const teethMat = new THREE.MeshLambertMaterial({ color: '#857b6c' });   // in the mouth's shade (matte, no sky reflection): never stark white
     const arc = (y0: number, h: number, back: number, span: number) => {
       // a row of teeth: a curved strip following the dental arch, facing out
@@ -299,6 +299,9 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g2.setIndex(idx); g2.computeVertexNormals();
       return new THREE.Mesh(g2, teethMat);
     };
+    // a dark curtain along the dental arch, the full width of the mouth and well above/below it: whatever the lips show
+    // at the corners is the mouth's shadow, never the sky through the head (an arch curves back with the cheeks)
+    const curtain = arc(c.y + 0.008, 0.017, 0.012, 0.95) as THREE.Mesh<THREE.BufferGeometry, THREE.Material>; curtain.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.06, 0.02, 0.02), side: THREE.DoubleSide }); rig.add(curtain);
     rig.add(arc(U.y + 0.001, 0.0056, 0.0105, 0.7));                         // upper teeth, recessed behind the upper lip (and its inner strip)
     const lower = new THREE.Group();
     lower.add(arc(Lo.y - 0.0008, 0.0068, 0.012, 0.6));                      // lower teeth, a little further back
@@ -398,7 +401,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     for (const n of MORPHS) vis[n] += ((tgt[n] ?? 0) - vis[n]) * kv;
     const talkingNow = now < speechEnd + 0.15;
     for (const n of MORPHS) if (dict[n] !== undefined) {
-      let v = expr[n] + vis[n] + (n === 'browUp' ? browE * 0.6 : 0) + (n === 'browDown' ? 0.15 * blinkNow : 0) + (n === 'smile' ? 0.06 * blinkNow : 0);   // brows drop a hair, cheeks lift, as the lids close
+      // a pleasant rest: the smile channel gets a bias that fades out as a real smile comes in (0.4 rest → ~0.58)
+      let v = expr[n] + vis[n] + (n === 'smile' ? 0.3 * (1 - Math.min(1, Math.max(0, expr.smile))) : 0) + (n === 'browUp' ? browE * 0.6 : 0) + (n === 'browDown' ? 0.15 * blinkNow : 0) + (n === 'smile' ? 0.06 * blinkNow : 0);   // brows drop a hair, cheeks lift, as the lids close
       if (talkingNow && (n === 'cornerLift' || n === 'unpout')) v *= 0.6;          // talking relaxes the rest shaping
       if (n === 'press' && (expr.jawOpen + vis.jawOpen) > 0.2) v = 0;
       infl[dict[n]] = Math.max(-1, Math.min(1.2, v));
