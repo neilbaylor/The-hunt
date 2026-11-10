@@ -118,7 +118,8 @@ export class FaceBadge {
     const b = (head.userData.makeBadge as () => { group: THREE.Group; face: FaceController; eye: THREE.Vector3 })();
     // his hair cards and visor: clones (shared geometry and materials) carried from the head bone into bind space
     const sk = head.skeleton, hb = sk.bones.findIndex(x => x.name === 'head');
-    const bindHead = hb >= 0 ? head.bindMatrixInverse.clone().multiply(sk.boneInverses[hb].clone().invert()) : new THREE.Matrix4();
+    // (bindMatrix, not bindMatrixInverse: in 'attached' mode the latter follows the golfer's current world transform)
+    const bindHead = hb >= 0 ? head.bindMatrix.clone().invert().multiply(sk.boneInverses[hb].clone().invert()) : new THREE.Matrix4();
     if (hb >= 0) for (const c of sk.bones[hb].children) if (c.name === 'gen-hair' || c.name === 'visor') {
       const cl = c.clone(); cl.matrixAutoUpdate = false; cl.matrix.multiplyMatrices(bindHead, c.matrix); b.group.add(cl);
     }

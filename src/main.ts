@@ -97,7 +97,7 @@ const tracer = new Tracer(); scene.add(tracer.mesh);
 const fill = new THREE.DirectionalLight('#fff3e6', 0.9);
 scene.add(fill, fill.target);
 // intro A: a warm low rim light from behind him (golden hour on the hair, ear and shoulder edge), only on the intro
-const introRim = new THREE.DirectionalLight('#ffb35c', 3.2); introRim.visible = false;
+const introRim = new THREE.DirectionalLight('#ffb35c', 1.6); introRim.visible = false;
 scene.add(introRim, introRim.target);
 
 // ── HUD + sound ──
@@ -757,7 +757,7 @@ function frame(now: number) {
   hud.tickSpin(dt, state === 'flight' && ball.phase === 'flight');
 
   updateCamera(simDt, now);
-  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 0.8 : 2.4) : swingView === 'front' && camMode === 'address' ? 0.25 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
+  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 0.3 : 2.4) : swingView === 'front' && camMode === 'address' ? 0.25 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   // the sunlit side of him (intro A, the face-on swing cam) sits a touch lower in exposure so the cream visor and skin keep detail
   const expK = state === 'intro' && INTRO === 'a' ? 0.84 : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.72 : 1;
   post.setBloomScale(expK < 1 ? 0.2 : 1);

@@ -58,6 +58,9 @@ if (q.has('novisor')) golfer.body.root.traverse(o => { if (o.name === 'visor') o
 const pm = /^([bdf])([\d.]+)$/.exec(q.get('pose') ?? '');
 if (pm) poses[pm[0]] = pm[1] === 'b' ? { phase: 'back', phi: PHI_TOP * +pm[2] } : pm[1] === 'd' ? { phase: 'down', phi: PHI_TOP * +pm[2] } : { phase: 'follow', phi: PHI_FINISH * +pm[2] };
 poses.held = poses.finish;
+// intro walk-in: pose=intro&iu=0..1 (0 = standing, 1 = address); idle waggle: pose=address&idle=3.0 (seconds over the ball)
+poses.intro = { phase: 'address', phi: 0, intro: +(q.get('iu') ?? 0) };
+if (q.has('idle')) poses.address.idleT = +q.get('idle')!;
 const ps = poses[q.get('pose') ?? 'address'];
 if (ps) golfer.update({ topPhi: PHI_TOP, idleT: 0, ...ps });
 else { golfer.body.bones.forEach((b, i) => { b.quaternion.identity(); if (i === 1) b.position.copy(golfer.body.skel.joint[1]); }); golfer.club.group.visible = false; golfer.root.updateMatrixWorld(true); }
