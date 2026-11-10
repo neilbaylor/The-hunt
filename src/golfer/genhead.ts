@@ -190,16 +190,16 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   const makeInstance = (skeleton: THREE.Skeleton, root: THREE.Object3D) => {
   const mat = new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.8, sheen: 0.1, sheenColor: new THREE.Color('#ff9a7a'), sheenRoughness: 0.6, specularIntensity: 0.25 });
   if (normalTex) giveNormal(mat); else wantsNormal.push(mat);
-  const face = { gaze: new THREE.Vector2(), blink: { value: 0 }, gazeU: { value: new THREE.Vector2() }, fill: { value: 0.65 }, mouthOpen: { value: 0 }, teeth: { value: 0.4 } };
+  const face = { gaze: new THREE.Vector2(), blink: { value: 0 }, lidGeo: { value: 0 }, gazeU: { value: new THREE.Vector2() }, fill: { value: 0.65 }, mouthOpen: { value: 0 }, teeth: { value: 0.4 } };
   mat.onBeforeCompile = sh => {
     sh.uniforms.uGaze = face.gazeU; sh.uniforms.uBlink = face.blink;
     sh.uniforms.uIris = { value: irisCol }; sh.uniforms.uIrisTex = irisU; sh.uniforms.uSclera = { value: sclera }; sh.uniforms.uLid = { value: new THREE.Color(G.skinColor[0], G.skinColor[1], G.skinColor[2]).convertSRGBToLinear().multiplyScalar(0.85) };
-    sh.uniforms.uFill = face.fill; sh.uniforms.uMouthOpen = face.mouthOpen; sh.uniforms.uTeeth = face.teeth;
+    sh.uniforms.uFill = face.fill; sh.uniforms.uLidGeo = face.lidGeo; sh.uniforms.uMouthOpen = face.mouthOpen; sh.uniforms.uTeeth = face.teeth;
     // mostly the photo-baked texture itself (it already carries his real light and shade), a soft lit share for form
     sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = mix(outgoingLight, diffuseColor.rgb * vec3(1.05, 0.96, 0.88), uFill);\n#include <opaque_fragment>');
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 eyeA; attribute vec2 eyeB; varying vec4 vEyeA; varying vec2 vEyeB; attribute vec3 mouthA; varying vec3 vMouth;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEyeA = eyeA; vEyeB = eyeB; vMouth = mouthA;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec4 vEyeA; varying vec2 vEyeB; uniform vec2 uGaze; uniform float uBlink; uniform vec3 uIris; uniform vec3 uLid; uniform sampler2D uIrisTex; uniform vec3 uSclera; uniform float uFill; varying vec3 vMouth; uniform float uMouthOpen; uniform float uTeeth;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec4 vEyeA; varying vec2 vEyeB; uniform vec2 uGaze; uniform float uBlink; uniform float uLidGeo; uniform vec3 uIris; uniform vec3 uLid; uniform sampler2D uIrisTex; uniform vec3 uSclera; uniform float uFill; varying vec3 vMouth; uniform float uMouthOpen; uniform float uTeeth;')
       .replace('#include <map_fragment>', `#include <map_fragment>
       {
         // the eye opening, drawn here so it can look around and blink: e = (across, up), |e| < 1 inside
@@ -227,6 +227,13 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
           // blink: the upper lid comes down to the lower; a lash line at its edge
           // the upper lid comes down over the eyeball (its edge stays curved: an arc that flattens as it closes), the
           // lower lid rises ~15 %; lashes make a dark line along the meeting edge, a soft crease shows above
+          // with geometric lids the mesh closes the eye: the eye itself only darkens toward lid and lashes as they close,
+          // so any sliver left between the margins reads as lashes, never as iris
+          if (uLidGeo > 0.5) {
+            vec3 lidc0 = uLid * 0.9;
+            eye = mix(eye, mix(lidc0, vec3(0.06, 0.045, 0.04), 1.0 - smoothstep(0.15, 0.55, abs(e.y + 0.3))), smoothstep(0.45, 0.9, uBlink));
+            diffuseColor.rgb = mix(diffuseColor.rgb, eye, inside);
+          } else {
           float bl = uBlink;
           float meet = -0.2;                                               // where the lids meet, a little below centre
           float upY = mix(1.0, meet, bl), loY = mix(-1.0, -0.82, bl);
@@ -240,6 +247,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
           float lash = (1.0 - smoothstep(0.0, 0.1, abs(e.y + arc - upY))) * smoothstep(0.05, 0.3, bl);
           eye = mix(eye, vec3(0.05, 0.035, 0.03), lash * 0.85);
           diffuseColor.rgb = mix(diffuseColor.rgb, eye, inside);
+          }
         }
       }
       {
@@ -346,7 +354,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       b = ms < 40 ? (ms / 40) ** 1.6 : ms < 60 ? 1 : Math.max(0, 1 - (1 - (1 - (ms - 60) / 80) ** 2)); if (t >= 1) { blinkT = blinkTwice ? -0.12 : -1; if (blinkTwice) { blinkTwice = false; } } }
     if (blinkT < -0.01 && blinkT > -0.5) { blinkT += dt; if (blinkT >= 0) blinkT = 0; }   // the second of a double blink, ~0.12 s later
     const bl = expr.blink >= 0 ? expr.blink : b; blinkNow = bl;
-    face.blink.value = lidMorph ? 0 : bl;                              // geometric lids (head.py) close the eyes; else the shader draws them
+    face.blink.value = bl; face.lidGeo.value = lidMorph ? 1 : 0;    // geometric lids (head.py) close the eyes; else the shader draws them
     // gaze: a forced gaze, else the target, else idle glances (saccades: quick moves, then hold)
     let gx = 0, gy = 0;
     if (forced) { gx = forced.x; gy = forced.y; }

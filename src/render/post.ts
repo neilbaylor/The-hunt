@@ -267,7 +267,6 @@ export function createPost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, ca
   return {
     get quality() { return quality; },
     get finish() { return finish; },
-    get _composer() { return composer; },
     setFinish(f) { if (f !== finish) { finish = f; build(); } },
     setBloomScale(k) { if (Math.abs(k - bloomScale) < 1e-3) return; bloomScale = k; if (bloom) bloom.strength = GRADES[grade].bloom * k; },
     setFace(pos, radius = 0.14) { face = pos ? { pos: (face?.pos ?? new THREE.Vector3()).copy(pos), r: radius } : null; handPass?.setFace(pos, radius); },

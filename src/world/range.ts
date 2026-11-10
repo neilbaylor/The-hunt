@@ -1322,6 +1322,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
     const eu = envSky.material.uniforms;
     for (const k of Object.keys(P.sky) as (keyof TimePreset['sky'])[]) eu[k].value = P.sky[k];
     eu.sunPosition.value.copy(sunDir); eu.showSunDisc.value = 0; eu.cloudCoverage.value = P.clouds; eu.cloudDensity.value = 0.42;
+    { const cap = +(new URLSearchParams(location.search).get('envcap') ?? 0); if (cap > 0) envSky.material.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('gl_FragColor = vec4( texColor, 1.0 );', `{ float l = dot(texColor, vec3(0.2126, 0.7152, 0.0722)); texColor *= min(1.0, ${cap.toFixed(4)} / max(l, 1e-5)); } gl_FragColor = vec4( texColor, 1.0 );`); }; }   // DEBUG
     envScene.add(envSky);
     const groundDome = new THREE.Mesh(new THREE.SphereGeometry(900, 24, 12, 0, Math.PI * 2, Math.PI / 2 + 0.02, Math.PI / 2), new THREE.MeshBasicMaterial({ color: lin(P.groundBounce), side: THREE.BackSide }));
     envScene.add(groundDome);

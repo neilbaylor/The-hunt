@@ -764,10 +764,10 @@ if A.lids:
         near = (np.linalg.norm(d, axis=1) < 0.024) & (dz > -0.002) & (wx > 0)
         s_up = (1 - sstep(p_up, p_up + 0.6, phi)) * (phi >= p_up - 0.015)
         s_lo = (1 - sstep(p_lo, p_lo - 0.45, phi)) * (phi <= p_lo + 0.015)
-        # the margins overlap a little when closed (the upper over the lower), so no sliver of eye shows between them
-        dphi = ((p_meet - 0.13 - p_up) * s_up + (p_meet + 0.05 - p_lo) * s_lo) * wx * near
+        # the margins just overlap when closed (more folds them into a zig-zag); the shader shades what's left of the eye
+        dphi = ((p_meet - 0.04 - p_up) * s_up + (p_meet + 0.02 - p_lo) * s_lo) * wx * near
         inside = (phi < p_up - 0.015) & (phi > p_lo + 0.015) & near
-        phi2 = phi + dphi; rho2 = rho * (1 + (0.045 * s_up + 0.02 * s_lo) * wx * near) - 0.003 * inside * wx
+        phi2 = phi + dphi; rho2 = rho * (1 + (0.045 * s_up + 0.02 * s_lo) * wx * near) - 0.002 * inside * wx
         nd = np.outer(dx, X) + (rho2 * np.sin(phi2))[:, None] * Y + (rho2 * np.cos(phi2))[:, None] * Z
         lid += np.where((near & ((dphi != 0) | inside))[:, None], nd - d, 0)
         print(f'  eyelids: {int((np.abs(dphi) > 1e-4).sum())} lid verts rotate (upper {np.degrees((p_meet - p_up).mean()):.0f}°, lower {np.degrees((p_meet - p_lo).mean()):+.0f}°), {int(inside.sum())} eye-surface verts sink')
