@@ -86,8 +86,11 @@ function bakeAtlas(parts: THREE.Mesh[], AW = 2048, reuse?: AtlasLayout) {
         const cv = m.map.image as HTMLCanvasElement, sc = Math.min(1, (cv.width > 8 * cv.height ? AW / 3 : AW / 2) / cv.width);   // long strips go a third wide
         const w = Math.round(cv.width * sc), h = Math.max(8, Math.round(cv.height * sc));
         items.set(key, { key, w, h, x: 0, y: 0, pad: 4, draw: (g, x, y) => {
+          // smear the image's edge pixels out into the padding, so filtering at the part's UV edges never pulls in
+          // the atlas's empty (white) gutter, which shows as a white outline (e.g. round the shirt placket)
+          g.drawImage(cv, x - 4, y - 4, w + 8, h + 8);
           g.drawImage(cv, x, y, w, h);
-          if (col !== 'ffffff') { g.save(); g.globalCompositeOperation = 'multiply'; g.fillStyle = '#' + col; g.fillRect(x, y, w, h); g.restore(); }
+          if (col !== 'ffffff') { g.save(); g.globalCompositeOperation = 'multiply'; g.fillStyle = '#' + col; g.fillRect(x - 4, y - 4, w + 8, h + 8); g.restore(); }
         } });
       } else if (reuse) throw new Error('bakeAtlas: colour not in the reused atlas');
       else items.set(key, { key, w: 24, h: 24, x: 0, y: 0, pad: 12, draw: (g, x, y) => { g.fillStyle = '#' + col; g.fillRect(x - 12, y - 12, 48, 48); } });
@@ -497,7 +500,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     bits.push(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rim), COLS, 0.0016, 6), collarMat));
     // placket: a stitched strip laid on the shirt from the neckline down, with two white four-hole buttons
     const top = neck(0);
-    const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.28)'; g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeRect(5, -10, 54, 258); g.beginPath(); g.moveTo(32, -10); g.lineTo(32, 250); g.stroke(); }, true, 1);
+    const plkTex = canvasTex(64, 256, g => { g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 256); g.strokeStyle = 'rgba(0,0,0,.12)'; g.setLineDash([5, 4]); g.lineWidth = 1.2; g.strokeRect(5, -10, 54, 258); }, true, 1);
     plkTex.wrapS = plkTex.wrapT = THREE.ClampToEdgeWrapping; plkTex.repeat.set(1, 1);
     const plkMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, map: plkTex, roughness: 0.84, sheen: 0.35, sheenColor: collarMat.sheenColor, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const pg = new THREE.PlaneGeometry(0.033, 0.12, 4, 16);
