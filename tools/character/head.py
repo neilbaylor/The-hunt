@@ -761,9 +761,9 @@ if A.lids:
         s_up = (1 - sstep(p_up, p_up + 0.6, phi)) * (phi >= p_up - 0.015)
         s_lo = (1 - sstep(p_lo, p_lo - 0.45, phi)) * (phi <= p_lo + 0.015)
         # the margins overlap a little when closed (the upper over the lower), so no sliver of eye shows between them
-        dphi = ((p_meet - 0.05 - p_up) * s_up + (p_meet + 0.03 - p_lo) * s_lo) * wx * near
+        dphi = ((p_meet - 0.13 - p_up) * s_up + (p_meet + 0.05 - p_lo) * s_lo) * wx * near
         inside = (phi < p_up - 0.015) & (phi > p_lo + 0.015) & near
-        phi2 = phi + dphi; rho2 = rho * (1 + (0.045 * s_up + 0.02 * s_lo) * wx * near) - 0.002 * inside * wx
+        phi2 = phi + dphi; rho2 = rho * (1 + (0.045 * s_up + 0.02 * s_lo) * wx * near) - 0.003 * inside * wx
         nd = np.outer(dx, X) + (rho2 * np.sin(phi2))[:, None] * Y + (rho2 * np.cos(phi2))[:, None] * Z
         lid += np.where((near & ((dphi != 0) | inside))[:, None], nd - d, 0)
         print(f'  eyelids: {int((np.abs(dphi) > 1e-4).sum())} lid verts rotate (upper {np.degrees((p_meet - p_up).mean()):.0f}°, lower {np.degrees((p_meet - p_lo).mean()):+.0f}°), {int(inside.sum())} eye-surface verts sink')
@@ -1523,7 +1523,7 @@ if STRIP_F0 is not None:
     _st = tt >= STRIP_F0
     _lw = (LIPIN[vmap][UF[tt]] * tw).sum(1)
     _lipc = np.median(tex[ty, tx][(np.linalg.norm(cp - lm_f[14], axis=1) < 0.003) | (np.linalg.norm(cp - lm_f[13], axis=1) < 0.003)].astype(np.float32), 0)
-    _inn = np.clip(_lipc[None] * np.array([1.0, 0.86, 0.86]) * (0.92 - 0.55 * _lw[_st])[:, None], 0, 255)
+    _inn = np.clip(_lipc[None] * np.array([1.0, 0.9, 0.9]) * (1.0 - 0.5 * np.clip(_lw[_st] - 0.3, 0, 1))[:, None], 0, 255)   # lip colour at the edge (no dark line at rest), darker only deep in
     _tf = tex.astype(np.float32); _tf[ty[_st], tx[_st]] = _inn
     tex = np.clip(_tf, 0, 255).astype(np.uint8)
     print(f'  inner lips: {int(_st.sum())} texels, lip colour {_lipc.round()}')
