@@ -464,9 +464,11 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const sg = Math.sin(a) >= 0 ? 1 : -1;
       const end = Math.max(0, 1 - Math.min(s, 1 - s) / 0.16);             // 1 at the collar points, 0 away from them
       const fr = Math.max(0, Math.cos(a));
-      const standH = 0.026 - 0.008 * fr, rr = 0.0034;
-      // the leaf falls over the stand and spreads out onto the shoulders; longer towards the points
-      const leafH = 0.045 + 0.008 * Math.abs(Math.sin(a)) + 0.022 * end * end, leafOut = 0.024 + 0.012 * Math.abs(Math.sin(a)) + 0.012 * fr;
+      // a real polo collar: a clear stand all round (taller at the back), a soft roll, then a leaf about 4 cm deep
+      // that lies close to the shirt; at the front it ends in two neat points about 7 cm long, pointing down and
+      // only slightly out, either side of the placket (not flared wings)
+      const standH = 0.03 - 0.009 * fr, rr = 0.003;
+      const leafH = 0.038 + 0.004 * Math.abs(Math.sin(a)) + 0.03 * end * end, leafOut = 0.016 + 0.008 * Math.abs(Math.sin(a)) + 0.004 * fr;
       // cross-section (out, up) from the neck seam: stand, the soft roll over the top, then the leaf
       const prof: [number, number, number][] = [];   // [out, up, u along the leaf for the point's sweep]
       prof.push([-0.0025, -0.004, 0], [-0.0028, standH * 0.5, 0], [-0.0025, standH - 0.002, 0]);
@@ -477,7 +479,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       rows = prof.length;
       for (const [o, up, u] of prof) {
         // towards the points the leaf turns out to the side, so the points lie on the collarbones
-        const aa = a + sg * 0.55 * end * end * u;
+        const aa = a + sg * 0.22 * end * end * u;
         const q = neck(aa, o, up);
         pos.push(q.x, q.y, q.z);
       }
