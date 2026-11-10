@@ -451,7 +451,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   // A thin dark skirt under every free edge reads as the soft shadow line on the shirt; the stand's foot is dark
   // (the neck opening), the roll and outer edge a touch lighter where the fold catches the light.
   {
-    const V3 = THREE.Vector3; const T0__ = performance.now();
+    const V3 = THREE.Vector3;
     const ring0 = M.collar.map(a => new V3(a[0], a[1], a[2]));
     const c = ring0.reduce((a, b) => a.add(b), new V3()).multiplyScalar(1 / ring0.length);
     const loY = Math.min(...ring0.map(q => q.y)) - 0.16, hiY = Math.max(...ring0.map(q => q.y));
@@ -546,10 +546,21 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       }
       L.push(col);
     }
+    // the stand's rows (lifted clear of the neck), and a check that keeps the leaf outside them (the leaf lies on
+    // the stand's outside with the doubled fabric between)
+    const SR = S.map((s0, i) => [...Array(NS).keys()].map(k => (k ? skinLift(s0.clone().lerp(P[i], k / (NS - 1)), 0.003) : s0.clone())));
+    const clearStand = (i: number, v: THREE.Vector3) => {
+      const t = v.clone().sub(S[i]).dot(TU[i]), st = SR[i].map(q => { const d = q.clone().sub(S[i]); return [d.dot(TU[i]), d.dot(OU[i])]; });
+      if (t < st[0][0] - 0.004 || t > st[NS - 1][0]) return;
+      let k = 0; while (k < NS - 2 && t > st[k + 1][0]) k++;
+      const f = Math.min(1, Math.max(0, (t - st[k][0]) / (st[k + 1][0] - st[k][0] || 1))), need = st[k][1] + (st[k + 1][1] - st[k][1]) * f + 1.8 * rr;
+      const have = v.clone().sub(S[i]).dot(OU[i]); if (have < need) v.addScaledVector(OU[i], need - have);
+    };
     const gapAt = (i: number, k: number) => { const u = k / NL; return 0.0024 + 0.0012 * u * u * u + 0.0016 * EW[i] * u * u; };   // the edges, and most the points, lift a hair
     for (let pass = 0; pass < 3; pass++) {
       for (let i = 0; i <= COLS; i++) for (let k = 1; k <= NL; k++) {
         if (k < NL / 2) skinLift(L[i][k], 0.008);
+        clearStand(i, L[i][k]);
         if (k >= 0.3 * NL) shirtLift(L[i][k], gapAt(i, k));
       }
       if (pass === 2) break;
@@ -573,7 +584,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const ROWS = vs.length, sec: THREE.Vector3[][] = [];
     for (let i = 0; i <= COLS; i++) {
       const t = TU[i], o = OU[i], row: THREE.Vector3[] = [];
-      for (let k = 0; k < NS; k++) row.push(k ? skinLift(S[i].clone().lerp(P[i], k / (NS - 1)), 0.003) : S[i].clone());
+      for (let k = 0; k < NS; k++) row.push(SR[i][k].clone());
       for (let k = 1; k <= NF; k++) { const ph = Math.PI * k / NF; row.push(P[i].clone().addScaledVector(o, rr * (1 - Math.cos(ph))).addScaledVector(t, rr * Math.sin(ph))); }
       row[NS + NF - 1] = L[i][0].clone();
       for (let k = 1; k <= NL; k++) row.push(L[i][k].clone());
@@ -663,7 +674,6 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.88, sheen: 0.2, sheenColor: collarMat.sheenColor, sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const cm = skinned(baked.geometry, bitsMat); cm.name = 'collar'; cm.castShadow = false;
     bits.forEach(b => b.geometry.dispose());
-    console.warn('collar ms', performance.now() - T0__);
   }
   // belt (tucked-in shirt): a 3.5 cm mid-brown pebbled leather belt laid on the shorts' waistband and skinned
   // like it: stitched edges, a square brushed-silver buckle with a single prong at the front, the tip through a
