@@ -949,7 +949,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     if (teeth?.morphTargetInfluences) teeth.morphTargetInfluences[0] = v;
     smileAmt.value = Math.min(1, Math.max(0, (v - 0.15) * 1.3));
     if (teeth) teeth.visible = v > 0.08 && !M.paintedMouth && !gen; // closed mouth: keep teeth from showing through the lips
-    gen?.face.setExpression({ smile: 0.35 + Math.max(0, v0 - 0.25) / 0.75 * 0.6 });   // a relaxed, pleasant rest smile (lips closed); more on top
+    gen?.face.setExpression({ smile: 0.5 + Math.max(0, v0 - 0.25) / 0.75 * 0.5 });   // a relaxed, pleasant rest smile (lips closed); more on top
   };
   // with the generated head: its own hair, eyes and teeth replace the MakeHuman scalp shell, hair cards, eyeballs and teeth
   if (gen) root.traverse(o => { if (['hair', 'hair-shell', 'eye', 'teeth'].includes(o.name)) o.visible = false; });
