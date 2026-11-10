@@ -23,7 +23,7 @@ Repo: `neilbaylor/The-hunt`, branch `main`. Commit often (usage limits cut agent
 - **Bag:** his actual **Jones Rover stand bag** (white top, royal-blue bottom, black trim, orange pull tab) stands near him on the tee.
 
 ## Swing (top priority with the face)
-- **Code:** keyframed + IK in `src/golfer/golfer.ts`, `rig.ts`. Assertion scripts in the scratchpad (armcheck.js, footcheck.js).
+- **Code:** keyframed + IK in `src/golfer/golfer.ts`, `rig.ts`, plus the captured swing (`mocap.ts`). Assertion scripts in `tools/swing-check/` (see "Swing state after session 2").
 - **References, traced with MediaPipe locally and mirrored for a lefty:**
   - Jaco van Zyl DTL gif, Justin Rose DTL gif
   - Sadlowski DTL + face-on driver pairs
@@ -41,6 +41,29 @@ Repo: `neilbaylor/The-hunt`, branch `main`. Commit often (usage limits cut agent
   - every few seconds, a small waggle of the club: the clubhead lifts and swings back a few inches with the wrists, then sets back behind the ball;
   - Rose's opening waggle in tools/refs/swing/rose_dtl.gif is the reference.
   - If the player starts the swing mid-waggle, the swing just goes from wherever the club is: blend smoothly from the current waggle pose straight into the takeaway, with no snap back to address and no delay. Swing input always wins.
+
+### Swing state after session 2 (swing agent)
+- **Two swing sources.** `golfer.swingSource = 'mocap'` is the default (the captured Rory swing, `src/golfer/mocap.ts`, `swingclip.ts`); `?swing=keyed` or `swingSource = 'keyed'` gives the hand-keyed one. The captured path blends to the keyed swing at address, around mid-backswing, through impact and into the held finish, so the per-club set-up, the strike, the attack angle and Rory's finish all come from the keyed code.
+- **Assertions live in the repo now:** `tools/swing-check/` (copies of the scratchpad scripts; Playwright + swiftshader, Vite on port 5230). `SWING=mocap node check.mjs 6` runs them on the captured swing (default is keyed).
+  - `check.mjs [club] [tee]`: lead elbow ≥165° address→top and impact→through, trail elbow in front of the hip and ≤ belt + 5 cm at delivery/impact, steady head (≤4 cm lateral, ≤2.5 cm vertical), trail-foot pivot ≤2 cm, lead flare 20–30°, stacked finish.
+  - `events.mjs`: the 12-event figure (`tools/refs/swing/swing_events_12.png`): MB, LBA, TB, ED, MD, BI, MF, LF.
+  - `setup.mjs`: per-club stand distance, ball position, shoulder tilt, attack angle, low point, both hands on the grip.
+  - `handorder.mjs`, `strip.mjs`, `shot.mjs`, `fincmp.sh` (finish next to Rory), `gripcmp.sh`.
+- **Per-club set-up is continuous by club length** (`clubLengthT(spec)` in club.ts, 0 = lob wedge, 1 = driver): stand distance, ball position, shaft lean (driver hands behind the teed ball), trail-shoulder tilt, toe-up lie for the long clubs, grip a touch stronger with the long clubs, weight forward with the short ones.
+- **Attack angle:** `golfer.attackAngleDeg()` / `attackAngleDeg(spec)` in club.ts: driver +3°, 3 iron 0°, wedges −5°. The head's path through the ball follows it. Divots and launch can read it; nothing in shot.ts or divots.ts was changed.
+- **Arms are 8% longer than the base mesh** (`ARM_SCALE`, `Rig.scaleArms`): the mesh's were short for 6'3" and left no slack to reach the club. The trail shoulder blade can also slide ≤4.5 cm (`BodyPose.shoulderR`).
+- **Known gaps:** trail elbow at delivery is 6–8 cm above the belt with the wedges and on the captured swing (limit 5); driver toe-to-ball is 87 cm (the coordinator asked for 75–80; with a straight lead arm and a 46" shaft he can't stand closer); hands are better (index hooks, thumbs down the grip, stronger grip) but still rough close up; the Rory face-on video fusion (item 7) was not done.
+
+### Intro, walk-in and idle waggle API (for main.ts / the HUD)
+All on `Golfer` (src/golfer/golfer.ts); works with either swing source.
+- **Intro pose:** `golfer.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0, intro: 0, lookAt: camera.position })`. He stands upright a step back from the ball, feet together, both hands on the club stood on the turf in front of him, looking at `lookAt`.
+- **Walk-in, either way:**
+  - scrub it: pass `intro: u` with u from 0 to 1 (`INTRO_SECONDS` = 1.8 s at natural speed). He looks at the camera, steps in with the lead foot then the trail foot, the club swings down behind the ball, and he bends into the set-up. `intro: 1` (or leaving `intro` out) is the exact address pose.
+  - or let him run it: `await golfer.playIntroToAddress()` (optional seconds). Keep calling `update({ phase: 'address', ... })` every frame without `intro`; the promise resolves when he is at address. `golfer.introProgress` is 0..1 while it runs, else null.
+  - Until the player taps, keep passing `intro: 0`. Start `idleT` from 0 once he is at address.
+- **Idle at address:** driven by `idleT` in the address phase: breathing, a slow weight shift, a look down the range every 6.5 s (first at 4.5 s), and a two-pump waggle every 6.5 s (first at 2.6 s). `golfer.waggling` is true while the club is off the ball.
+- **Swing input always wins:** just start sending `phase: 'back'` as usual. If a waggle is in progress the backswing carries on from where the club is (no snap back, no delay); the head start fades out over the first fifth of the backswing.
+- golfer.html: `pose=intro&iu=0.4`, `pose=address&idle=3.0`.
 
 ## Ball / physics
 `src/game/ball.ts`, `shot.ts`.

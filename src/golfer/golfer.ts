@@ -870,8 +870,8 @@ export class Golfer {
   private wagglePhi(t: number) {
     if (t < 2.6) return 0;
     const c = (t - 2.6) % 6.5;
-    if (c < 0.8) return 0.13 * Math.sin(Math.PI * c / 0.8) ** 2;
-    if (c < 1.5) return 0.09 * Math.sin(Math.PI * (c - 0.8) / 0.7) ** 2;
+    if (c < 0.8) return 0.045 * Math.sin(Math.PI * c / 0.8) ** 2;
+    if (c < 1.5) return 0.03 * Math.sin(Math.PI * (c - 0.8) / 0.7) ** 2;
     return 0;
   }
   private introT0: number | null = null; private introDur = INTRO_SECONDS; private introDone: (() => void) | null = null;
