@@ -593,7 +593,7 @@ body.aiming .wind-chip { transform: scale(1.15); transform-origin: 100% 0; }
 .face-badge { width: 92px; height: 92px; box-shadow: 0 0 0 3px #fffaf0, 0 0 0 6px #c9a227, 0 8px 18px rgba(0,0,0,.32); }
 .face-name { grid-column: 1; grid-row: 2; justify-self: center; font-size: 13px; padding: 4px 10px 5px; }
 .face-word { grid-column: 1; grid-row: 3; margin-top: 0; }
-.face-bubble { left: 104px; top: 128px; }
+.face-bubble { left: 0; top: 172px; border-radius: 4px 16px 16px 16px; transform-origin: 0 0; }   /* under the face column */
 .hud.in-shot .who { transform: none; }
 @media (max-width: 380px) { .face-wrap { grid-template-columns: 84px; grid-template-rows: 84px auto auto; } .face-badge { width: 84px; height: 84px; } .hud .ed-n { font-size: 80px; } }
 

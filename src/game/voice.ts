@@ -50,7 +50,8 @@ export const voice = {
   lines(outcome?: VoiceOutcome) { return CLIPS.filter(c => (!outcome || c.outcomes.includes(outcome)) && (!cleanOnly || c.clean)); },
   /** play a random line for the outcome (never the same one twice running); returns it, or null if there is none */
   speak(outcome: VoiceOutcome): VoiceLine | null {
-    if (muted || !unlocked) return null;   // silent: the caller falls back to its own text and letter-timed talk
+    // silent by default: the line is still chosen and 'played' on the clock, so the bubble shows it and the mouth
+    // lip-syncs to its timing; only the audio element is skipped (play() checks muted/unlocked)
     const pool = voice.lines(outcome);
     if (!pool.length) return null;
     const choices = pool.length > 1 ? pool.filter(c => c.id !== lastId[outcome]) : pool;

@@ -650,7 +650,7 @@ export class Golfer {
     if ((s.phase === 'down' || s.phase === 'follow') && this.aoaFix) {
       const x = g.position.x - this.clubAt.x, dy = this.aoaFix * x * Math.exp(-((x / 0.3) ** 2));
       // (the whole body rides with the hands, on the legs, so the arms keep their shape)
-      if (Math.abs(dy) > 1e-5) { g.position.y += dy; p.wristL.y += dy; p.wristR.y += dy; p.pelvis.y += dy; this.rig.apply(p); }
+      if (Math.abs(dy) > 1e-5) { g.position.y += dy; p.wristL.y += dy; p.wristR.y += dy; p.pelvis.y += dy; if (headW > 0.001 && this.headAnchor) this.steadyHead(p, headW, headOff[0], headOff[1]); else this.rig.apply(p); }
     }
     // both hands stay on the club: if either arm can't reach its wrist target, move the club (both hands) toward
     // that shoulder (the trail arm used to fall short of the grip in the through-swing)
