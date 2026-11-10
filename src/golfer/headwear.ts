@@ -36,7 +36,7 @@ function logoTexture(kind: Headwear['logo'], base: string, sx = 1, under = base)
     const draw = (img: HTMLImageElement) => {
       // the patch spans about a fifth of the band, centred on the front (u = 0.5)
       // sx: texture pixels per metre round the band ÷ pixels per metre up it, so the logo keeps its true proportions
-      const h = H * 0.78, w = h * (img.width / img.height || 1.254) * sx;
+      const h = H * 0.86, w = h * (img.width / img.height || 1.254) * sx;
       g.drawImage(img, W / 2 - w / 2, H / 2 - h / 2, w, h);   // dead centre of the band (the whole band face is visible)
       t.needsUpdate = true;
     };
@@ -48,11 +48,16 @@ function logoTexture(kind: Headwear['logo'], base: string, sx = 1, under = base)
 }
 
 /** A visor sized for a head of half-widths rx (side) and rz (front/back) at band height. */
-export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 0.032, mirrored = false, profile?: number[]) {
+export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 0.032, mirrored = false, profile?: number[],
+  opts: { gap?: number; dilate?: boolean; droop?: number } = {}) {
+  // gap: how far the band stands off the measured surface; dilate: widen the profile over its neighbours first (a
+  // measured hair shell is ragged); droop: how much the brim tips down at the front (seen from the front it shows)
+  const GAP = opts.gap ?? 0.011, DROOP = opts.droop ?? 0.06;
   // measured radius of the head/hair round the band (64 angles from the back, a = -PI)
   // smoothed (closing: dilate then blur) so the band is a clean curve that never dips into the hair
   let prof = profile;
-  if (profile) {
+  if (profile && opts.dilate === false) prof = profile.map((_, i) => (profile[(i + profile.length - 1) % profile.length] + 2 * profile[i] + profile[(i + 1) % profile.length]) / 4);
+  else if (profile) {
     const n = profile.length, dil = profile.map((_, i) => Math.max(...[-2, -1, 0, 1, 2].map(k => profile[(i + k + n) % n])));
     prof = dil;
     for (let pass = 0; pass < 3; pass++) prof = prof.map((_, i) => [-3, -2, -1, 0, 1, 2, 3].reduce((s, k) => s + prof![(i + k + n) % n] * Math.exp(-(k * k) / 4), 0) / [-3, -2, -1, 0, 1, 2, 3].reduce((s, k) => s + Math.exp(-(k * k) / 4), 0));
@@ -67,8 +72,8 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
     // the strap sits proud of the hair at the sides and back
     const fr = Math.max(0, Math.cos(a));
     const pr = rAt(a);
-    const x = pr !== null ? Math.sin(a) * (pr + 0.011) : Math.sin(a) * (rx + 0.009 * sideB + 0.006 * back);
-    const z = pr !== null ? Math.cos(a) * (pr + 0.011) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
+    const x = pr !== null ? Math.sin(a) * (pr + GAP) : Math.sin(a) * (rx + 0.009 * sideB + 0.006 * back);
+    const z = pr !== null ? Math.cos(a) * (pr + GAP) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
     const front = 0.5 + 0.5 * Math.cos(a);
     const hh = height * (0.55 + 0.45 * front);
     const tilt = -0.004 * front - 0.012 * back;                    // sits nearly level, a touch lower at the back
@@ -115,8 +120,8 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
   const AE = 1.38;                                     // the brim runs round to just behind the temples
   const bandAt = (a: number) => {                      // the band's bottom edge at angle a (same formulas as above)
     const pr = rAt(a), sideB = Math.abs(Math.sin(a)), back = Math.max(0, -Math.cos(a)), fr = Math.max(0, Math.cos(a));
-    const x = pr !== null ? Math.sin(a) * (pr + 0.011) : Math.sin(a) * (rx + 0.009 * sideB + 0.006 * back);
-    const z = pr !== null ? Math.cos(a) * (pr + 0.011) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
+    const x = pr !== null ? Math.sin(a) * (pr + GAP) : Math.sin(a) * (rx + 0.009 * sideB + 0.006 * back);
+    const z = pr !== null ? Math.cos(a) * (pr + GAP) + zc : Math.cos(a) * (rz + 0.016 * back + 0.008 * fr) + zc;
     const front = 0.5 + 0.5 * Math.cos(a), hh = height * (0.55 + 0.45 * front), tilt = -0.004 * front - 0.012 * back;
     return new THREE.Vector3(x, y0 + tilt - hh / 2, z);
   };
@@ -132,7 +137,7 @@ export function buildVisor(h: Headwear, rx = 0.08, rz = 0.104, zc = 0.004, y0 = 
     const L = Math.hypot(ex - inner.x, ez - inner.z) * t;
     const side = Math.abs(Math.sin(a));
     const tt = t * t * (3 - 2 * t) * 0.35 + t * 0.65;
-    bp.push(inner.x + (ex - inner.x) * tt, inner.y + 0.0006 - L * (0.06 + 0.3 * side) - 0.004 * t * t, inner.z + (ez - inner.z) * tt);   // slopes gently down and away, so it never hides the band
+    bp.push(inner.x + (ex - inner.x) * tt, inner.y + 0.0006 - L * (DROOP * (1 - side) + 0.3 * side) - 0.004 * t * t, inner.z + (ez - inner.z) * tt);   // slopes gently down and away, so it never hides the band
   }
   const tri = (flip: boolean) => { const o: number[] = []; for (let r = 0; r < rows; r++) for (let i = 0; i < bs; i++) { const a = r * (bs + 1) + i, b = a + 1, c = a + bs + 1, d = c + 1; if (flip) o.push(a, b, c, b, d, c); else o.push(a, c, b, b, c, d); } return o; };
   // the top surface faces up (checked, not assumed), the underside is a copy 2.5 mm below facing down

@@ -34,7 +34,7 @@ export interface GenHead {
   mesh: THREE.SkinnedMesh;
   seam: { p: THREE.Vector3; n: THREE.Vector3 };
   /** visor fit measured on the new head (same form as character.bin's meta.visor) */
-  visor: { center: number[]; rx: number; rz: number; profile: number[] };
+  visor: { center: number[]; rx: number; rz: number; profile: number[]; opts?: { gap?: number; dilate?: boolean; droop?: number } };
   tint: THREE.Color;
   skin: { xform?: number[][]; tone?: number[] };
   face: FaceController;
@@ -177,27 +177,25 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   let zmin = 9, zmax = -9, xmin = 9, xmax = -9;
   for (let i = 0; i < pos.length; i += 3) if (Math.abs(pos[i + 1] - visorY) < 0.006) { zmin = Math.min(zmin, pos[i + 2]); zmax = Math.max(zmax, pos[i + 2]); xmin = Math.min(xmin, pos[i]); xmax = Math.max(xmax, pos[i]); }
   const vc = new THREE.Vector3((xmin + xmax) / 2, visorY, (zmin + zmax) / 2);
+  // the head's own cross-section along the band (its tilt: lower at the front, higher at the back), a robust outer
+  // radius per angle (90th percentile, so a stray hair spike doesn't push it out); the band then sits 4 mm off it
   const prof: (number | null)[] = [];
   for (let s = 0; s < 64; s++) {
     const a = -Math.PI + (s / 64) * 2 * Math.PI, back = Math.max(0, -Math.cos(a)), front = Math.max(0, Math.cos(a));
-    const yb = visorY - 0.006 * front - 0.024 * back;
-    let best = -1;
+    const yb = visorY - 0.006 * front - 0.012 * back;
+    const rs: number[] = [];
     for (let i = 0; i < pos.length; i += 3) {
-      if (Math.abs(pos[i + 1] - yb) > 0.016) continue;
+      if (Math.abs(pos[i + 1] - yb) > 0.02 * (0.55 + 0.45 * (0.5 + 0.5 * Math.cos(a)))) continue;   // the band's whole height there
       const dx = pos[i] - vc.x, dz = pos[i + 2] - vc.z;
       const da = Math.abs((((Math.atan2(dx, dz) - a + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI);
-      if (da < 0.07) best = Math.max(best, Math.hypot(dx, dz));
+      if (da < 0.06) rs.push(Math.hypot(dx, dz));
     }
-    prof.push(best > 0 ? best : null);
+    rs.sort((p, q) => p - q);
+    prof.push(rs.length ? rs[Math.min(rs.length - 1, Math.floor(rs.length * 0.97))] : null);
   }
   for (let i = 0; i < 64; i++) if (prof[i] === null) for (let j = 1; j < 64; j++) { const q = prof[(i + j) % 64]; if (q !== null) { prof[i] = q; break; } }
-  let pr = prof.map(x => x ?? 0.09);
-  pr = pr.map((_, i) => Math.max(...[-2, -1, 0, 1, 2].map(j => pr[(i + j + 64) % 64])));
-  pr = pr.map((_, i) => (pr[(i + 63) % 64] + pr[i] + pr[(i + 1) % 64]) / 3);
-  // buildVisor stands the band 11 mm off the measured surface (room for MakeHuman's hair shell); here the hair is
-  // pressed in under the band, so it sits ~5 mm off: snug on the forehead and temples
-  pr = pr.map(r => r - 0.006);
-  const visor = { center: [vc.x, vc.y, vc.z], rx: (xmax - xmin) / 2 + 0.0115, rz: (zmax - zmin) / 2 + 0.0125, profile: pr };
+  const pr = prof.map(x => x ?? 0.09);
+  const visor = { center: [vc.x, vc.y, vc.z], rx: (xmax - xmin) / 2 + 0.0115, rz: (zmax - zmin) / 2 + 0.0125, profile: pr, opts: { gap: 0.004, dilate: false, droop: 0.28 } };
 
   // ── the face's life: idle blinks every 2–6 s (~120 ms), small glances, a look-at target, expressions ──
   mesh.updateMorphTargets();

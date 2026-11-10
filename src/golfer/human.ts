@@ -924,7 +924,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   }
   if (O.headwear?.kind === 'visor') {
     const v = gen ? gen.visor : M.visor;
-    const g = buildVisor(O.headwear, v.rx, v.rz, 0, 0, p.handed === 'left', v.profile);
+    const g = buildVisor(O.headwear, v.rx, v.rz, 0, 0, p.handed === 'left', v.profile, (v as { opts?: { gap?: number; dilate?: boolean; droop?: number } }).opts);
     g.position.set(v.center[0], v.center[1], v.center[2]).sub(J[headBi]);
     bones[headBi].add(g); meshes.push(g);
   }
