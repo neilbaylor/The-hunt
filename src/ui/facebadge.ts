@@ -1,10 +1,14 @@
-// The player's live face badge: a small second camera renders just the golfer's head (render layer 5) into a
-// 128 px target every other frame; each frame that image is drawn into a circle on the main canvas where the HUD
-// badge sits (no read-back to the CPU). Under it, the swing word; beside it, a speech bubble that types out a
-// one-liner while the jaw moves. Reactions drive the generated head's expressions (smile via the golfer, the rest
-// via body.face) and a little head shake (the badge camera sways).
+// The player's live face badge: a SEPARATE instance of the generated head (genhead.ts makeBadge: the golfer's geometry
+// and textures shared, its own material, mouth and face controller), with clones of his hair and visor, alone in its
+// own little scene with its own camera and warm light rig: always front-on and level, never following the swing.
+// It is rendered into a 192 px target about every other frame (only while something moves: a blink, talking, a
+// reaction easing, a nod), and each frame that image is drawn into a circle on the main canvas where the HUD badge
+// sits (no read-back to the CPU). Its own expression state: idle blinks, reactions (grin, grimace, brows), nods and
+// tilts (headMotion), and talking in time with the speech bubble (the voice line's lip-sync when there is one, else
+// letter-timed visemes). Under it, the swing word. Without a generated head it falls back to a camera on the golfer.
 import * as THREE from 'three';
 import { speak } from '../game/voice';
+import type { FaceController } from '../golfer/genhead';
 
 export const AVATAR_LAYER = 5;
 
@@ -41,9 +45,12 @@ export class FaceBadge {
   private exT = { smile: 0, grimace: 0, browUp: 0, jawOpen: 0 };
   private hold = 0; private shake = 0;
   private typing: { text: string; i: number; acc: number } | null = null; private bubbleT = 0;
+  // the badge's own head (lazily made from the golfer's generated head)
+  private own: { scene: THREE.Scene; cam: THREE.PerspectiveCamera; pivot: THREE.Group; face: FaceController; dirty: number } | null = null;
+  private ownTried = false; private idleFrames = 0;
 
   constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, private head: () => THREE.Object3D | null,
-    private face: () => FaceLike | undefined, host: HTMLElement, name: string, _body: () => THREE.Object3D | null = () => null) {
+    private face: () => FaceLike | undefined, host: HTMLElement, name: string, private body: () => THREE.Object3D | null = () => null) {
     this.rt.texture.colorSpace = THREE.LinearSRGBColorSpace;
     this.cam.layers.set(AVATAR_LAYER);
     for (const l of [this.key, this.fill]) { l.layers.set(AVATAR_LAYER); scene.add(l, l.target); }
@@ -84,9 +91,54 @@ export class FaceBadge {
     else if (o === 'bad') { E.grimace = 0.6; }
     else if (o === 'shank') { E.grimace = 1; this.shake = 1; }
     else if (o === 'near' || o === 'holed') { E.browUp = 1; E.jawOpen = o === 'holed' ? 0.8 : 0.55; E.smile = 0.5; }
+    const text = extra ? `${pick} ${extra}` : pick;
     this.hold = 3.2;
-    this.typing = { text: extra ? `${pick} ${extra}` : pick, i: 0, acc: 0 };
+    this.typing = { text, i: 0, acc: 0 };
     this.bubble.textContent = ''; this.bubble.classList.add('on'); this.bubbleT = 0;
+    // the badge head talks with the bubble: the voice line's lip-sync (valid even when muted), else letter timing
+    // (the bubble types 35 ms a letter, so the mouth ends as the text does)
+    const f = this.ensureOwn()?.face;
+    if (f) { if (v?.line?.vis?.length) f.sayTimed(v.line.vis, v.duration, v.line.jaw, v.line.fps); else f.say(text, text.length * 35); }
+  }
+  /** say a line in the bubble with the badge head talking (no reaction face) */
+  say(text: string) {
+    this.typing = { text, i: 0, acc: 0 }; this.bubble.textContent = ''; this.bubble.classList.add('on'); this.bubbleT = 0;
+    this.ensureOwn()?.face.say(text, text.length * 35);
+  }
+
+  /** the badge's own head: built once from the golfer's generated head (null without one: the camera fallback) */
+  private ensureOwn() {
+    if (this.own || this.ownTried) return this.own;
+    const root = this.body(); if (!root) return null;
+    let src: THREE.SkinnedMesh | null = null;
+    root.traverse(o => { if (!src && o.name === 'gen-head' && (o as THREE.SkinnedMesh).userData.makeBadge) src = o as THREE.SkinnedMesh; });
+    this.ownTried = true;
+    if (!src) return null;
+    const head = src as THREE.SkinnedMesh;
+    const b = (head.userData.makeBadge as () => { group: THREE.Group; face: FaceController; eye: THREE.Vector3 })();
+    // his hair cards and visor: clones (shared geometry and materials) carried from the head bone into bind space
+    const sk = head.skeleton, hb = sk.bones.findIndex(x => x.name === 'head');
+    const bindHead = hb >= 0 ? head.bindMatrixInverse.clone().multiply(sk.boneInverses[hb].clone().invert()) : new THREE.Matrix4();
+    if (hb >= 0) for (const c of sk.bones[hb].children) if (c.name === 'gen-hair' || c.name === 'visor') {
+      const cl = c.clone(); cl.matrixAutoUpdate = false; cl.matrix.multiplyMatrices(bindHead, c.matrix); b.group.add(cl);
+    }
+    const scene = new THREE.Scene(); scene.background = this.bg;
+    // its own warm rig: a soft warm sky, a key from upper left in front, a cool-ish fill from the right, a little rim
+    scene.add(new THREE.HemisphereLight('#fff1e0', '#8a6f5a', 1.25));
+    const e = b.eye, key = new THREE.DirectionalLight('#ffe6c8', 1.9), fill = new THREE.DirectionalLight('#e8eeff', 0.55), rim = new THREE.DirectionalLight('#fff2dd', 0.6);
+    key.position.set(e.x + 0.5, e.y + 0.6, e.z + 0.9); fill.position.set(e.x - 0.7, e.y + 0.05, e.z + 0.6); rim.position.set(e.x, e.y + 0.4, e.z - 0.9);
+    for (const l of [key, fill, rim]) { l.target.position.copy(e); scene.add(l, l.target); }
+    // nods and tilts turn the head about the top of the neck (a little below and behind the ears)
+    const pv = new THREE.Vector3(e.x, e.y - 0.09, e.z - 0.05);
+    const pivot = new THREE.Group(); pivot.position.copy(pv); b.group.position.copy(pv).negate(); pivot.add(b.group); scene.add(pivot);
+    // front-on and level: from straight ahead at nose height, a long lens framing visor top to chin
+    const cam = new THREE.PerspectiveCamera(15, 1, 0.3, 3);
+    const look = new THREE.Vector3(e.x, e.y - 0.022, e.z);
+    cam.position.set(look.x, look.y + 0.01, look.z + 0.95); cam.lookAt(look);
+    b.face.setTalkScale(2);                                    // a small badge wants the mouth shapes bigger
+    b.face.setExpression({ smile: 0.4 });
+    this.own = { scene, cam, pivot, face: b.face, dirty: 2 };
+    return this.own;
   }
   /** the smile target for golfer.smileToward (the golfer drives the smile channel) */
   get smile() { return this.ex.smile; }
@@ -104,7 +156,14 @@ export class FaceBadge {
       jaw = Math.max(jaw, 0.32 * (0.5 + 0.5 * Math.sin(this.t * 19)) * (/[aeiouAEIOU!]/.test(T.text[T.i - 1] ?? '') ? 1 : 0.55));
       if (T.i >= T.text.length) { this.typing = null; this.bubbleT = 2.6; }
     } else if (this.bubbleT > 0) { this.bubbleT -= dt; if (this.bubbleT <= 0) this.bubble.classList.remove('on'); }
-    this.face()?.setExpression({ grimace: this.ex.grimace, browUp: this.ex.browUp, jawOpen: jaw });
+    const own = this.ensureOwn();
+    if (own) {
+      // the badge head's own state: rest smile + the reaction, brows, and its idle blinks and talking (genhead)
+      own.face.setExpression({ smile: 0.4 + 0.6 * this.ex.smile, grimace: this.ex.grimace, browUp: this.ex.browUp, browDown: 0.4 * this.ex.grimace, jawOpen: this.ex.jawOpen });
+      own.face.tick();
+      const m = own.face.headMotion(), sway = this.shake > 0 ? Math.sin(this.t * 22) * 0.18 * this.shake : 0;
+      own.pivot.rotation.set(m.pitch, m.yaw + sway, m.roll, 'YXZ');
+    } else this.face()?.setExpression({ grimace: this.ex.grimace, browUp: this.ex.browUp, jawOpen: jaw });
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 0.9);
   }
 
@@ -114,7 +173,19 @@ export class FaceBadge {
     const r = this.badge.getBoundingClientRect(); if (r.width < 4) return;
     const canvas = this.renderer.domElement.getBoundingClientRect();
     const R = this.renderer;
-    if ((this.frame++ & 1) === 0) {
+    const own = this.own;
+    if (own) {
+      // every other frame while something moves; when still, a refresh every ~half second (idle breathing sway)
+      const busy = own.face.busy() || this.shake > 0 || Math.abs(this.ex.smile - this.exT.smile) + Math.abs(this.ex.grimace - this.exT.grimace) + Math.abs(this.ex.browUp - this.exT.browUp) + Math.abs(this.ex.jawOpen - this.exT.jawOpen) > 0.01;
+      this.frame++;
+      if (own.dirty > 0 || (busy ? (this.frame & 1) === 0 : ++this.idleFrames >= 30)) {
+        this.idleFrames = 0; own.dirty = Math.max(0, own.dirty - 1);
+        const shadowAuto = R.shadowMap.autoUpdate; R.shadowMap.autoUpdate = false;
+        own.scene.updateMatrixWorld();
+        R.setRenderTarget(this.rt); R.clear(); R.render(own.scene, own.cam); R.setRenderTarget(null);
+        R.shadowMap.autoUpdate = shadowAuto;
+      }
+    } else if ((this.frame++ & 1) === 0) {
       const h = this.head(); if (!h) return;
       // stopgap until the separate badge head lands: the camera sits on the head bone's forward axis (the line the face
       // looks along) and takes the head's up as its own, so the head's pitch and roll cancel out in the image: front-on

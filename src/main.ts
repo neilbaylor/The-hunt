@@ -339,7 +339,7 @@ function fitCamera() {
   const { w: vw, h: vh } = viewport();
   camera.aspect = vw / vh;
   camera.fov = portrait() ? (vh / vw < 1.62 ? 56 : 52) : 42;
-  if (introLensK > 0) camera.fov += (23 - camera.fov) * introLensK;   // intro A: a long portrait lens, eased back out on the fly to the swing cam
+  if (introLensK > 0) camera.fov += (25 - camera.fov) * introLensK;   // intro A: a long portrait lens, eased back out on the fly to the swing cam
   // portrait: shift the lens so the golfer sits above the swing stick without tilting the camera
   if (portrait() && lensShift > 0.001) camera.setViewOffset(vw, vh, 0, vh * lensShift, vw, vh);
   else camera.clearViewOffset();

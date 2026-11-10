@@ -776,7 +776,7 @@ if 'jawOpen' in morph_d:
     # inner-lip strips: two rows back into the mouth from each lip edge (upper rises toward the gum, lower drops)
     chU = [int(cut[0])] + [int(v) for v in inner_v] + [int(cut[-1])]
     chL = [int(cut[0])] + [newid[int(v)] for v in inner_v] + [int(cut[-1])]
-    sx = (LV[chU, 0] - mcx) / half; taper = np.clip(1 - sx ** 2, 0, 1) ** 0.5
+    sx = (LV[chU, 0] - mcx) / half; taper = 0.3 + 0.7 * np.clip(1 - sx ** 2, 0, 1) ** 0.5   # never flat to nothing (zero-area faces get no UVs)
     newF = []
     for chain, dy, sgn in ((chU, 0.0022, 1), (chL, -0.0022, -1)):
         prev = chain
@@ -795,7 +795,6 @@ if 'jawOpen' in morph_d:
                     newF.append(tri)
             prev = ids
     STRIP_F0 = len(LF); LF = np.r_[LF, np.array(newF, np.int64)]
-    # (degenerate triangles at the corners, where the strips taper to nothing, are harmless)
     jaw_lo = np.array([morph_d['jawOpen'][newid[v]] for v in newid]).mean(0)
     jaw_chin = morph_d['jawOpen'][np.argsort(np.linalg.norm(LV - lm_f[152], axis=1))[:6]].mean(0)
     mc_c = (lm_f[13] + lm_f[14]) / 2
@@ -803,12 +802,19 @@ if 'jawOpen' in morph_d:
                  'chin': lm_f[152], 'nose': lm_f[2], 'jawLip': jaw_lo, 'jawChin': jaw_chin}
     print(f'  lips cut along a smooth curve: {len(cut)} verts ({len(inner_v)} split); jaw opens the lower lip {np.linalg.norm(jaw_lo) * 1000:.1f} mm at jawOpen 1; {len(newF)} inner-lip tris')
 # ───────────────────────── unwrap ─────────────────────────
+# zero-area faces (cut slivers) get no UVs from xatlas and would sample the texture's corner: drop them first
+_fa = np.linalg.norm(np.cross(LV[LF[:, 1]] - LV[LF[:, 0]], LV[LF[:, 2]] - LV[LF[:, 0]]), axis=1) / 2
+_keepF = _fa > 2e-11
+if STRIP_F0 is not None: STRIP_F0 = int(_keepF[:STRIP_F0].sum())
+if (~_keepF).any(): print(f'  dropped {int((~_keepF).sum())} zero-area faces before the unwrap')
+LF = LF[_keepF]
 atlas = xatlas.Atlas(); atlas.add_mesh(LV.astype(np.float32), LF.astype(np.uint32))
 co = xatlas.ChartOptions(); co.max_cost = 2.0
 po = xatlas.PackOptions(); po.resolution = A.tex; po.padding = 4; po.bilinear = True
 atlas.generate(co, po)
 vmap, UF, UV = atlas[0]
 print('atlas', atlas.width, 'x', atlas.height, len(UV), 'uv verts')
+assert len(UF) == len(LF), 'xatlas changed the face count'
 UV = UV.astype(float)
 
 # ───────────────────────── bake the colour ─────────────────────────

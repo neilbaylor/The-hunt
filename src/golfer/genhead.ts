@@ -278,7 +278,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     const rig = new THREE.Group(); rig.name = 'mouth-inside';
     const cav = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.07, 0.02, 0.02), side: THREE.BackSide }));
     cav.scale.set(w * 0.42, 0.016, 0.02); cav.position.copy(c).addScaledVector(fwd, -0.022); rig.add(cav);
-    const teethMat = new THREE.MeshStandardMaterial({ color: '#e7e1d4', roughness: 0.45 });
+    const teethMat = new THREE.MeshStandardMaterial({ color: '#cfc6b5', roughness: 0.6 });   // in the mouth's shade: never stark white
     const arc = (y0: number, h: number, back: number, span: number) => {
       // a row of teeth: a curved strip following the dental arch, facing out
       const R0 = w * 0.5, seg = 18, pos: number[] = [], idx: number[] = [];
@@ -295,7 +295,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     const lower = new THREE.Group();
     lower.add(arc(Lo.y - 0.0008, 0.0068, 0.012, 0.6));                      // lower teeth, a little further back
     const tongue = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshStandardMaterial({ color: '#a85a55', roughness: 0.5 }));
-    tongue.scale.set(w * 0.32, 0.006, 0.02); tongue.position.set(c.x, Lo.y - 0.004, c.z - 0.02); lower.add(tongue);
+    tongue.scale.set(w * 0.3, 0.005, 0.016); tongue.position.set(c.x, Lo.y - 0.005, c.z - 0.034); lower.add(tongue);   // well behind the lower teeth
     rig.add(lower);
     teethMat.side = THREE.DoubleSide;
     // into the head bone's space (as the hair cards are)

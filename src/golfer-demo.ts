@@ -135,4 +135,14 @@ if (view === 'probe') {
     return out;
   };
 }
+// ?badge: the HUD face badge (its own head instance) drawn top-left at 192 px; __badgeStep(dt) advances it a frame
+if (q.has('badge')) {
+  const { FaceBadge } = await import('./ui/facebadge');
+  const host = document.createElement('div'); host.style.cssText = 'position:fixed;left:8px;top:8px;width:192px;color:#fff;font:14px system-ui';
+  document.body.appendChild(host);
+  const fb = new FaceBadge(renderer, scene, () => golfer.body.bones[5] ?? null, () => (golfer.body as any).face, host, 'NEIL', () => golfer.char);
+  const el = host.querySelector('.face-badge') as HTMLElement; el.style.cssText = 'width:192px;height:192px;border-radius:50%';
+  (window as any).__badge = fb;
+  (window as any).__badgeStep = (dt: number) => { fb.update(dt); renderer.render(scene, cam); fb.draw(true); };
+}
 setTimeout(() => { renderer.render(scene, cam); (window as any).__ready = true; }, +(q.get('wait') ?? 2500));
