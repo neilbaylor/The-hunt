@@ -674,13 +674,13 @@ if len(morph_d) or True:
     mc_l, mc_r, up_, lo_ = lm_f[61], lm_f[291], lm_f[13], lm_f[14]
     cl = np.zeros_like(LV)
     for c_ in (mc_l, mc_r):
-        w_ = np.exp(-(np.linalg.norm((LV - c_) * [1, 1.3, 1], axis=1) / 0.011) ** 2) * (LV[:, 2] > c_[2] - 0.02)
-        cl += w_[:, None] * np.array([np.sign(c_[0] - (mc_l[0] + mc_r[0]) / 2) * 0.0015, 0.0036, 0.0])
+        w_ = np.exp(-(np.linalg.norm((LV - c_ - [0, 0.002, 0]) * [1, 1.2, 1], axis=1) / 0.014) ** 2) * (LV[:, 2] > c_[2] - 0.02)
+        cl += w_[:, None] * np.array([np.sign(c_[0] - (mc_l[0] + mc_r[0]) / 2) * 0.002, 0.005, -0.0008])   # up, out and a touch back, as the zygomaticus pulls
     morph_d['cornerLift'] = cl
     seam_y = (up_[1] + lo_[1]) / 2; half_w = abs(mc_r[0] - mc_l[0]) / 2
     ll = np.exp(-((LV[:, 0] - (mc_l[0] + mc_r[0]) / 2) / (half_w * 0.75)) ** 2 * 1.5) * np.exp(-((LV[:, 1] - (seam_y - 0.006)) / 0.006) ** 2) * (LV[:, 2] > up_[2] - 0.015)
     morph_d['unpout'] = ll[:, None] * np.array([0, 0.0008, -0.0018])
-    print('  rest-mouth morphs: corner lift 3.6 mm, lower lip in 1.8 mm')
+    print('  rest-mouth morphs: corner lift 5 mm (2 mm out), lower lip in 1.8 mm')
 # the rest face: ease the generator's grin toward a relaxed smile before anything is painted on it (the low-res mesh,
 # the hi-res surface the texture is projected onto, and the landmarks all move together)
 if A.rest == 'closed' and 'smile' in morph_d and A.rest_smile:
@@ -1536,6 +1536,18 @@ if DBG:   # the clean-up's masks painted on the texture (red: outliers, green: s
     _dm = tex.astype(np.float32) * 0.6
     _dm[..., 0] += 255 * 0.4 * _tex_map(_out); _dm[..., 1] += 255 * 0.4 * _tex_map(_skinz); _dm[..., 2] += 255 * 0.4 * _tex_map(_prot)
     Image.fromarray(np.clip(_dm, 0, 255).astype(np.uint8)).save(os.path.join(DBG, 'head_maskdbg.jpg'), quality=90)
+# the mouth corners: his photos carry a downturned shadow below and outside each corner (the 'glum' read); lighten it
+# halfway toward the cheek's skin tone
+_mar = np.zeros(len(cp))
+for _ci, _sx in ((61, -1), (291, 1)):
+    _sx = np.sign(lm_f[_ci, 0] - (lm_f[61, 0] + lm_f[291, 0]) / 2)
+    _mc = lm_f[_ci] + np.array([0.004 * _sx, -0.009, -0.002])
+    _mar = np.maximum(_mar, np.exp(-(np.linalg.norm((cp - _mc) * [1, 0.8, 1], axis=1) / 0.009) ** 2) * (cp[:, 2] > _mc[2] - 0.02))
+_mar *= (1 - _prot)
+_tf = tex.astype(np.float32); _Lm_ = _tf.mean(2)[ty, tx]
+_wm = _tex_map(np.clip((_ref * 0.97 - _Lm_) / (_ref * 0.25), 0, 1) * _mar * 0.55, 2.0)[..., None]
+_Lb2 = cv2.GaussianBlur(_tf.mean(2), (0, 0), 4); _det2 = (_tf.mean(2) / np.maximum(_Lb2, 1))[..., None]
+tex = np.clip(_tf * (1 - _wm) + np.clip(_refc[None, None] * _det2, 0, 255) * _wm, 0, 255).astype(np.uint8)
 # the inner-lip strips: wet lip colour at the lip edge, darker and redder going back into the mouth
 if STRIP_F0 is not None:
     _st = tt >= STRIP_F0
