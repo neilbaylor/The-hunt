@@ -54,7 +54,7 @@ const DELIV = K({ lift: -0.46, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSid
 const I: Keys = { lift: 0, reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.24, shift: 0.08, drop: -0.012, heel: 0.36, shrug: -0.05, pro: -0.11, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
 const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.45, hinge: -0.08, beta: 0.08, pro: -0.02 }, I);
-const THRU = K({ hipTurn: 1.25, hipTilt: 0.1, hipSide: 0.05, chestTurn: 1.35, chestTilt: 0.14, chestSide: 0.28, shift: 0.13, drop: -0.035, heel: 0.66, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
+const THRU = K({ hipTurn: 1.1, hipTilt: 0.12, hipSide: 0.05, chestTurn: 0.9, chestTilt: 0.3, chestSide: 0.32, shift: 0.13, drop: -0.035, heel: 0.66, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
 const T3Q = K({ hipTurn: 1.5, hipTilt: 0.06, hipSide: 0.02, chestTurn: 1.75, chestTilt: 0.03, chestSide: 0.2, shift: 0.16, drop: -0.04, heel: 0.82, shrug: -0.12, pro: -0.02, hinge: -0.85, beta: 0.42 }, I);
 // full finish: belt buckle and chest past the target, weight on the lead leg, upright with a slight reverse-C
 const F: Keys = { lift: 0, reach: 1, hipTurn: 1.58, hipTilt: 0.08, hipSide: 0.0, chestTurn: 1.9, chestTilt: 0.18, chestSide: 0.1, shift: 0.17, drop: -0.02, heel: 0.97, shrug: -0.12, pro: 0, hinge: -0.95, beta: 0.52 };
@@ -596,8 +596,10 @@ export class Golfer {
       p.poleR.lerp(neck.clone().add(L(...FIN.pr as [number, number, number])), finW);   // trail arm across the face, elbow forward
       this.rig.apply(p);
     }
-    for (let pass = 0; pass < 2; pass++) {
-      const miss = this.rig.wristPos.L.clone().sub(p.wristL);
+    // both hands stay on the club: if either arm can't reach its wrist target, move the club (both hands) toward
+    // that shoulder (the trail arm used to fall short of the grip in the through-swing)
+    for (let pass = 0; pass < 4; pass++) {
+      const miss = this.rig.wristPos.L.clone().sub(p.wristL).add(this.rig.wristPos.R.clone().sub(p.wristR));
       if (miss.lengthSq() < 1e-7) break;
       g.position.add(miss);
       p.wristL.add(miss); p.wristR.add(miss);
