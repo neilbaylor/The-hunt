@@ -40,7 +40,7 @@ ap.add_argument('--forehead', type=float, default=1.12, help='stretch of the bro
 ap.add_argument('--cheek-fill', type=float, default=0.0025, help='extra fullness (m) at the cheek apples')
 ap.add_argument('--hair-top', type=float, default=0.125, help='top of the hair above the eyes (m)')
 ap.add_argument('--rest', default='closed', choices=['closed', 'grin'], help='rest face: a relaxed closed-mouth smile, or the portrait\'s open grin')
-ap.add_argument('--rest-smile', type=float, default=0.0, help='smile morph baked into the rest face (the Hunyuan3D-2.1 head has a neutral mouth; the pencil-portrait head needed -0.85)')
+ap.add_argument('--rest-smile', type=float, default=0.3, help='smile morph baked into the rest face (the Hunyuan3D-2.1 head has a neutral, slightly downturned mouth: a little smile makes his relaxed rest; the pencil-portrait head needed -0.85)')
 ap.add_argument('--real-photos', default='8716142c,ee55797f,efc78715,f9637097', help='his photos the central face is projected from (name prefixes; empty = none)')
 ap.add_argument('--skin-lift', type=float, default=6.0, help='Lab L added to the real-photo face')
 ap.add_argument('--clean-weight', type=float, default=3.0, help="weight of a photo's relit copy (<photo>.clean.jpg, same geometry) in the face texture; 0 = ignore them")

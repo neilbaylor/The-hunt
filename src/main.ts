@@ -581,7 +581,7 @@ const INTRO_FLY_S = 1.9;
 const introFly = { t0: 0, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 /** intro A's camera azimuth round his head: in front of him (within ±0.8 rad of straight on, toward his lead side
  *  preferred), with the sun about 50° off the line of sight behind him for a rim light. Worked out once. */
-let introTh: number | null = null, introExp0 = -1, introSun0 = -1, sunDim = 0;
+let introTh: number | null = null, introExp0 = -1, introSun0 = -1, introEnv0 = 1, sunDim = 0;
 function introAngle() {
   if (introTh !== null) return introTh;
   const base = (golfer.lefty ? Math.PI : 0) + 0.42 * side;
@@ -766,7 +766,7 @@ function frame(now: number) {
   // the face-on swing cam has the same problem (the sun full on his front), so it dims the sun too, eased in and out
   { const want = state === 'intro' && INTRO === 'a' ? 0.6 * introLensK : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.5 : 0;
     sunDim += (want - sunDim) * (state === 'intro' ? 1 : Math.min(1, dt * 3));
-    if (range) { if (sunDim > 0.002) { if (introSun0 < 0) introSun0 = range.sun.intensity; range.sun.intensity = introSun0 * (1 - sunDim); } else if (introSun0 >= 0) { range.sun.intensity = introSun0; introSun0 = -1; } } }
+    if (range) { if (sunDim > 0.002) { if (introSun0 < 0) { introSun0 = range.sun.intensity; introEnv0 = scene.environmentIntensity; } range.sun.intensity = introSun0 * (1 - sunDim); scene.environmentIntensity = introEnv0 * (1 - 0.9 * sunDim); } else if (introSun0 >= 0) { range.sun.intensity = introSun0; scene.environmentIntensity = introEnv0; introSun0 = -1; } } }   // the sky light too: it lifted the polo to mint
   introRim.visible = state === 'intro' && INTRO === 'a';
   fill.color.set(state === 'intro' && INTRO === 'a' ? '#ffd6a0' : '#fff3e6');   // warmer key on the close-up
   if (expK < 1) { if (introExp0 < 0) introExp0 = renderer.toneMappingExposure; renderer.toneMappingExposure = introExp0 * expK; }
