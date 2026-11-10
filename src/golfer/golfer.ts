@@ -40,7 +40,7 @@ interface Keys { hipTurn: number; hipTilt: number; hipSide: number; chestTurn: n
 const K = (o: Partial<Keys>, base: Keys): Keys => ({ ...base, ...o });
 // address: spine bent toward the ball and tilted away from the target (trail shoulder low, lead hip high)
 const A: Keys = { lift: 0, reach: 1, hipTurn: 0.04, hipTilt: 0.28, hipSide: 0.07, chestTurn: 0.04, chestTilt: 0.62, chestSide: 0.2, shift: 0.012, drop: 0, heel: 0, shrug: 0, pro: 0.15, hinge: 0, beta: 0 };
-const TAKE = K({ hipTurn: -0.16, hipSide: 0.05, chestTurn: -0.7, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.32, beta: -0.12 }, A);
+const TAKE = K({ hipTurn: -0.16, hipSide: 0.05, chestTurn: -0.7, chestTilt: 0.63, chestSide: 0.18, shift: 0.004, shrug: 0.04, hinge: 0.32, beta: -0.16 }, A);
 const HALF = K({ lift: 0.06, reach: 1.06, hipTurn: -0.4, hipSide: 0.02, chestTurn: -1.15, chestTilt: 0.67, chestSide: 0.14, shift: -0.01, shrug: 0.1, pro: 0.13, hinge: 0.75, beta: -0.1 }, A);
 const B3Q = K({ lift: 0.18, reach: 1.3, hipTurn: -0.6, hipTilt: 0.26, hipSide: -0.01, chestTurn: -1.38, chestTilt: 0.69, chestSide: 0.1, shift: -0.018, shrug: 0.15, pro: 0.11, hinge: 0.95, beta: -0.28 }, A);
 const T: Keys = { lift: 0.3, reach: 1.42, hipTurn: -0.78, hipTilt: 0.25, hipSide: -0.02, chestTurn: -1.62, chestTilt: 0.69, chestSide: 0.08, shift: -0.02, drop: 0, heel: 0, shrug: 0.25, pro: 0.1, hinge: 0.98, beta: -0.32 };
@@ -257,7 +257,7 @@ export class Golfer {
   /** one hand's frame on the grip, in club space: its long axis, palm normal and wrist position */
   private gripFrame(side: 'L' | 'R', grip: THREE.Vector3) {
         const k = this.k, sd = this.club.shaftDir.clone().normalize();
-        const beta = side === 'L' ? 0.5 : 0.25, alpha = side === 'L' ? 0.8 : 0.85;   // strong grip: lead ~37° on top (2.5-3 knuckles), trail ~18° under
+        const beta = side === 'L' ? 0.65 : 0.32, alpha = side === 'L' ? 0.8 : 0.85;   // strong grip: lead ~37° on top (2.5-3 knuckles), trail ~18° under
         const palm = (side === 'L' ? new THREE.Vector3(-Math.cos(beta), 0, Math.sin(beta)) : new THREE.Vector3(Math.cos(beta), 0, -Math.sin(beta)));
         palm.addScaledVector(sd, -palm.dot(sd)).normalize();
         const under = new THREE.Vector3().crossVectors(palm, sd).normalize();
@@ -369,7 +369,7 @@ export class Golfer {
       // short finishes (punch, pitch) stop part-way along the same path and hold
       const f = Math.min(1, -phi / Math.abs(PHI_FINISH));
       keysAt(KF_FOLLOW, f * st.finish, key);
-      finW = smooth(0.3, 0.95, f) * smooth(0.45, 0.95, st.finish);
+      finW = smooth(0.36, 0.95, f) * smooth(0.45, 0.95, st.finish);
     }
     const hinge = key.hinge * hingeTop, beta = key.beta;
     // breathing and a little life at address
@@ -530,7 +530,7 @@ export class Golfer {
       // full finish target, built in the chest's frame: hands up past the lead shoulder, shaft wrapped behind the neck
       const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];
       const L = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(qChest);
-      const gripFin = neck.clone().add(L(0.07, 0.17, 0.0));   // hands just above and behind the lead ear, face clear under the arms (Rory)
+      const gripFin = neck.clone().add(L(0.07, 0.15, 0.0));   // hands just above and behind the lead ear, face clear under the arms (Rory)
       // the club wraps round: the shaft runs behind the neck about parallel to the shoulder line, the head out past the
       // trail shoulder, angled a little down and back (Rory)
       const shLine = this.rig.P[BONE.upperR].clone().sub(this.rig.P[BONE.upperL]).setY(0).normalize();
