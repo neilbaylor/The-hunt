@@ -150,10 +150,10 @@ const CSS = `
 .aim-rail button:focus-visible { outline: 3px solid #f2c21b; outline-offset: 2px; }
 .aim-rail .aim-x { display: none !important; right: max(12px, env(safe-area-inset-right)); top: calc(max(12px, env(safe-area-inset-top)) + 78px); width: 48px; height: 48px; display: grid; place-items: center; }
 .aim-rail .aim-x svg { width: 22px; height: 22px; }
-.aim-rail .aim-back { left: var(--ab-x, 50%); top: var(--ab-y, auto); bottom: var(--ab-b, calc(max(16px, env(safe-area-inset-bottom)) + 30px)); width: var(--ab-d, 200px); height: var(--ab-d, 200px); transform: translateX(-50%); border-radius: 50%; padding: 0; display: grid; place-items: center; text-align: center; font: 700 22px/1.05 'Fredoka', 'Nunito', system-ui, sans-serif; color: #13294b; background: radial-gradient(circle at 50% 38%, #ffe680, #f2c21b 70%, #d9a514); box-shadow: 0 0 0 7px #fbeccc, 0 0 0 10px #d4b064, 0 8px 22px rgba(6,20,43,.4), inset 0 2px 0 #fff6c2; }   /* same size, shape and place as the swing control it stands in for */
+.aim-rail .aim-back { left: var(--ab-x, 50%); top: var(--ab-y, auto); bottom: var(--ab-b, calc(max(16px, env(safe-area-inset-bottom)) + 30px)); width: var(--ab-d, 200px); height: var(--ab-d, 200px); transform: translateX(-50%); border-radius: 50%; padding: 0; display: grid; place-items: center; text-align: center; font: 700 22px/1.05 'Fredoka', 'Nunito', system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); background: rgba(255,210,63,.32); border: 3px solid rgba(255,230,128,.95); box-sizing: border-box; backdrop-filter: blur(1.5px); box-shadow: 0 0 18px rgba(255,210,63,.45); }   /* same size, shape and place as the swing control it stands in for */
 .aim-rail .aim-back:active { transform: translateX(-50%) scale(.96); }
 body:not(.aiming) .aim-rail button { opacity: 0; pointer-events: none; }
-body.aiming .hud .bc { opacity: 0 !important; pointer-events: none !important; transition: opacity .25s; }   /* the strike ball and club chip stay on in aim view */
+body.aiming .hud .bc { opacity: .55 !important; pointer-events: none !important; transition: opacity .25s; }   /* the swing control stays, dimmed under the Back to Swing disc; the strike ball and club chip stay on */
 /* lie and wind stay on in aim view, in their usual top-right spot */
 .aim-label { position: fixed; z-index: 29; left: 0; top: 0; pointer-events: none; transform: translate(-50%, -100%); display: flex; align-items: baseline; gap: 6px; font: 600 13px/1 'Fredoka', 'Nunito', system-ui, sans-serif; color: #fff6e2; background: rgba(20,40,75,.9); border-radius: 999px; padding: 6px 12px 7px; box-shadow: 0 0 0 2px #ffd23f, 0 4px 12px rgba(10,20,40,.35); white-space: nowrap; transition: opacity .2s; }
 .aim-label .n { font: 400 24px/0.9 'Anton', 'Barlow Condensed', sans-serif; color: #ffd23f; letter-spacing: .01em; }
@@ -244,7 +244,7 @@ export class AimController {
     const pad = (document.querySelector('.hud .pad .pad-svg') ?? document.querySelector('.hud .pad')) as HTMLElement | null, b = this.rail.querySelector('.aim-back') as HTMLElement | null;
     if (!pad || !b) return;
     const r = pad.getBoundingClientRect(); if (r.width < 10) return;
-    const d = r.width * 0.86;   // the ring (r 95 of the 200 viewBox) less our own 10 px rim
+    const d = r.width * 0.95;   // exactly the visible ring (r 95 of the 200 viewBox)
     b.style.setProperty('--ab-x', `${r.left + r.width / 2}px`); b.style.setProperty('--ab-y', `${r.top + (r.height - d) / 2}px`); b.style.setProperty('--ab-b', 'auto'); b.style.setProperty('--ab-d', `${d}px`);
   }
   open() { if (!this.enabled || this.active) return; this.placeBack(); this.active = true; this.zoom = 1; this.pan.set(0, 0, 0); document.body.classList.add('aiming'); this.tip.classList.remove('off'); setTimeout(() => this.tip.classList.add('off'), 3800); }

@@ -24,7 +24,8 @@ const QS = new URLSearchParams(location.search);
 const load = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const save = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* storage blocked */ } };
 let cleanOnly = QS.get('clean') === '1' || load('hunt.voice.clean') === '1', volume = 0.9;
-let muted = QS.get('voice') === 'off' || load('hunt.voice.muted') === '1';
+// spoken lines are OFF unless asked for (?voice=on): players keep phones silent, so the speech bubble carries the line
+let muted = QS.get('voice') !== 'on';
 /** nothing plays before the player's first touch (iOS/Android autoplay rules; and no surprise audio) */
 let unlocked = false;
 const audios = new Map<string, HTMLAudioElement>();

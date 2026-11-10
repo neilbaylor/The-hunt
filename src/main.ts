@@ -333,10 +333,13 @@ hud.onView = v => {
   camFly.t0 = last; camFly.pos.copy(camPos); camFly.look.copy(camLook); camFly.shift = lensShift; camFly.done = false; camFly.view = true;
 };
 let lensShift = 0;
+/** 1 while intro A's long lens is on, easing to 0 over the flight to the swing cam */
+let introLensK = 0;
 function fitCamera() {
   const { w: vw, h: vh } = viewport();
   camera.aspect = vw / vh;
   camera.fov = portrait() ? (vh / vw < 1.62 ? 56 : 52) : 42;
+  if (introLensK > 0) camera.fov += (26 - camera.fov) * introLensK;   // intro A: a long portrait lens, eased back out on the fly to the swing cam
   // portrait: shift the lens so the golfer sits above the swing stick without tilting the camera
   if (portrait() && lensShift > 0.001) camera.setViewOffset(vw, vh, 0, vh * lensShift, vw, vh);
   else camera.clearViewOffset();
@@ -475,6 +478,7 @@ function updateCamera(dt: number, now: number) {
     if (camMode === 'introFly') {
       // tap: orbit from the front, round his trail side, up and over to the swing cam (ease in-out, a slight rise)
       const k = Math.min(1, (now - introFly.t0) / 1000 / INTRO_FLY_S), e = k * k * k * (k * (k * 6 - 15) + 10);
+      if (introLensK > 0) { introLensK = INTRO === 'a' ? 1 - smooth(0, 0.7, e) : 0; fitCamera(); }
       const piv = golfer.ballWorld(new THREE.Vector3()).add(new THREE.Vector3(0.45 * side, 0, 0));
       const end = new THREE.Vector3(), endLook = new THREE.Vector3(); addressCam(end, endLook);
       const a0 = Math.atan2(introFly.pos.z - piv.z, introFly.pos.x - piv.x), a1 = Math.atan2(end.z - piv.z, end.x - piv.x);
@@ -601,12 +605,13 @@ function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
     // b: a wide, high golden-hour shot
     const T = now / 1000;
     const th = INTRO === 'a' ? introAngle() + 0.05 * Math.sin(T * 0.21) : (golfer.lefty ? Math.PI : 0) + 0.75 * side + 0.04 * Math.sin(T * 0.25);
-    const R = INTRO === 'a' ? 1.38 - 0.06 * Math.sin(T * 0.16) : 8.5;
+    const R = INTRO === 'a' ? 2.6 - 0.1 * Math.sin(T * 0.16) : 8.5;
     pos.set(head.x + Math.cos(th) * R, 0, head.z + Math.sin(th) * R);
     pos.y = INTRO === 'a' ? head.y - 0.08 + 0.02 * Math.sin(T * 0.27) : 2.6;
     pos.y = Math.max(pos.y, (range?.heightAt(pos.x, pos.z) ?? 0) + 1.0);
     if (INTRO === 'a') {
-      look.set(head.x, head.y - 0.13, head.z);   // a tight ¾ head and shoulders: the face in the upper half, the lockup under the chin
+      if (camMode === 'intro' && introLensK !== 1) { introLensK = 1; fitCamera(); }
+      look.set(head.x, head.y - 0.2, head.z);   // a tight ¾ head and shoulders: the face in the upper half, the lockup under the chin
       // the rim light sits behind him, opposite the camera and off to one side, a little high
       introRim.position.set(head.x - Math.cos(th + 0.6) * 4, head.y + 1.6, head.z - Math.sin(th + 0.6) * 4); introRim.target.position.copy(head); introRim.target.updateMatrixWorld();
     }
@@ -619,7 +624,7 @@ function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
   look.set(piv.x * 0.9 + head.x * 0.1, 0.62, piv.z);   // pulled back a little, aimed low: head under the title, feet above the name card
 }
 function startPlay() {
-  speak('intro');
+  speak('intro');   // silent unless ?voice=on
   if (state !== 'intro' || camMode !== 'intro') return;
   if (INTRO === 'c') document.getElementById('who')!.appendChild(faceBadge.el);   // the live face goes home to the HUD
   intro.classList.add('gone');

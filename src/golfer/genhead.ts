@@ -39,6 +39,10 @@ export interface GenHead {
   tint: THREE.Color;
   skin: { xform?: number[][]; tone?: number[] };
   face: FaceController;
+  /** a second, independent instance of this head for the HUD badge: shared geometry and textures, its own material,
+   *  mouth and face controller, posed still (bind pose) in its own group, which the caller puts in its own scene.
+   *  eye: the eye centre in that group's space (the face looks toward +z). */
+  makeBadge(): { group: THREE.Group; mesh: THREE.SkinnedMesh; face: FaceController; eye: THREE.Vector3 };
 }
 
 /** the face's clock (s): real time, or a fixed clock for frame-by-frame captures (window.__faceClock) */
@@ -71,6 +75,10 @@ export interface FaceController {
   headMotion(): { pitch: number; yaw: number; roll: number };
   /** scale the talking mouth shapes (a small HUD badge wants ~2x) */
   setTalkScale(k: number): void;
+  /** advance the face's clock-driven state (blinks, speech, springs); rendering does this too, a paused badge calls it */
+  tick(): void;
+  /** something is moving (a blink, speech, an expression easing, the eyes): a still badge needn't re-render */
+  busy(): boolean;
 }
 
 /** builds the head in the body's bind space. eye / ipd: the body's eye centre and eyeball spacing now
@@ -130,14 +138,15 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   // the same skin response as the body's skin (human.ts skinMat) so the head and neck don't differ in sheen
   // the texture carries his real (softened) shading from the photos: keep the real-time shading gentle so the two
   // don't stack into mud — matte, little sheen, a soft normal map, and a warm self-fill (below) that lifts the shadow side
-  const mat = new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.8, sheen: 0.1, sheenColor: new THREE.Color('#ff9a7a'), sheenRoughness: 0.6, specularIntensity: 0.25 });
-  // surface detail baked from the hi-res generated head (ear folds, creases, hair), a JPEG inside head.bin
+  // surface detail baked from the hi-res generated head (ear folds, creases, hair), a JPEG inside head.bin; shared by
+  // every instance of the head (the golfer's and the HUD badge's)
+  let normalTex: THREE.Texture | null = null; const wantsNormal: THREE.MeshPhysicalMaterial[] = [];
+  const giveNormal = (m: THREE.MeshPhysicalMaterial) => { m.normalMap = normalTex; m.normalScale.set(0.3, 0.3); m.needsUpdate = true; };
   if (G.arrays.normalJpg) {
     const jb = arr('normalJpg') as Uint8Array, nurl = URL.createObjectURL(new Blob([jb as BlobPart], { type: 'image/jpeg' })), nim = new Image();
-    nim.onload = () => { const nt = new THREE.Texture(nim); nt.needsUpdate = true; nt.flipY = true; nt.anisotropy = 4; mat.normalMap = nt; mat.normalScale.set(0.3, 0.3); mat.needsUpdate = true; URL.revokeObjectURL(nurl); };
+    nim.onload = () => { normalTex = new THREE.Texture(nim); normalTex.needsUpdate = true; normalTex.flipY = true; normalTex.anisotropy = 4; wantsNormal.forEach(giveNormal); URL.revokeObjectURL(nurl); };
     nim.src = nurl;
   }
-  const face = { gaze: new THREE.Vector2(), blink: { value: 0 }, gazeU: { value: new THREE.Vector2() }, fill: { value: 0.65 }, mouthOpen: { value: 0 }, teeth: { value: 0.4 } };
   // the irises cropped from the unwrap (a small PNG inside head.bin); a flat blue-grey until it decodes
   const c0 = document.createElement('canvas'); c0.width = c0.height = 2; const g0 = c0.getContext('2d')!; g0.fillStyle = '#7d97a8'; g0.fillRect(0, 0, 2, 2);
   const irisTex = new THREE.Texture(c0); irisTex.colorSpace = THREE.SRGBColorSpace; irisTex.needsUpdate = true;
@@ -150,6 +159,38 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   const scl = ((G as any).eyes?.[0]?.sclera as number[] | undefined) ?? [0.72, 0.62, 0.58];
   const sclera = new THREE.Color(scl[0] * 1.15, scl[1] * 1.15, scl[2] * 1.15).convertSRGBToLinear();
   const irisCol = new THREE.Color(irisHex);
+  const seam = { p: place(new THREE.Vector3(...(G.seam.point as [number, number, number]))), n: new THREE.Vector3(...(G.seam.normal as [number, number, number])).normalize() };
+
+  // visor fit on this head: radius round the head along the band (64 angles from the back), as build.py does
+  let zmin = 9, zmax = -9, xmin = 9, xmax = -9;
+  for (let i = 0; i < pos.length; i += 3) if (Math.abs(pos[i + 1] - visorY) < 0.006) { zmin = Math.min(zmin, pos[i + 2]); zmax = Math.max(zmax, pos[i + 2]); xmin = Math.min(xmin, pos[i]); xmax = Math.max(xmax, pos[i]); }
+  const vc = new THREE.Vector3((xmin + xmax) / 2, visorY, (zmin + zmax) / 2);
+  // the head's own cross-section along the band (its tilt: lower at the front, higher at the back), a robust outer
+  // radius per angle (90th percentile, so a stray hair spike doesn't push it out); the band then sits 4 mm off it
+  const prof: (number | null)[] = [];
+  for (let s = 0; s < 64; s++) {
+    const a = -Math.PI + (s / 64) * 2 * Math.PI, back = Math.max(0, -Math.cos(a));
+    const yb = visorY - 0.004 * (0.5 + 0.5 * Math.cos(a)) - 0.03 * back;   // the band's own tilt (backDrop below)
+    const rs: number[] = [];
+    for (let i = 0; i < pos.length; i += 3) {
+      if (Math.abs(pos[i + 1] - yb) > 0.02 * (0.55 + 0.45 * (0.5 + 0.5 * Math.cos(a)))) continue;   // the band's whole height there
+      const dx = pos[i] - vc.x, dz = pos[i + 2] - vc.z;
+      const da = Math.abs((((Math.atan2(dx, dz) - a + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI);
+      if (da < 0.06) rs.push(Math.hypot(dx, dz));
+    }
+    rs.sort((p, q) => p - q);
+    prof.push(rs.length ? rs[Math.min(rs.length - 1, Math.floor(rs.length * 0.97))] : null);
+  }
+  for (let i = 0; i < 64; i++) if (prof[i] === null) for (let j = 1; j < 64; j++) { const q = prof[(i + j) % 64]; if (q !== null) { prof[i] = q; break; } }
+  const pr = prof.map(x => x ?? 0.09);
+  const visor = { center: [vc.x, vc.y, vc.z], rx: (xmax - xmin) / 2 + 0.0115, rz: (zmax - zmin) / 2 + 0.0125, profile: pr, opts: { gap: 0.004, dilate: false, droop: 0.22, backDrop: 0.03, reach: 0.06 } };
+
+  // ── one instance of the head: its own material (own shader uniforms: gaze, blink, mouth), mouth inside and face
+  //    controller, on a skeleton (the golfer's, or a still one for the HUD badge) over the shared geometry and textures ──
+  const makeInstance = (skeleton: THREE.Skeleton, root: THREE.Object3D) => {
+  const mat = new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.8, sheen: 0.1, sheenColor: new THREE.Color('#ff9a7a'), sheenRoughness: 0.6, specularIntensity: 0.25 });
+  if (normalTex) giveNormal(mat); else wantsNormal.push(mat);
+  const face = { gaze: new THREE.Vector2(), blink: { value: 0 }, gazeU: { value: new THREE.Vector2() }, fill: { value: 0.65 }, mouthOpen: { value: 0 }, teeth: { value: 0.4 } };
   mat.onBeforeCompile = sh => {
     sh.uniforms.uGaze = face.gazeU; sh.uniforms.uBlink = face.blink;
     sh.uniforms.uIris = { value: irisCol }; sh.uniforms.uIrisTex = irisU; sh.uniforms.uSclera = { value: sclera }; sh.uniforms.uLid = { value: new THREE.Color(G.skinColor[0], G.skinColor[1], G.skinColor[2]).convertSRGBToLinear().multiplyScalar(0.85) };
@@ -263,32 +304,6 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     mouthParts = { lower, lowerBase: lower.position.clone(), jaw };   // (the rig's own space is bind space)
   }
 
-  const seam = { p: place(new THREE.Vector3(...(G.seam.point as [number, number, number]))), n: new THREE.Vector3(...(G.seam.normal as [number, number, number])).normalize() };
-
-  // visor fit on this head: radius round the head along the band (64 angles from the back), as build.py does
-  let zmin = 9, zmax = -9, xmin = 9, xmax = -9;
-  for (let i = 0; i < pos.length; i += 3) if (Math.abs(pos[i + 1] - visorY) < 0.006) { zmin = Math.min(zmin, pos[i + 2]); zmax = Math.max(zmax, pos[i + 2]); xmin = Math.min(xmin, pos[i]); xmax = Math.max(xmax, pos[i]); }
-  const vc = new THREE.Vector3((xmin + xmax) / 2, visorY, (zmin + zmax) / 2);
-  // the head's own cross-section along the band (its tilt: lower at the front, higher at the back), a robust outer
-  // radius per angle (90th percentile, so a stray hair spike doesn't push it out); the band then sits 4 mm off it
-  const prof: (number | null)[] = [];
-  for (let s = 0; s < 64; s++) {
-    const a = -Math.PI + (s / 64) * 2 * Math.PI, back = Math.max(0, -Math.cos(a));
-    const yb = visorY - 0.004 * (0.5 + 0.5 * Math.cos(a)) - 0.03 * back;   // the band's own tilt (backDrop below)
-    const rs: number[] = [];
-    for (let i = 0; i < pos.length; i += 3) {
-      if (Math.abs(pos[i + 1] - yb) > 0.02 * (0.55 + 0.45 * (0.5 + 0.5 * Math.cos(a)))) continue;   // the band's whole height there
-      const dx = pos[i] - vc.x, dz = pos[i + 2] - vc.z;
-      const da = Math.abs((((Math.atan2(dx, dz) - a + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI);
-      if (da < 0.06) rs.push(Math.hypot(dx, dz));
-    }
-    rs.sort((p, q) => p - q);
-    prof.push(rs.length ? rs[Math.min(rs.length - 1, Math.floor(rs.length * 0.97))] : null);
-  }
-  for (let i = 0; i < 64; i++) if (prof[i] === null) for (let j = 1; j < 64; j++) { const q = prof[(i + j) % 64]; if (q !== null) { prof[i] = q; break; } }
-  const pr = prof.map(x => x ?? 0.09);
-  const visor = { center: [vc.x, vc.y, vc.z], rx: (xmax - xmin) / 2 + 0.0115, rz: (zmax - zmin) / 2 + 0.0125, profile: pr, opts: { gap: 0.004, dilate: false, droop: 0.22, backDrop: 0.03, reach: 0.06 } };
-
   // ── the face's life: idle blinks every 2–6 s (~120 ms), small glances, a look-at target, expressions ──
   mesh.updateMorphTargets();
   const infl = mesh.morphTargetInfluences ?? [], dict = mesh.morphTargetDictionary ?? {};
@@ -318,8 +333,9 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   const headBone = skeleton.bones[boneNames.indexOf('head')], hbIdx = boneNames.indexOf('head');
   const eyeBind = eye.clone(), m4 = new THREE.Matrix4(), tb = new THREE.Vector3();
   const mirroredX = (G as any).mirrored ? -1 : 1;
-  mesh.onBeforeRender = () => {
-    const now = faceNow(), dt = last < 0 ? 0 : Math.max(0, Math.min(0.1, now - last)); last = now;
+  let lastChange = -9, gazeLeft = 0;
+  const tick = () => {
+    const now = faceNow(); if (now === last) return; const dt = last < 0 ? 0 : Math.max(0, Math.min(0.1, now - last)); last = now;
     // blink
     // natural blinks: every 2-6 s, sometimes twice in a row
     if (blinkT < 0 && now > nextBlink) { blinkT = 0; blinkTwice = Math.random() < 0.2; nextBlink = now + 2 + Math.random() * 4; }
@@ -344,15 +360,15 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     const k2 = 1 - Math.exp(-dt * 30);                                  // saccade: ~0.1 s
     // a big look-away gets a blink, as people do
     if (Math.abs(gx - lastGx) > 0.5 && blinkT < 0) { blinkT = 0; } lastGx = gx;
-    cur.x += (gx - cur.x) * k2; cur.y += (gy - cur.y) * k2; face.gazeU.value.copy(cur);
+    cur.x += (gx - cur.x) * k2; cur.y += (gy - cur.y) * k2; face.gazeU.value.copy(cur); gazeLeft = Math.abs(gx - cur.x) + Math.abs(gy - cur.y);
     // speech: the current viseme (eased in and out), jaw motion with it, small nods on stressed vowels
     const tgt: Partial<Record<MK, number>> = {};
     if (speech.length && now < speechEnd && now >= speechT0) {
       const st = now - speechT0; let k = 0; while (k < speech.length - 1 && speech[k + 1].t <= st) k++;
-      // (the lip split is still coarse: talking keeps the jaw drop small so the teeth don't show through a ragged gap)
+      // the lips part along a smooth cut (head.py): the jaw drops for real while talking (jawOpen 1 ≈ 9 mm at the lower lip)
       // a voice clip's loudness (when given) scales the jaw: loud syllables open wider, quiet ones barely part the lips
       const loud = jawCurve ? 0.35 + 1.0 * (jawCurve[Math.min(jawCurve.length - 1, Math.floor(st * jawFps))] ?? 0) : 1;
-      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.16, w_ * talkK * 0.25 * loud) : Math.min(1.2, w_ * talkK);
+      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.8, w_ * talkK * 0.6 * loud) : Math.min(1.2, w_ * talkK);
       nodV += ((speech[k].v === 'A' || speech[k].v === 'O' ? 0.035 : 0) - nodV) * (1 - Math.exp(-dt * 6));
     } else nodV += (0 - nodV) * (1 - Math.exp(-dt * 4));
     {
@@ -382,12 +398,13 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     face.teeth.value = Math.min(1, 0.4 + face.mouthOpen.value);
     // (the eyelid geometry from the transferred blink closes one eye more than the other: the drawn lids alone blink, evenly)
     if (dict.blink !== undefined) infl[dict.blink] = 0;
-    if (mouthParts) { const jo = expr.jawOpen + vis.jawOpen; mouthParts.lower.parent!.visible = jo > 0.22 || expr.smile > 0.85; }
+    if (mouthParts) { const jo = expr.jawOpen + vis.jawOpen; mouthParts.lower.parent!.visible = jo > 0.02 || expr.smile > 0.85 || vis.wide > 0.05; }
     if (mouthParts) mouthParts.lower.position.copy(mouthParts.lowerBase).addScaledVector(mouthParts.jaw, Math.max(0, expr.jawOpen + vis.jawOpen) + 0.25 * vis.pucker);
   };
+  mesh.onBeforeRender = tick;
   const ctl: FaceController = {
     // smile < 0 eases the portrait's own smile toward neutral
-    setExpression(e) { for (const k3 of Object.keys(e) as (keyof Expression)[]) if (e[k3] !== undefined) (expr as any)[k3] = k3 === 'blink' ? e[k3]! : Math.max(k3 === 'smile' ? -1 : 0, Math.min(1, e[k3]!)); },
+    setExpression(e) { for (const k3 of Object.keys(e) as (keyof Expression)[]) if (e[k3] !== undefined) { const v3 = k3 === 'blink' ? e[k3]! : Math.max(k3 === 'smile' ? -1 : 0, Math.min(1, e[k3]!)); if (Math.abs((expr as any)[k3] - v3) > 1e-3) lastChange = faceNow(); (expr as any)[k3] = v3; } },
     lookAt(t) { target = t ? t.clone() : null; },
     setGaze(x, y = 0) { forced = x === null ? null : new THREE.Vector2(x, y); },
     say(text, durationMs) {
@@ -409,8 +426,23 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     nod() { return nodV; },
     headMotion() { return { pitch: hm.p, yaw: hm.y, roll: hm.r }; },
     setTalkScale(k) { talkK = k; },
+    tick() { tick(); },
+    busy() { const now = faceNow(); return blinkT >= 0 || (blinkT < -0.01 && blinkT > -0.5) || now < speechEnd + 0.3 || now - lastChange < 0.8 || gazeLeft > 0.01; },
   };
-  return { mesh, seam, visor, tint: new THREE.Color(G.skinTint[0], G.skinTint[1], G.skinTint[2]), skin: { xform: G.skinXform, tone: G.seamTone }, face: ctl };
+  return { mesh, face: ctl };
+  };
+  const main = makeInstance(skeleton, root);
+  const eyeBindPos = eye.clone();
+  const makeBadge = () => {
+    // a still skeleton (every bone at the origin, identity inverses): the head sits in its bind pose, in the group's space
+    const group = new THREE.Group(); group.name = 'badge-head';
+    const bones = boneNames.map(n => { const b = new THREE.Bone(); b.name = n; group.add(b); return b; });
+    group.updateMatrixWorld(true);
+    const inst = makeInstance(new THREE.Skeleton(bones), group);
+    return { group, mesh: inst.mesh, face: inst.face, eye: eyeBindPos.clone() };
+  };
+  main.mesh.userData.makeBadge = makeBadge;
+  return { mesh: main.mesh, seam, visor, tint: new THREE.Color(G.skinTint[0], G.skinTint[1], G.skinTint[2]), skin: { xform: G.skinXform, tone: G.seamTone }, face: main.face, makeBadge };
 }
 
 /** discard the MakeHuman skin above the seam (face, scalp, ears), keeping the neck and everything below.
