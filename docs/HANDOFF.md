@@ -110,3 +110,71 @@ Playful, not corporate, and minimal data (details behind a "Shot details" sheet)
   - a mouth interior (teeth, tongue, cavity) so the open mouth and grin look right;
   - about 6 visemes plus `face.say(text)` lip-flap synced to the HUD speech bubble;
   - a full grin with teeth and eye squint.
+
+## State at handoff (session 1 end)
+The container restarted and stopped all agents mid-round; their committed work is on main. Playable link republished (version 9).
+
+**Swing: done**
+- traced van Zyl and Rose timing and elbow poles;
+- delivery slot (trail elbow in front of the hip, heel lift);
+- Rory-style stacked finish;
+- driver/3W/7i/wedge setup and tee;
+- lead foot flared about 29°;
+- fingers hooking across the grip.
+
+**Swing: in progress when stopped** (swing agent round "s13"; screenshots only in a lost scratchpad):
+- finish club wrap parallel to the shoulders and hands higher behind the lead ear;
+- stronger glove-hand grip;
+- clubface square at delivery;
+- hands round 2 (thumbs, rest curl, visual check);
+- steady-head assertions;
+- release visibility;
+- Rory face-on fusion (tools/refs/swing/rory_faceon_slowmo.mp4);
+- Sadlowski driver views;
+- the intro pose and step-in API (the HUD waits on it), with the idle waggle.
+
+**Face: done**
+- the multi-view shape fit to the real photos;
+- the real-photo texture;
+- mostly-unlit shading;
+- visor height and the preloaded logo;
+- the rest smile (1.0);
+- the receding hairline.
+
+**Face: next** — ears (clean geometry), the profile fit, then the talk-ready mouth, visemes and `say()`.
+
+**Clothes: done** — shorts rise; belt; the tucked shirt.
+
+**Clothes: next**
+- the shirt rebuilt as a fitted polo (it reads as an inflated sack);
+- no shorts pocket bulge;
+- elbow and knee correctives rendered;
+- shoes against FootJoy.
+
+**UI: done**
+- tap-to-aim;
+- the camera variants (orbit, freeze, cut, low);
+- the stacked face badge;
+- swing words;
+- the editorial number;
+- the compact lie chip with a % range;
+- the bottom-right club chip;
+- the preview tracer;
+- the power target plus the full mark;
+- aim clamped to the reachable range;
+- the spin control in the stick's place.
+
+**UI: next**
+- the yellow, thicker preview tracer, depth-tested behind the golfer;
+- bigger strike ball and club chip (about 80 px);
+- club chip colour options (yellow, green, cream, gold; NOT navy) for the owner to pick;
+- the face badge always showing the face (the 8-state check);
+- the remaining storyboard renders.
+
+**Course: next**
+- the bag still reads tall and thin (widen it about 30%, base and legs on the ground);
+- softer trees;
+- the golden-hour colour match against tools/refs/course;
+- the med perf budget.
+
+**Style:** default = "soft"/polished (subtle). Options via `?style=`; the owner hasn't picked.
