@@ -1304,39 +1304,34 @@ soft = cv2.GaussianBlur(tex.astype(np.float32), (0, 0), 2.2) * 0.85 + np.array(s
 tex = np.clip(tex * (1 - 0.7 * Mb) + soft * 0.7 * Mb, 0, 255).astype(np.uint8)
 # the nose wings: the photos bake a dark blotch along each alar crease (it read as a second nostril on one side).
 # Lift texels darker than the wing's own skin to a soft, subtle crease; the nostril openings themselves stay dark.
-_texF = tex.astype(np.float32); _texL = _texF.mean(2)[ty, tx]
-# his nose base is drawn from the photos better on one side (the side away from the selfie light): on the other
-# side, a texel darker than its mirror image on the good side (same place on the face) is lifted to the mirror's
-# lightness, keeping its own hue. Exactly two nostrils, where the good side has its one; a soft alar crease kept.
+# ── the nose: the photos draw one side of it cleanly and the other with a red, mottled band down its wall and dark
+#    blotches round the wing (the selfie's own shadow side). The bad side takes the mirror image of the good side's
+#    colour (same place on the face, across the midline) wherever the two differ: exactly two nostrils, where the
+#    good side has its one, and an even tone down both walls of the nose. ──
+_texF = tex.astype(np.float32); _texC = _texF[ty, tx]
 _cx = float(np.median(lm_f[[1, 2, 4, 5, 6, 168, 164, 0], 0]))
-_alaL, _alaR = lm_f[[129, 64, 48, 102, 98]].mean(0), lm_f[[358, 294, 278, 331, 327]].mean(0)
-_reg = lambda P, ac: np.clip(1 - (np.linalg.norm((P - ac) * [0.8, 1, 0.6], axis=1) - 0.012) / 0.006, 0, 1) * (P[:, 2] > lm_f[2, 2] - 0.035)
-_nb_y0, _nb_y1 = lm_f[2, 1] - 0.008, lm_f[2, 1] + 0.016
-_nb = lambda P: (P[:, 1] > _nb_y0) & (P[:, 1] < _nb_y1) & (P[:, 2] > lm_f[2, 2] - 0.035)
-_lumL = [np.median(_texL[_nb(cp) & (_reg(cp, ac) > 0.5)]) for ac in (_alaL, _alaR)]
-# the bad side: the one with more dark texels round its wing (relative to its own ring of skin)
-_dark = [float(((_texL < 0.55 * np.percentile(_texL[_nb(cp) & (_reg(cp, ac) > 0.5)], 75)) & _nb(cp) & (_reg(cp, ac) > 0.5)).sum()) for ac in (_alaL, _alaR)]
-_sgn = {'+': 1.0, '-': -1.0}.get(A.nose_mirror, 0.0); _bad = int(np.sign(_alaR[0] - _cx) == _sgn)
-print(f'  nose base: dark texels by side {_dark}, fixing side {_bad} (x {"+" if _sgn > 0 else "-"})')
-_good = np.nonzero(_nb(cp) & ((cp[:, 0] - _cx) * _sgn < 0) & (w_face > 0.1))[0]
-_sel = np.nonzero(_nb(cp) & ((cp[:, 0] - _cx) * _sgn > 0.0005))[0]
-_mir = cp[_sel].copy(); _mir[:, 0] = 2 * _cx - _mir[:, 0]
-_dm, _im = cKDTree(cp[_good]).query(_mir, k=6)
-_Lm = _texL[_good][_im].mean(1)
-_w = np.clip(((cp[_sel, 0] - _cx) * _sgn - 0.0005) / 0.002, 0, 1) * np.clip(1 - (_dm[:, 0] - 0.0015) / 0.002, 0, 1)
-_w *= np.clip(1 - (np.abs(cp[_sel, 1] - (_nb_y0 + _nb_y1) / 2) - 0.008) / 0.004, 0, 1)
-# lifted toward the mirror everywhere; inside the nostril zone (under the nose, round where the good side's nostril
-# lands) also darkened toward it, so this side gets its one nostril where the other side has its own
-_nosA, _nosB = lm_f[[79, 166, 60, 75, 20, 238]].mean(0), lm_f[[309, 392, 290, 305, 250, 458]].mean(0)
-_nosG = _nosA if (_nosA[0] - _cx) * _sgn < 0 else _nosB                  # the good side's nostril
-_nz = np.clip(1 - (np.linalg.norm((_mir - _nosG) * [1, 1.4, 0.8], axis=1) - 0.004) / 0.002, 0, 1)
-_gain = np.clip(_Lm * 0.95 / np.maximum(_texL[_sel], 1), 1, 4) * (1 - _nz) + np.clip(_Lm / np.maximum(_texL[_sel], 1), 0.3, 4) * _nz
-_ala_f = np.zeros(len(cp)); _ala_f[_sel] = (_gain - 1) * _w * (_sgn != 0)
-print(f'  nose base: {int(((_gain > 1.15) & (_w > 0.5)).sum())} texels lifted toward the mirrored side')
-Mn = np.zeros((T, T), np.float32); Mn[ty, tx] = _ala_f; Mn = cv2.GaussianBlur(Mn, (0, 0), 1.0)[..., None]
-tex = np.clip(_texF * (1 + Mn), 0, 255)
-Mn2 = np.clip(Mn * 2, 0, 1)
-tex = np.clip(tex * (1 - Mn2) + cv2.GaussianBlur(tex, (0, 0), 1.2) * Mn2, 0, 255).astype(np.uint8)
+_sgn = {'+': 1.0, '-': -1.0}.get(A.nose_mirror, 0.0)
+if _sgn:
+    _y0, _y1 = lm_f[2, 1] - 0.008, min(lm_f[133, 1], lm_f[362, 1]) - 0.003
+    _ty = np.clip((cp[:, 1] - _y0) / (_y1 - _y0), 0, 1)
+    _xmax = 0.021 - 0.009 * _ty                                         # wide at the wings, narrowing up the wall
+    _xr = (cp[:, 0] - _cx) * _sgn
+    _zone = (cp[:, 1] > _y0) & (cp[:, 1] < _y1) & (cp[:, 2] > lm_f[2, 2] - 0.035)
+    _good = np.nonzero(_zone & (_xr < 0) & (_xr > -0.026))[0]
+    _sel = np.nonzero(_zone & (_xr > 0.0003) & (_xr < _xmax + 0.003))[0]
+    _mir = cp[_sel].copy(); _mir[:, 0] = 2 * _cx - _mir[:, 0]
+    _dm, _im = cKDTree(cp[_good]).query(_mir, k=8)
+    _wq = 1 / (_dm + 2e-4); _wq /= _wq.sum(1, keepdims=True)
+    _cm = (_texC[_good][_im] * _wq[..., None]).sum(1)
+    _w = np.clip((_xr[_sel] - 0.0003) / 0.002, 0, 1) * np.clip((_xmax[_sel] + 0.003 - _xr[_sel]) / 0.003, 0, 1)
+    _w *= np.clip(1 - (_dm[:, 0] - 0.0015) / 0.002, 0, 1)             # only where the mirror point lies on the surface
+    _w *= np.clip((cp[_sel, 1] - _y0) / 0.003, 0, 1) * np.clip((_y1 - cp[_sel, 1]) / 0.004, 0, 1)
+    _diff = np.linalg.norm(_texC[_sel] - _cm, axis=1)
+    _w *= np.clip((_diff - 10) / 14, 0, 1)
+    _wm = np.zeros((T, T), np.float32); _wm[ty[_sel], tx[_sel]] = _w; _wm = cv2.GaussianBlur(_wm, (0, 0), 1.5)[..., None]
+    _cmi = _texF.copy(); _cmi[ty[_sel], tx[_sel]] = _cm
+    tex = np.clip(_texF * (1 - _wm) + _cmi * _wm, 0, 255).astype(np.uint8)
+    print(f'  nose: {int((_w > 0.5).sum())} texels on the x{"+" if _sgn > 0 else "-"} side repainted from the mirrored side')
 # ── systematic clean-up of the photo-built face: dark outliers (the selfies' shadows and compression blotches) are
 #    found against a local median and inpainted toward the surrounding skin, outside protected features (nostrils,
 #    eye openings and lash lines, the lip line, the brow hair). Then the brows: a clean band of brow hair with soft
