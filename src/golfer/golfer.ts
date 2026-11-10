@@ -104,7 +104,7 @@ const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.38, 0.5]), pl: _
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
 const TRAIL_W = +(_fq?.get('tw') ?? 0);
 const ARC12 = _fv('a12', [-0.5, -0.68, 0.6]), ARC33 = _fv('a33', [-0.5, -0.28, 0.83]), ARC55 = _fv('a55', [0.05, 0.5, 0.8]);
-const GRIP_B = _fv('gb', [0.65, 0.32]);
+const GRIP_B = _fv('gb', [0.85, 0.55]);
 const LEAN = 0.075;             // shaft lean at impact, radians (hands ~6 cm ahead of the ball)
 
 export class Golfer {
@@ -694,7 +694,9 @@ export class Golfer {
             const rv = d.clone().addScaledVector(axisD, -along), rl = rv.length(), radial = rv.normalize();
             // aim the segment's end onto the grip surface: as far down the grip as its length allows
             const rT = s === 'L' ? rFinger - 0.002 : rFinger, len = segs[si].length();
-            const down = Math.sqrt(Math.max(0, len * len - (rl - rT) * (rl - rT)));
+            // (never straight in at the shaft: when the thumb's base is too far out to lay the segment on the grip, it
+            // still heads mostly down the grip, closing on it, so the thumb never pokes out sideways)
+            const down = Math.max(Math.sqrt(Math.max(0, len * len - (rl - rT) * (rl - rT))), Math.abs(rl - rT) * 1.6);
             const target = axisP.clone().addScaledVector(axisD, along - down).addScaledVector(radial, rT);
             const segW = segs[si].clone().applyQuaternion(qPrev).normalize();
             const q = new THREE.Quaternion().setFromUnitVectors(segW, target.sub(P).normalize()).multiply(qPrev);
