@@ -603,9 +603,9 @@ function frame(now: number) {
     // the stick's power target: the pull that carries the aim distance (full swings map the pull onto 60–100% of carry)
     const M = SHOT_MODES[hud.mode], max = M.max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].pct / 100, pw = aim.distanceYds / Math.max(1, max);
     const f = hud.mode === 'full' ? (pw - FULL_MIN) / (1 - FULL_MIN) : pw;
-    hud.setPowerTarget(f >= 0.97 ? null : clamp(f, 0, 1), aim.distanceYds);   // the aim is clamped to the reachable band, so f is always valid
+    hud.setPowerTarget(aim.distanceYds >= max - 1 ? null : clamp(f, 0, 1), aim.distanceYds, '', max);   // the aim is clamped to the reachable band, so f is always valid
   } else {
-    hud.setPowerTarget(null, 0);
+    hud.setPowerTarget(null, 0, '', 0);
     if (state === 'flight') hud.edLive(Math.hypot(ball.pos.x - ball.start.x, ball.pos.z - ball.start.z) / YD);
   }
   aimCtl.setEnabled(state === 'ready');

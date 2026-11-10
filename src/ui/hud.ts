@@ -165,6 +165,7 @@ export function padSVG(skin: Skin) {
     <path d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="rgba(6,20,43,.45)" stroke-width="15" stroke-linecap="round"/>
     <path class="power-arc" d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="url(#${id}p)" stroke-width="15" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
     ${beads}
+    <g class="pfull"><line class="pf-ring" x1="${(Math.cos(112*Math.PI/180)*70).toFixed(1)}" y1="${(Math.sin(112*Math.PI/180)*70).toFixed(1)}" x2="${(Math.cos(112*Math.PI/180)*92).toFixed(1)}" y2="${(Math.sin(112*Math.PI/180)*92).toFixed(1)}" stroke="#fffaf0" stroke-width="4" stroke-linecap="round"/><g class="pf-lab" transform="translate(${(Math.cos(112*Math.PI/180)*60).toFixed(1)} ${(Math.sin(112*Math.PI/180)*60 - 4).toFixed(1)})"><rect x="-16" y="-9" width="32" height="18" rx="9" fill="#fffaf0" stroke="#13294b" stroke-width="1.2"/><text y="4.5" text-anchor="middle">165</text></g></g>
     <g class="ptarget" visibility="hidden"><line class="pt-ring" stroke="#ff4fa3" stroke-width="5" stroke-linecap="round"/><line class="pt-track" x1="-21" x2="21" stroke="#ff4fa3" stroke-width="4" stroke-linecap="round"/><g class="pt-lab"><rect x="-17" y="-9" width="34" height="18" rx="9" fill="#ff4fa3" stroke="#fff" stroke-width="1.5"/><text y="4.5" text-anchor="middle">150</text></g></g>
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="url(#${id}g)"/>
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="3"/>
@@ -551,19 +552,23 @@ export class Hud {
   private padTop = false; private padStruck = false;
   /** the pull that carries the ball to the aim distance (0..1), or null at full; hint when even a full swing's minimum is too far */
   private pTarget: number | null = null; private pOn = false;
-  setPowerTarget(f: number | null, yds: number, hint = '') {
-    const key = `${f === null ? 'x' : f.toFixed(3)}|${Math.round(yds)}|${hint}`;
+  setPowerTarget(f: number | null, yds: number, hint = '', fullYds = yds) {
+    const key = `${f === null ? 'x' : f.toFixed(3)}|${Math.round(yds)}|${hint}|${Math.round(fullYds)}`;
     if ((this as any)._ptk === key) return; (this as any)._ptk = key;
     this.pTarget = f;
     const svg = this.pad.querySelector('svg'), g = svg?.querySelector<SVGGElement>('.ptarget'); if (!svg || !g) return;
     g.setAttribute('visibility', f === null ? 'hidden' : 'visible');
+    // the full-power mark always shows the club's full yardage; it's the target itself when aiming full
+    const pf = svg.querySelector<SVGGElement>('.pfull');
+    if (pf) { pf.querySelector('text')!.textContent = String(Math.round(fullYds)); pf.classList.toggle('target', f === null); pf.setAttribute('visibility', fullYds > 0 ? 'visible' : 'hidden'); }
     this.el.querySelector('#padHint')?.remove();
     if (hint) this.q('.br').insertAdjacentHTML('beforeend', `<div class="pad-hint" id="padHint">${hint}</div>`);
     if (f === null) return;
     const a = ((262 - 150 * f) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
     const L = g.querySelector('.pt-ring')!; L.setAttribute('x1', (c * 70).toFixed(1)); L.setAttribute('y1', (sn * 70).toFixed(1)); L.setAttribute('x2', (c * 92).toFixed(1)); L.setAttribute('y2', (sn * 92).toFixed(1));
     const T = g.querySelector('.pt-track')!, ty = (f * 80).toFixed(1); T.setAttribute('y1', ty); T.setAttribute('y2', ty);
-    g.querySelector('.pt-lab')!.setAttribute('transform', `translate(${(c * 64 - 6).toFixed(1)} ${(sn * 64).toFixed(1)})`);
+    const lr = f > 0.8 ? 46 : 64;   // close to the full mark: tuck this label inward so the two don't overlap
+    g.querySelector('.pt-lab')!.setAttribute('transform', `translate(${(c * lr - 6).toFixed(1)} ${(sn * lr).toFixed(1)})`);
     g.querySelector('text')!.textContent = String(Math.round(yds));
   }
   setPad(pt: [number, number], trailB: [number, number][], trailD: [number, number][], atTop: boolean) {
@@ -583,7 +588,7 @@ export class Hud {
       svg.querySelectorAll<SVGGElement>('.bead').forEach(b => b.classList.toggle('lit', f >= +b.dataset.f! - 0.02));
       svg.classList.toggle('maxed', f >= 0.98);
       // on the aim distance's pull: a glow and a tick
-      const on = this.pTarget !== null && trailB.length > 1 && Math.abs(f - this.pTarget) <= 0.03;
+      const on = trailB.length > 1 && Math.abs(f - (this.pTarget ?? 1)) <= 0.03;   // aiming full: the full mark is the target
       svg.classList.toggle('on-target', on); if (on && !this.pOn) buzz(10); this.pOn = on;
       (svg as unknown as HTMLElement).style.setProperty('--pull', f.toFixed(3));   // the dial swells as you pull
       if (atTop && !this.padTop) buzz(12);

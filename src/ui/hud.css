@@ -634,3 +634,10 @@ body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-orig
 .hud .strike-btn::before, .hud .club-dock .club-btn::before { content: ""; position: absolute; inset: -6px; }
 .hud .club-dock .club-btn { position: relative; }
 .hud.skin-f .strike-btn:active, .hud.skin-f .club-dock .club-btn:active { transform: scale(.9); transition: transform .08s; }
+
+/* the full-power mark: neutral cream, or the accent when it is the target (aiming full) */
+.pad-f .pfull text { font: 700 10px 'Fredoka', sans-serif; fill: #13294b; }
+.pad-f .pfull.target line { stroke: #ff4fa3; }
+.pad-f .pfull.target rect { fill: #ff4fa3; stroke: #fff; }
+.pad-f .pfull.target text { fill: #fff; }
+.pad-f.on-target .pfull.target line { stroke: #5ff0a0; } .pad-f.on-target .pfull.target rect { fill: #17a558; }
