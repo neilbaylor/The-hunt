@@ -99,7 +99,7 @@ scene.add(fill, fill.target);
 // ── HUD + sound ──
 const hud = new Hud(document.body, profile);
 hud.onSpinTick = lvl => sound.whirr(lvl);
-{ const c = QS.get('chip') ?? QS.get('coin'); if (c && /^[abcd]$/.test(c)) document.body.dataset.coin = c; }   // club chip colourway try-outs: ?chip=a|b|c|d (navy until the owner picks)
+{ const c = QS.get('chip') ?? QS.get('coin') ?? 'd'; if (/^[abcd]$/.test(c)) document.body.dataset.coin = c; }   // club chip colourway: gold (d) is the owner's pick; ?chip=a|b|c|d to compare, ?chip=navy for the old one
 hud.el.classList.add('hidden');
 const sound = new Sound();
 hud.club = 6; hud.mode = 'full'; hud.lie = 0; hud.render(null);

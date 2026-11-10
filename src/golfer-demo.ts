@@ -76,9 +76,9 @@ else if (view === 'gripfront' || view === 'gripeye' || view === 'gripdtl') {
   const gt = golfer.club.gripTrail.clone().applyQuaternion(golfer.club.group.quaternion).add(golfer.club.group.position);
   const mid = g.clone().lerp(gt, 0.5);
   // eye view: a third of the way from the eyes to the hands, clear of the hair when the head is turned
-  const eye = view === 'gripeye' ? golfer.rig.eyePosition(new THREE.Vector3()).lerp(mid, 0.05) : view === 'gripdtl' ? mid.clone().add(new THREE.Vector3(-0.42, 0.06, 0.06)) : mid.clone().add(new THREE.Vector3(0.05, 0.22, 1.0));
+  const eye = view === 'gripeye' ? golfer.rig.eyePosition(new THREE.Vector3()).lerp(mid, 0.35).add(new THREE.Vector3(0, 0.02, 0.07)) : view === 'gripdtl' ? mid.clone().add(new THREE.Vector3(-0.42, 0.06, 0.06)) : mid.clone().add(new THREE.Vector3(0.05, 0.22, 1.0));
   const pw = golfer.char.localToWorld(eye.clone()), tw = golfer.char.localToWorld(mid.clone());
-  cam.fov = view === 'gripeye' ? 16 : 17; cam.updateProjectionMatrix(); cam.position.copy(pw); cam.lookAt(tw);
+  cam.fov = view === 'gripeye' ? 24 : 17; cam.updateProjectionMatrix(); cam.position.copy(pw); cam.lookAt(tw);
 }
 else if (view === 'finishfront') {
   // in front of the finished chest (the Rory finish photo's camera): along the chest's facing, at chest height

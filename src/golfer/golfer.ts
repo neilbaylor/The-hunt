@@ -105,6 +105,7 @@ const FIN = { g: _fv('fg', [0.16, 0.27, -0.1]), s: _fv('fs', [0.38, 0.5]), pl: _
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
 const TRAIL_W = +(_fq?.get('tw') ?? 0);
 const ARC12 = _fv('a12', [-0.5, -0.68, 0.6]), ARC33 = _fv('a33', [-0.5, -0.28, 0.83]), ARC55 = _fv('a55', [0.05, 0.5, 0.8]);
+const GRIP_A = _fv('ga', [0.8, 0.85]);
 const GRIP_B = _fv('gb', [0.85, 0.55]);
 const LEAN = 0.075;             // shaft lean at impact, radians (hands ~6 cm ahead of the ball)
 
@@ -278,7 +279,7 @@ export class Golfer {
   /** one hand's frame on the grip, in club space: its long axis, palm normal and wrist position */
   private gripFrame(side: 'L' | 'R', grip: THREE.Vector3) {
         const k = this.k, sd = this.club.shaftDir.clone().normalize();
-        const beta = side === 'L' ? GRIP_B[0] : GRIP_B[1], alpha = side === 'L' ? 0.8 : 0.85;   // strong grip: lead ~37° on top (2.5-3 knuckles), trail ~18° under
+        const beta = side === 'L' ? GRIP_B[0] : GRIP_B[1], alpha = side === 'L' ? GRIP_A[0] : GRIP_A[1];   // strong grip: lead ~37° on top (2.5-3 knuckles), trail ~18° under
         const palm = (side === 'L' ? new THREE.Vector3(-Math.cos(beta), 0, Math.sin(beta)) : new THREE.Vector3(Math.cos(beta), 0, -Math.sin(beta)));
         palm.addScaledVector(sd, -palm.dot(sd)).normalize();
         const under = new THREE.Vector3().crossVectors(palm, sd).normalize();
