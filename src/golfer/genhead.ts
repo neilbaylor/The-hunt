@@ -283,7 +283,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     cur.x += (gx - cur.x) * k2; cur.y += (gy - cur.y) * k2; face.gazeU.value.copy(cur);
     // speech: the current viseme (eased in and out), jaw motion with it, small nods on stressed vowels
     const tgt: Partial<Record<MK, number>> = {};
-    if (now < speechEnd) {
+    if (speech.length && now < speechEnd && now >= speechT0) {
       const st = now - speechT0; let k = 0; while (k < speech.length - 1 && speech[k + 1].t <= st) k++;
       for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = w_;
       nodV += ((speech[k].v === 'A' || speech[k].v === 'O' ? 0.035 : 0) - nodV) * (1 - Math.exp(-dt * 6));
