@@ -217,7 +217,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
   }
   const eyeL = M.eyeballs.l.c, eyeR = M.eyeballs.r.c;
-  const gen = genOn ? buildGenHead(data.head!, M.bones, skeleton, root, new THREE.Vector3(...(M.eye as [number, number, number])), Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1], eyeL[2] - eyeR[2]), M.visor.center[1] - 0.01, p.look.eyes) : null;
+  const gen = genOn ? buildGenHead(data.head!, M.bones, skeleton, root, new THREE.Vector3(...(M.eye as [number, number, number])), Math.hypot(eyeL[0] - eyeR[0], eyeL[1] - eyeR[1], eyeL[2] - eyeR[2]), M.visor.center[1], p.look.eyes) : null;
   if (gen) { hideAboveSeam(skinMat, gen.seam, gen.skin); skinMat.color.copy(gen.tint); meshes.push(gen.mesh); }
   // strand-level hair on the generated head (cards rooted on its scalp, flattened under the visor band)
   const genHair = gen ? buildHairCards(gen, { color: p.look.hair, eye: new THREE.Vector3(...(M.eye as [number, number, number])), band: O.headwear ? { y: gen.visor.center[1] } : undefined }) : null;
@@ -949,7 +949,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     if (teeth?.morphTargetInfluences) teeth.morphTargetInfluences[0] = v;
     smileAmt.value = Math.min(1, Math.max(0, (v - 0.15) * 1.3));
     if (teeth) teeth.visible = v > 0.08 && !M.paintedMouth && !gen; // closed mouth: keep teeth from showing through the lips
-    gen?.face.setExpression({ smile: 0.5 + Math.max(0, v0 - 0.25) / 0.75 * 0.5 });   // a relaxed, pleasant rest smile (lips closed); more on top
+    gen?.face.setExpression({ smile: 0.7 + Math.max(0, v0 - 0.25) / 0.75 * 0.3 });   // a relaxed, pleasant rest smile (lips closed); more on top
   };
   // with the generated head: its own hair, eyes and teeth replace the MakeHuman scalp shell, hair cards, eyeballs and teeth
   if (gen) root.traverse(o => { if (['hair', 'hair-shell', 'eye', 'teeth'].includes(o.name)) o.visible = false; });

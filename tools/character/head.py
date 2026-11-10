@@ -924,6 +924,10 @@ if REAL and 'mv_cams' in globals():
             dlab = np.median(rgb2lab(rc[cheeks_]), 0) - np.median(rgb2lab(col[sides_]), 0)
             col = lab2rgb(rgb2lab(col) + dlab * (1 - m_)[:, None])
             print('  sides shifted onto the real skin by Lab', dlab.round(1))
+        # the selfies' mouth corners sit in shadow and read as a frown: lift them toward the cheek tone
+        for ci_ in (61, 291):
+            wc_ = np.exp(-(np.linalg.norm(cp - lm_f[ci_], axis=1) / 0.007) ** 2) * m_
+            rc = rc * (1 - 0.5 * wc_[:, None]) + np.median(rc[cheeks_], 0) * 0.5 * wc_[:, None]
         col = col * (1 - m_[:, None]) + rc * m_[:, None]
         conf = np.maximum(conf, m_)
         real_ok = True

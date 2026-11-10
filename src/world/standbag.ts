@@ -87,9 +87,10 @@ export function createStandBag(): THREE.Mesh {
   // on the side away from the legs, black padding underneath ──
   for (const k of [0, 1]) {
     const side = -1, off = k * 0.06 - 0.03;
-    const pts = [new THREE.Vector3(side * 0.12, H - 0.04, -0.06 + off), new THREE.Vector3(side * 0.24, H - 0.14, -0.08 + off), new THREE.Vector3(side * 0.28, H - 0.3, -0.06 + off), new THREE.Vector3(side * 0.24, SPLIT + 0.02, -0.03 + off), new THREE.Vector3(side * 0.15, SPLIT - 0.06, -0.02 + off)];
+    // hugging the body: a strap, not a handle
+    const pts = [new THREE.Vector3(side * 0.13, H - 0.04, -0.02 + off), new THREE.Vector3(side * 0.2, H - 0.14, -0.01 + off), new THREE.Vector3(side * 0.225, H - 0.3, 0.0 + off), new THREE.Vector3(side * 0.2, SPLIT + 0.02, 0.01 + off), new THREE.Vector3(side * 0.16, SPLIT - 0.06, 0.01 + off)];
     const curve = new THREE.CatmullRomCurve3(pts);
-    const pad = new THREE.TubeGeometry(curve, 20, 0.026, 8, false);
+    const pad = new THREE.TubeGeometry(curve, 20, 0.022, 8, false);
     parts.push(colored(pad, C.white));
     const under = new THREE.CatmullRomCurve3(curve.getPoints(20).slice(3, 17).map(p => p.clone().add(new THREE.Vector3(-side * 0.018, 0, 0))));
     parts.push(colored(new THREE.TubeGeometry(under, 14, 0.02, 6, false), C.black));

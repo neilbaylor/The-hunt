@@ -29,13 +29,13 @@ export class AimPreview {
         void main(){
           float a = smoothstep(0.0, 0.08, vS) * (1.0 - smoothstep(0.8, 1.0, vS)) * 0.55 + 0.12 * smoothstep(0.0, 0.03, vS);
           float p = exp(-pow((fract(vS - t * 0.35) - 0.5) * 9.0, 2.0)) * 0.45;
-          gl_FragColor = vec4(mix(vec3(0.72, 0.93, 1.0), vec3(1.0), p), (a + p * a) * op);
+          gl_FragColor = vec4(mix(vec3(1.0, 0.80, 0.18), vec3(1.0, 0.95, 0.65), p), (a + p * a) * op * 0.7);   // warm tracer yellow, translucent next to the real one
         }`,
       transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     });
     // drawn before the other transparent things (hair cards, visor) so the golfer always hides it
     this.mesh = new THREE.Mesh(this.geo, this.mat); this.mesh.frustumCulled = false; this.mesh.renderOrder = -5; this.mesh.visible = false;
-    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 48), new THREE.MeshBasicMaterial({ color: '#cdf2ff', transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 48), new THREE.MeshBasicMaterial({ color: '#ffd23f', transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
     this.ring.rotation.x = -Math.PI / 2; this.ring.visible = false; this.ring.renderOrder = 6;
     scene.add(this.mesh, this.ring);
     this.tag = document.createElement('div'); this.tag.className = 'aim-preview-tag'; this.tag.hidden = true;
@@ -63,7 +63,7 @@ export class AimPreview {
       tg.subVectors(this.pts[Math.min(n - 1, i + 1)], this.pts[Math.max(0, i - 1)]).normalize();
       v.subVectors(p, cp); const d = v.length(); v.multiplyScalar(1 / d);
       const lift = Math.min(1, Math.max(0, (p.y - this.pts[0].y) / 18));   // a touch bolder as it climbs, so it reads in the sky
-      sd.crossVectors(tg, v).normalize().multiplyScalar(Math.max(0.012, d * 0.0021) * (1 + 0.9 * lift));
+      sd.crossVectors(tg, v).normalize().multiplyScalar(Math.max(0.02, d * 0.0036) * (1 + 0.7 * lift));
       this.pos.set([p.x + sd.x, p.y + sd.y, p.z + sd.z, p.x - sd.x, p.y - sd.y, p.z - sd.z], i * 6);
       this.along[i * 2] = this.along[i * 2 + 1] = acc[i] / Math.max(1e-3, total);
     }
