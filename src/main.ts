@@ -12,6 +12,7 @@ import { CLUB_SPECS } from './golfer/club';
 import { Ball, BALL, WIND } from './game/ball';
 import { planShot, LIES, YD, type ShotPlan } from './game/shot';
 import { Tracer } from './game/tracer';
+import { AimPreview } from './game/preview';
 import { ShotCam, isLongShot, pickVariant, type ShotCamCtx } from './game/shotcam';
 import { Sound } from './game/audio';
 import { Hud, viewport, type CardData } from './ui/hud';
@@ -364,6 +365,26 @@ const turf = (() => {
   };
 })();
 
+// the aim preview: a pure strike's flight in still air for the current club, mode, aim, curve and strike point
+const preview = new AimPreview(scene);
+function updatePreview() {
+  const strikePt = (hud as unknown as { strike?: { x: number; y: number } }).strike ?? { x: 0, y: 0 };
+  const key = [hud.club, hud.mode, hud.lie, aim.dir.toFixed(3), aim.distanceYds.toFixed(1), aim.curve.toFixed(2), strikePt.x.toFixed(2), strikePt.y.toFixed(2)].join('|');
+  if (key === previewKey) return; previewKey = key;
+  const M = SHOT_MODES[hud.mode], max = M.max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].pct / 100, pw = aim.distanceYds / Math.max(1, max);
+  const power = clamp(hud.mode === 'full' ? (pw - FULL_MIN) / (1 - FULL_MIN) : pw, 0.05, 1);
+  const P = planShot({ power, offMs: 0, pushMs: 200, angle: 0, drift: 0, released: false, strike: strikePt, aim: { curve: aim.curve, loft: aim.loft } }, hud.club, hud.mode, LIES[hud.lie], golfer.lefty);
+  P.launch.azimuth += aim.dir;
+  const w = WIND.clone(); WIND.set(0, 0, 0);
+  const b = new Ball(range); b.tee(golfer.ballWorld()); b.hit(P.launch);
+  const pts = [b.pos.clone()];
+  for (let i = 0; i < 120 * 14 && b.phase === 'flight'; i++) { b.step(1 / 120); if (i % 3 === 0) pts.push(b.pos.clone()); }
+  pts.push(b.pos.clone());
+  WIND.copy(w);
+  preview.set(key, pts, b.carry() / YD);
+}
+let previewKey = '';
+
 // the flown path, for the Shot details sketch
 const shotPath: THREE.Vector3[] = [new THREE.Vector3()];
 let shotLand = -1;
@@ -588,7 +609,7 @@ function frame(now: number) {
     if (state === 'flight') hud.edLive(Math.hypot(ball.pos.x - ball.start.x, ball.pos.z - ball.start.z) / YD);
   }
   aimCtl.setEnabled(state === 'ready');
-  aimCtl.update(dt, state === 'ready' || state === 'swinging');
+  aimCtl.update(dt, false);   // the swing view uses the flight preview instead of the ground arrow
 
   // swing pad
   if (SW.active || SW.trailB.length) hud.setPad(SW.active ? SW.last : [0, 0], SW.trailB, SW.trailD, SW.active && SW.phase === 'back' && G.arrived !== null && SW.depth > 12);
@@ -652,6 +673,8 @@ function frame(now: number) {
   updateCamera(simDt, now);
   { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? 2.4 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   tracer.update(camera, state === 'ready' ? 0.6 : 1);
+  if (state === 'ready' && !SW.active) updatePreview();
+  preview.update(dt, camera, renderer.domElement, state === 'ready' && !SW.active && !aimCtl.active && camMode === 'address');
   focus.copy(state === 'flight' || state === 'result' ? ball.pos : golfer.ballWorld(tmp));
   updateWind(now);
   range?.setWind(WIND); // the flags stream with the ball's wind (a light breeze when there is none)

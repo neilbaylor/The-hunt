@@ -148,7 +148,7 @@ export class AimController {
   private guide = new Ribbon(80, GOLD, { dash: 1.1, fadeStart: 10, fadeEnd: 34, opacity: 0.8 });
   private marker = makeRing();
   private aimLine = new Ribbon(80, GOLD, { opacity: 0.95 });
-  private pathLine = new Ribbon(96, CYAN, { opacity: 0.95, edge: new THREE.Color('#0b3a52') });
+  private pathLine = new Ribbon(96, new THREE.Color('#bfefff'), { opacity: 0.85 });   // same soft glow as the swing-view flight preview
   private ring = makeRing();
   private handle = makeHandle();
   private windArrow = makeWindArrow();
