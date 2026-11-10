@@ -94,11 +94,17 @@ export class AimPreview {
     this.mesh.visible = this.visible; this.ring.visible = this.visible && flat < 0.5; this.tag.hidden = !this.visible || flat > 0.05;
     if (!this.visible) return;
     this.t += dt; this.mat.uniforms.t.value = this.t;
-    const n = this.pts.length, cp = cam.position, tg = new THREE.Vector3(), v = new THREE.Vector3(), sd = new THREE.Vector3();
+    let n = this.pts.length; const cp = cam.position, tg = new THREE.Vector3(), v = new THREE.Vector3(), sd = new THREE.Vector3();
     // world size of one CSS pixel at unit distance, so the ribbon keeps a constant screen width (core + glow)
     const pc = cam as THREE.PerspectiveCamera, ch = Math.max(1, canvas.clientHeight || canvas.getBoundingClientRect().height);
     const pxAt1 = pc.isPerspectiveCamera ? 2 * Math.tan(THREE.MathUtils.degToRad(pc.fov / 2)) / ch / (pc.view?.enabled ? pc.view.height / pc.view.fullHeight : 1) : 0.002;
     const P = this.pts.map(p => flat <= 0 ? p : p.clone().setY(p.y + (this.ground(p.x, p.z) + 0.12 - p.y) * flat));
+    // a camera beside the flight (the face-on swing cam): the path runs past and behind the lens, so it stops ~2 m short
+    // of the camera plane (the fade at its end takes it out softly) instead of smearing across the screen
+    const fw = cam.getWorldDirection(new THREE.Vector3());
+    let cut = P.length; for (let i = 1; i < P.length; i++) if (v.subVectors(P[i], cp).dot(fw) < 2.2) { cut = i; break; }
+    if (cut < P.length) P.length = Math.max(2, cut);
+    n = P.length;
     let total = 0; const acc = [0]; for (let i = 1; i < n; i++) { total += P[i].distanceTo(P[i - 1]); acc.push(total); }
     const halfPx = HALF_PX * (1 + 0.25 * flat);   // a touch bolder from overhead
     for (let i = 0; i < n; i++) {
@@ -112,7 +118,7 @@ export class AimPreview {
     (this.geo.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
     (this.geo.getAttribute('s') as THREE.BufferAttribute).needsUpdate = true;
     this.geo.setDrawRange(0, (n - 1) * 6);
-    const L = this.pts[n - 1], dl = cp.distanceTo(L);
+    const L = this.pts[this.pts.length - 1], dl = cp.distanceTo(L);
     this.ring.scale.setScalar(Math.max(0.8, dl * 0.02));
     // the yardage tag above the landing spot
     const q = L.clone().add(new THREE.Vector3(0, 1.2 + dl * 0.012, 0)).project(cam), r = canvas.getBoundingClientRect();

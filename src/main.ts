@@ -757,14 +757,14 @@ function frame(now: number) {
   hud.tickSpin(dt, state === 'flight' && ball.phase === 'flight');
 
   updateCamera(simDt, now);
-  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 0.55 : 2.4) : swingView === 'front' && camMode === 'address' ? 0.7 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
+  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 0.35 : 2.4) : swingView === 'front' && camMode === 'address' ? 0.7 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   // the sunlit side of him (intro A, the face-on swing cam) sits a touch lower in exposure so the cream visor and skin keep detail
-  const expK = state === 'intro' && INTRO === 'a' ? 0.97 : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.95 : 1;
+  const expK = state === 'intro' && INTRO === 'a' ? 0.92 : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.95 : 1;
   post.setBloomScale(expK < 1 ? 0.2 : 1);
   // intro A: the low sun hit his front full on and lifted the forest-green polo to mint; on the close-up it's dimmed so
   // he reads in the same soft light as the swing view (warm fill on the face, rim from behind), restored on the tap
   // the face-on swing cam has the same problem (the sun full on his front), so it dims the sun too, eased in and out
-  { const want = state === 'intro' && INTRO === 'a' ? 0.6 * introLensK : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.5 : 0;
+  { const want = state === 'intro' && INTRO === 'a' ? 0.75 * introLensK : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.6 : 0;
     sunDim += (want - sunDim) * (state === 'intro' ? 1 : Math.min(1, dt * 3));
     if (range) { if (sunDim > 0.002) { if (introSun0 < 0) { introSun0 = range.sun.intensity; introEnv0 = scene.environmentIntensity; } range.sun.intensity = introSun0 * (1 - sunDim); scene.environmentIntensity = introEnv0 * (1 - 0.9 * sunDim); } else if (introSun0 >= 0) { range.sun.intensity = introSun0; scene.environmentIntensity = introEnv0; introSun0 = -1; } } }   // the sky light too: it lifted the polo to mint
   introRim.visible = state === 'intro' && INTRO === 'a';
