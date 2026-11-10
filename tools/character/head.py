@@ -40,7 +40,7 @@ ap.add_argument('--forehead', type=float, default=1.12, help='stretch of the bro
 ap.add_argument('--cheek-fill', type=float, default=0.0025, help='extra fullness (m) at the cheek apples')
 ap.add_argument('--hair-top', type=float, default=0.125, help='top of the hair above the eyes (m)')
 ap.add_argument('--rest', default='closed', choices=['closed', 'grin'], help='rest face: a relaxed closed-mouth smile, or the portrait\'s open grin')
-ap.add_argument('--rest-smile', type=float, default=0.3, help='smile morph baked into the rest face (the Hunyuan3D-2.1 head has a neutral, slightly downturned mouth: a little smile makes his relaxed rest; the pencil-portrait head needed -0.85)')
+ap.add_argument('--rest-smile', type=float, default=0.5, help='smile morph baked into the rest face (the Hunyuan3D-2.1 head has a neutral, slightly downturned mouth: a little smile makes his relaxed rest; the pencil-portrait head needed -0.85)')
 ap.add_argument('--real-photos', default='8716142c,ee55797f,efc78715,f9637097', help='his photos the central face is projected from (name prefixes; empty = none)')
 ap.add_argument('--skin-lift', type=float, default=6.0, help='Lab L added to the real-photo face')
 ap.add_argument('--clean-weight', type=float, default=3.0, help="weight of a photo's relit copy (<photo>.clean.jpg, same geometry) in the face texture; 0 = ignore them")
@@ -675,12 +675,12 @@ if len(morph_d) or True:
     cl = np.zeros_like(LV)
     for c_ in (mc_l, mc_r):
         w_ = np.exp(-(np.linalg.norm((LV - c_) * [1, 1.3, 1], axis=1) / 0.011) ** 2) * (LV[:, 2] > c_[2] - 0.02)
-        cl += w_[:, None] * np.array([np.sign(c_[0] - (mc_l[0] + mc_r[0]) / 2) * 0.0012, 0.0028, 0.0])
+        cl += w_[:, None] * np.array([np.sign(c_[0] - (mc_l[0] + mc_r[0]) / 2) * 0.0015, 0.0036, 0.0])
     morph_d['cornerLift'] = cl
     seam_y = (up_[1] + lo_[1]) / 2; half_w = abs(mc_r[0] - mc_l[0]) / 2
     ll = np.exp(-((LV[:, 0] - (mc_l[0] + mc_r[0]) / 2) / (half_w * 0.75)) ** 2 * 1.5) * np.exp(-((LV[:, 1] - (seam_y - 0.006)) / 0.006) ** 2) * (LV[:, 2] > up_[2] - 0.015)
     morph_d['unpout'] = ll[:, None] * np.array([0, 0.0008, -0.0018])
-    print('  rest-mouth morphs: corner lift 2.8 mm, lower lip in 1.8 mm')
+    print('  rest-mouth morphs: corner lift 3.6 mm, lower lip in 1.8 mm')
 # the rest face: ease the generator's grin toward a relaxed smile before anything is painted on it (the low-res mesh,
 # the hi-res surface the texture is projected onto, and the landmarks all move together)
 if A.rest == 'closed' and 'smile' in morph_d and A.rest_smile:

@@ -44,9 +44,13 @@ export interface Range {
   readonly sunDirection: THREE.Vector3;
   /** the haze/horizon colour (linear) for the current time of day */
   readonly hazeColor: THREE.Color;
+  /** the golfer's environment map: the scene's sky light without the sun's glow (see applyTime) */
+  readonly avatarEnv: THREE.Texture;
 }
 
 export const YD = 0.9144;
+/** the golfer's env map caps the sky's luminance here (linear), which cuts off the glow round the sun */
+const AVATAR_ENV_CAP = 20;
 /** how much the range draws: 'low' for weak phones (coarser terrain, fewer blades and trees, smaller shadow map) */
 export type Detail = 'low' | 'med' | 'high';
 export interface RangeOptions { detail?: Detail }
@@ -1303,7 +1307,7 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
   const sc = sun.shadow.camera;
   sc.near = 1; sc.far = 420;
   scene.add(sun, sun.target);
-  let envRT: THREE.WebGLRenderTarget | null = null;
+  let envRT: THREE.WebGLRenderTarget | null = null, avatarRT: THREE.WebGLRenderTarget | null = null;
   // things that depend on the sun (baked tree shadows) register here
   const sunListeners: (() => void)[] = [];
   const treeUniforms = { uSunView: { value: new THREE.Vector3() }, uSunCol: { value: new THREE.Color() }, uTrans: { value: 1 }, uTime: { value: 0 }, uWindS: { value: 0.35 } };
@@ -1322,7 +1326,6 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
     const eu = envSky.material.uniforms;
     for (const k of Object.keys(P.sky) as (keyof TimePreset['sky'])[]) eu[k].value = P.sky[k];
     eu.sunPosition.value.copy(sunDir); eu.showSunDisc.value = 0; eu.cloudCoverage.value = P.clouds; eu.cloudDensity.value = 0.42;
-    { const cap = +(new URLSearchParams(location.search).get('envcap') ?? 0); if (cap > 0) envSky.material.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('gl_FragColor = vec4( texColor, 1.0 );', `{ float l = dot(texColor, vec3(0.2126, 0.7152, 0.0722)); texColor *= min(1.0, ${cap.toFixed(4)} / max(l, 1e-5)); } gl_FragColor = vec4( texColor, 1.0 );`); }; }   // DEBUG
     envScene.add(envSky);
     const groundDome = new THREE.Mesh(new THREE.SphereGeometry(900, 24, 12, 0, Math.PI * 2, Math.PI / 2 + 0.02, Math.PI / 2), new THREE.MeshBasicMaterial({ color: lin(P.groundBounce), side: THREE.BackSide }));
     envScene.add(groundDome);
@@ -1331,6 +1334,21 @@ export function createRange(renderer: THREE.WebGLRenderer, scene: THREE.Scene, o
     envRT?.dispose(); envRT = rt;
     scene.environment = rt.texture;
     scene.environmentIntensity = P.envI;
+    // the golfer's own environment: the same sky with the sun's glow capped. The sky's Mie lobe round the low sun is
+    // ~1000x brighter than the rest of it (the disc is off but the glow is not), so in the scene env it acts as a
+    // second, cyan-white sun: facing it, his front took ~30x the sky light his side does and ~100x his back, which
+    // lifted the polo to mint and the khaki to pale yellow in the face-on and intro views. The directional sun
+    // already lights him from there, so his env keeps the sky but not the lobe.
+    const cap = AVATAR_ENV_CAP.toFixed(3);
+    envSky.material.onBeforeCompile = sh => {
+      sh.fragmentShader = sh.fragmentShader.replace('gl_FragColor = vec4( texColor, 1.0 );',
+        `texColor *= min(1.0, ${cap} / max(dot(texColor, vec3(0.2126, 0.7152, 0.0722)), 1e-5));\n gl_FragColor = vec4( texColor, 1.0 );`);
+    };
+    envSky.material.needsUpdate = true;
+    const pmrem2 = new THREE.PMREMGenerator(renderer);
+    const rt2 = pmrem2.fromScene(envScene, 0.02, 0.1, 5000);
+    avatarRT?.dispose(); avatarRT = rt2;
+    pmrem2.dispose();
     pmrem.dispose();
     envSky.geometry.dispose(); envSky.material.dispose(); groundDome.geometry.dispose(); (groundDome.material as THREE.Material).dispose();
     fogColor.copy(lin(P.fog));
@@ -2002,6 +2020,7 @@ gl_Position = projectionMatrix * mvPosition;`);
     get timeOfDay() { return tod; },
     get sunDirection() { return sunDir; },
     get hazeColor() { return fogColor; },
+    get avatarEnv() { return avatarRT!.texture; },
     setTimeOfDay(t) { if (t !== tod) applyTime(t); },
     get featured() { return FEAT.on > 0.5 ? featTarget : null; },
     get detail() { return detail; },

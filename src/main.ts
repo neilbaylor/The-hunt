@@ -763,10 +763,17 @@ function frame(now: number) {
   post.setBloomScale(expK < 1 ? 0.2 : 1);
   // intro A: the low sun hit his front full on and lifted the forest-green polo to mint; on the close-up it's dimmed so
   // he reads in the same soft light as the swing view (warm fill on the face, rim from behind), restored on the tap
-  // the face-on swing cam has the same problem (the sun full on his front), so it dims the sun too, eased in and out
-  { const want = state === 'intro' && INTRO === 'a' ? 0.75 * introLensK : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.6 : 0;
+  // the face-on swing cam has the sun full on his front too, so it dims the sun a little, eased in and out (the
+  // main cause of the mint wash was the sky's sun glow in his env map; see range.avatarEnv, applied below)
+  { const want = state === 'intro' && INTRO === 'a' ? 0.75 * introLensK : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.3 : 0;
     sunDim += (want - sunDim) * (state === 'intro' ? 1 : Math.min(1, dt * 3));
     if (range) { if (sunDim > 0.002) { if (introSun0 < 0) { introSun0 = range.sun.intensity; introEnv0 = scene.environmentIntensity; } range.sun.intensity = introSun0 * (1 - sunDim); scene.environmentIntensity = introEnv0 * (1 - 0.9 * sunDim); } else if (introSun0 >= 0) { range.sun.intensity = introSun0; scene.environmentIntensity = introEnv0; introSun0 = -1; } } }   // the sky light too: it lifted the polo to mint
+  // the golfer's sky light comes from his own env map (range.avatarEnv: the sky without the sun's glow), following the
+  // scene's env intensity; metals (the club) keep the scene's env for their glints
+  if (range) { const env = range.avatarEnv, k = scene.environmentIntensity;
+    golfer.root.traverse(o => { const ms = (o as THREE.Mesh).isMesh ? (o as THREE.Mesh).material : null; if (!ms) return;
+      for (const m of Array.isArray(ms) ? ms : [ms]) if ((m as THREE.MeshStandardMaterial).isMeshStandardMaterial && (m as THREE.MeshStandardMaterial).metalness < 0.5) {
+        const sm = m as THREE.MeshStandardMaterial; if (sm.envMap !== env) { sm.envMap = env; sm.needsUpdate = true; } sm.envMapIntensity = k; } }); }
   introRim.visible = state === 'intro' && INTRO === 'a';
   fill.color.set(state === 'intro' && INTRO === 'a' ? '#ffd6a0' : '#fff3e6');   // warmer key on the close-up
   if (expK < 1) { if (introExp0 < 0) introExp0 = renderer.toneMappingExposure; renderer.toneMappingExposure = introExp0 * expK; }
