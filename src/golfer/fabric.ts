@@ -43,6 +43,10 @@ const BODY: Record<FabricKind, string> = {
     h += 0.0007 * gather * (0.5 + 0.5 * sin(ang * 13.0 + 3.0 * fbm3(vB * 7.0)));
     float torso = smoothstep(uBeltY + 0.05, uBeltY + 0.15, vB.y) * (1.0 - smoothstep(uBeltY + 0.35, uBeltY + 0.45, vB.y));
     h += 0.0003 * torso * (0.5 + 0.5 * sin((vB.y + 0.7 * abs(vB.x)) * 38.0 + 2.5 * fbm3(vB * 5.0)));
+    // the swing's twist pulls diagonal tension folds from the hip to the opposite shoulder, front and back
+    float twA = min(1.0, abs(uTwist) / 0.7), twM = torso * (1.0 - smoothstep(0.13, 0.18, abs(vB.x)));
+    float dg = vB.y + 0.9 * sign(uTwist) * vB.x * (vB.z > uBackZ ? 1.0 : -1.0);
+    h += 0.003 * twA * twM * smoothstep(0.3, 1.0, 0.5 + 0.5 * sin(dg * 70.0 + 2.2 * fbm3(vB * 6.0)));
     // embroidered crest on the chest (planar projection from the front)
     vec2 cuv = vec2((vB.x - uCrestC.x) / uCrestS + 0.5, (vB.y - uCrestC.y) / abs(uCrestS) * 1.2 + 0.5);
     float inC = step(uCrestC.z - 0.03, vB.z) * step(0.0, cuv.x) * step(cuv.x, 1.0) * step(0.0, cuv.y) * step(cuv.y, 1.0);
@@ -135,7 +139,8 @@ const BODY: Record<FabricKind, string> = {
 export interface FabricUniforms { kneeY: number; ankleY: number; beltY: number; backZ: number;
   /** skin only: a second face texture blended in by smile amount */ smile?: { map: THREE.Texture; amount: { value: number } };
   /** chest crest: texture, centre (bind space), size (m), mirror for left-handers */ crest?: { tex: THREE.Texture; c: THREE.Vector3; size: number; flip: boolean };
-  tipping?: THREE.Color }
+  tipping?: THREE.Color;
+  /** polo only: the torso's twist (pelvis to chest, radians), for diagonal tension folds */ twist?: { value: number } }
 
 export function applyFabric(mat: THREE.MeshPhysicalMaterial | THREE.MeshStandardMaterial, kind: FabricKind, u: FabricUniforms, bumpScale = 1) {
   mat.onBeforeCompile = sh => {
@@ -143,12 +148,12 @@ export function applyFabric(mat: THREE.MeshPhysicalMaterial | THREE.MeshStandard
     sh.uniforms.uBeltY = { value: u.beltY }; sh.uniforms.uBackZ = { value: u.backZ };
     sh.uniforms.uCrest = { value: u.crest?.tex ?? null }; sh.uniforms.uCrestC = { value: u.crest?.c ?? new THREE.Vector3(0, -9, 0) };
     sh.uniforms.uSmileMap = { value: u.smile?.map ?? null }; sh.uniforms.uSmileAmt = u.smile?.amount ?? { value: 0 };
-    sh.uniforms.uCrestS = { value: u.crest ? u.crest.size * (u.crest.flip ? -1 : 1) : 1 }; sh.uniforms.uTip = { value: u.tipping ?? new THREE.Color('#ffffff') };
+    sh.uniforms.uCrestS = { value: u.crest ? u.crest.size * (u.crest.flip ? -1 : 1) : 1 }; sh.uniforms.uTip = { value: u.tipping ?? new THREE.Color('#ffffff') }; sh.uniforms.uTwist = u.twist ?? { value: 0 };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 cloth;\nvarying vec3 vB;\nvarying vec4 vC;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvB = position; vC = cloth;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vB;\nvarying vec4 vC;\nuniform float uKneeY, uAnkleY, uBeltY, uBackZ;\nuniform sampler2D uCrest; uniform vec3 uCrestC; uniform float uCrestS; uniform vec3 uTip; uniform sampler2D uSmileMap; uniform float uSmileAmt;\n${NOISE}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vB;\nvarying vec4 vC;\nuniform float uKneeY, uAnkleY, uBeltY, uBackZ;\nuniform sampler2D uCrest; uniform vec3 uCrestC; uniform float uCrestS; uniform vec3 uTip; uniform sampler2D uSmileMap; uniform float uSmileAmt; uniform float uTwist;\n${NOISE}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         ${kind === 'skin' && u.smile ? '#ifdef USE_MAP\n diffuseColor.rgb = mix(diffuseColor.rgb, texture2D(uSmileMap, vMapUv).rgb, uSmileAmt);\n#endif' : ''}
         float h = 0.0; vec3 col = diffuseColor.rgb;

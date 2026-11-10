@@ -225,6 +225,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   // strand-level hair on the generated head (cards rooted on its scalp, flattened under the visor band)
   const genHair = gen ? buildHairCards(gen, { color: p.look.hair, eye: new THREE.Vector3(...(M.eye as [number, number, number])), band: O.headwear ? { y: gen.visor.center[1] } : undefined }) : null;
   if (genHair) { const hb = M.bones.indexOf('head'); genHair.geometry.translate(-J[hb].x, -J[hb].y, -J[hb].z); bones[hb].add(genHair); meshes.push(genHair); }
+  const shirtTwist = { value: 0 };
   const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
     // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
@@ -260,9 +261,14 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const chest = J[M.bones.indexOf('spine_02')];
     const side = p.handed === 'left' ? -1 : 1;
     const cz = M.collar.reduce((a, c) => Math.max(a, c[2]), -9) - 0.01;
-    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.088, M.collar.reduce((a, c) => (c[2] > a[2] ? c : a))[1] - 0.092, cz)   /* as on the shirt: ~9 cm out, its foot level with the foot of the placket */ : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.04 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
+    applyFabric(shirtMat, 'polo', { ...fu, twist: shirtTwist, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.088, M.collar.reduce((a, c) => (c[2] > a[2] ? c : a))[1] - 0.092, cz)   /* as on the shirt: ~9 cm out, its foot level with the foot of the placket */ : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.04 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
   }
   const shirtMesh = add('shirt', shirtMat);
+  // the torso's twist (chest against pelvis, about the spine), for the polo's diagonal tension folds
+  if (shirtMesh) {
+    const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), pel = bones[M.bones.indexOf('pelvis')], chest = bones[M.bones.indexOf('spine_02')];
+    shirtMesh.onBeforeRender = () => { pel.getWorldQuaternion(qa); chest.getWorldQuaternion(qb); qa.invert().multiply(qb); shirtTwist.value = 2 * Math.atan2(qa.y, qa.w); };
+  }
   // the shells are split along their UV seams; average the normals across those splits so the fabric shades
   // smoothly (otherwise every seam shows as a hard line)
   const weldNormals = (m: THREE.Mesh | null) => {
