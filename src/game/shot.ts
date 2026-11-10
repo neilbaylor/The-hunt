@@ -85,7 +85,9 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   // a full swing always goes a decent way: the stick's travel maps onto 60–100% of the club's full carry
   // (shorter shots are what punch, pitch and flop are for)
   const pw = mode === 'full' ? FULL_MIN + (1 - FULL_MIN) * clamp(r.power, 0, 1) : clamp(r.power, 0.05, 1);
-  const liePct = r.rollLie ? lie.lo + Math.random() * (lie.hi - lie.lo) : lie.pct;
+  // planning (aim, preview tracer, power target) uses the top of the lie's range; a real strike rolls within it,
+  // so a poor lie can only come up short of the plan
+  const liePct = r.rollLie ? lie.lo + Math.random() * (lie.hi - lie.lo) : lie.hi;
   let carry = MODES[mode].max(id) * pw * liePct / 100 * (1 - 0.12 * clamp(eP, 0, 1));
   carry *= 1 - Math.random() * 0.09 * e;
   // launch and spin by mode

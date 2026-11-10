@@ -99,7 +99,7 @@ scene.add(fill, fill.target);
 // ── HUD + sound ──
 const hud = new Hud(document.body, profile);
 hud.onSpinTick = lvl => sound.whirr(lvl);
-{ const c = QS.get('chip') ?? QS.get('coin') ?? 'd'; if (/^[abcd]$/.test(c)) document.body.dataset.coin = c; }   // club chip colourway: gold (d) is the owner's pick; ?chip=a|b|c|d to compare, ?chip=navy for the old one
+{ const c = QS.get('chip') ?? QS.get('coin') ?? 'c'; if (/^[abcd]$/.test(c)) document.body.dataset.coin = c; }   // club chip colourway: cream + ring (c) is the owner's pick; ?chip=a|b|c|d to compare, ?chip=navy for the old one
 hud.el.classList.add('hidden');
 const sound = new Sound();
 hud.club = 6; hud.mode = 'full'; hud.lie = 0; hud.render(null);
@@ -113,7 +113,7 @@ const aimCtl = new AimController({
   scene, camera, canvas: renderer.domElement, range, lefty: golfer.lefty,
   ballPos: () => golfer.ballWorld(new THREE.Vector3()),
   // the reachable band for the club and shot type: a full swing goes 60-100% of the club's carry; the other modes 30-100% of their own max
-  carry: () => { const full = Math.round(SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].pct / 100);   // the lie takes its share (rough 70–85% → the middle)
+  carry: () => { const full = Math.round(SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].hi / 100);   // the reach is the lie's best case (rough 70–85% → 85%); a strike rolls within the range
     return { full, min: Math.max(5, Math.round(full * (hud.mode === 'full' ? FULL_MIN : 0.3))), max: full }; },
   // the golfer turns to face the aim line (he stands round the ball, which sits at the origin)
   onChange: () => { golfer.root.rotation.y = -aim.dir; golfer.root.updateMatrixWorld(true); if (state === 'ready') teeUp(); },
@@ -121,7 +121,7 @@ const aimCtl = new AimController({
 });
 hud.onLie = () => { sound.ui(); teeUp(); aimCtl.clubChanged(); };   // a new lie changes the reach: re-aim at its full distance
 // ?lie=3 or ?lie=rough: start on that sample lie (HUD checks)
-{ const l = QS.get('lie'); if (l) { const i = /^\d+$/.test(l) ? +l : LIES.findIndex(x => x.name.toLowerCase().replace(/\s+/g, '').startsWith(l.toLowerCase())); if (i >= 0 && i < LIES.length) { hud.lie = i; hud.render(null); aim.distanceYds = Math.round(SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id) * LIES[i].pct / 100); } } }
+{ const l = QS.get('lie'); if (l) { const i = /^\d+$/.test(l) ? +l : LIES.findIndex(x => x.name.toLowerCase().replace(/\s+/g, '').startsWith(l.toLowerCase())); if (i >= 0 && i < LIES.length) { hud.lie = i; hud.render(null); aim.distanceYds = Math.round(SHOT_MODES[hud.mode].max(CLUB_SPECS[hud.club].id) * LIES[i].hi / 100); } } }
 
 function teeUp() {
   // off the tee box: driver teed high (ball's equator at the top of the face, ~3.7 cm of tee showing),
@@ -377,7 +377,7 @@ function updatePreview() {
   const strikePt = (hud as unknown as { strike?: { x: number; y: number } }).strike ?? { x: 0, y: 0 };
   const key = [hud.club, hud.mode, hud.lie, aim.dir.toFixed(3), aim.distanceYds.toFixed(1), aim.curve.toFixed(2), strikePt.x.toFixed(2), strikePt.y.toFixed(2)].join('|');
   if (key === previewKey) return; previewKey = key;
-  const M = SHOT_MODES[hud.mode], max = M.max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].pct / 100, pw = aim.distanceYds / Math.max(1, max);
+  const M = SHOT_MODES[hud.mode], max = M.max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].hi / 100, pw = aim.distanceYds / Math.max(1, max);
   const power = clamp(hud.mode === 'full' ? (pw - FULL_MIN) / (1 - FULL_MIN) : pw, 0.05, 1);
   const P = planShot({ power, offMs: 0, pushMs: 200, angle: 0, drift: 0, released: false, strike: strikePt, aim: { curve: aim.curve, loft: aim.loft } }, hud.club, hud.mode, LIES[hud.lie], golfer.lefty);
   P.launch.azimuth += aim.dir;
@@ -637,7 +637,7 @@ function frame(now: number) {
   if (state === 'ready' || state === 'swinging' || state === 'intro') {
     hud.edAddress(aim.distanceYds);
     // the stick's power target: the pull that carries the aim distance (full swings map the pull onto 60–100% of carry)
-    const M = SHOT_MODES[hud.mode], max = M.max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].pct / 100, pw = aim.distanceYds / Math.max(1, max);
+    const M = SHOT_MODES[hud.mode], max = M.max(CLUB_SPECS[hud.club].id) * LIES[hud.lie].hi / 100, pw = aim.distanceYds / Math.max(1, max);
     const f = hud.mode === 'full' ? (pw - FULL_MIN) / (1 - FULL_MIN) : pw;
     hud.setPowerTarget(aim.distanceYds >= max - 1 ? null : clamp(f, 0, 1), aim.distanceYds, '', max);   // the aim is clamped to the reachable band, so f is always valid
   } else {

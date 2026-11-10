@@ -528,8 +528,8 @@ button.hud-panel:focus-visible { outline: 2px solid var(--h-accent); outline-off
 @keyframes windWave { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(4deg); } }
 /* in the aim view it moves out of the hidden lie column and grows */
 body.aiming .hud .tr { opacity: 1 !important; }
-body.aiming .hud .tr #lieSlot { visibility: hidden; }
-body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-origin: 100% 0; }
+body.aiming .hud .tr #lieSlot { visibility: visible; }   /* the lie stays on in aim view: it sets the reach */
+body.aiming .wind-chip { transform: scale(1.15); transform-origin: 100% 0; }
 @media (prefers-reduced-motion: reduce) { .wind-chip svg { animation: none; } }
 
 /* Shot details: the shot sketch */

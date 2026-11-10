@@ -52,7 +52,7 @@ const LATE = K({ lift: -0.1, reach: 1.01, hipTurn: 0.4, hipTilt: 0.18, hipSide: 
 // delivery: lead arm about parallel on the way down, shaft lagging ~45° behind the hands on plane, hips already open,
 // trail elbow tucked in front of the trail hip
 const DELIV = K({ lift: -0.46, reach: 1.05, hipTurn: 0.16, hipTilt: 0.19, hipSide: 0.06, chestTurn: -0.6, chestTilt: 0.62, chestSide: 0.44, shift: 0.07, drop: 0.0, heel: 0.3, shrug: 0.04, pro: -0.04, hinge: 0.42, beta: -0.15 }, T);
-const I: Keys = { lift: 0, reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.24, shift: 0.08, drop: -0.012, heel: 0.36, shrug: -0.05, pro: -0.11, hinge: 0, beta: 0 };
+const I: Keys = { lift: 0, reach: 1, hipTurn: 0.7, hipTilt: 0.18, hipSide: 0.09, chestTurn: 0.22, chestTilt: 0.55, chestSide: 0.24, shift: 0.08, drop: 0.02, heel: 0.36, shrug: 0.1, pro: -0.11, hinge: 0, beta: 0 };
 // follow-through: chest keeps rotating and rises; the arms extend down the line, then fold up behind the head
 const REL = K({ hipTurn: 0.95, chestTurn: 0.72, chestTilt: 0.4, chestSide: 0.36, shift: 0.1, drop: -0.025, heel: 0.45, hinge: -0.08, beta: 0.08, pro: -0.02 }, I);
 const THRU = K({ hipTurn: 1.1, hipTilt: 0.12, hipSide: 0.05, chestTurn: 0.9, chestTilt: 0.3, chestSide: 0.32, shift: 0.13, drop: -0.035, heel: 0.66, shrug: -0.1, pro: -0.06, hinge: -0.45, beta: 0.25 }, I);
@@ -424,12 +424,14 @@ export class Golfer {
     // impact so the head rises into the finish.
     const headW = s.phase === 'back' || s.phase === 'down' ? 1 : s.phase === 'follow' ? 1 - smooth(0.04, 0.3, -phi / Math.abs(PHI_FINISH)) : 0;
     this.legReach(p);
+    const headOff = [0, 0];
     if (headW > 0.001 && this.headAnchor) {
       // a pro's head isn't frozen: it settles ~1.5 cm back and ~2 cm down into the delivery (still inside the
       // owner's 4 cm / 2.5 cm), then back up to impact
       const uD = s.phase === 'down' ? 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi) : 0, uB = s.phase === 'back' ? Math.max(0, phi) / PHI_TOP : s.phase === 'down' ? 1 : 0;
       const dip = smooth(0.15, 0.55, uD) * (1 - smooth(0.7, 1, uD));
-      this.steadyHead(p, headW, -0.012 * smooth(0, 0.6, uB) * (1 - smooth(0.6, 1, uD)), -0.018 * dip);
+      headOff[0] = -0.012 * smooth(0, 0.6, uB) * (1 - smooth(0.6, 1, uD)); headOff[1] = -0.018 * dip - 0.014 * smooth(0.7, 1, uD) - (s.phase === 'follow' ? 0.014 : 0);   // stays ~1.5 cm down through impact
+      this.steadyHead(p, headW, headOff[0], headOff[1]);
     }
 
     // hands on the circle, carried round the body by beta; club rotated in the plane by phi + hinge
@@ -621,6 +623,21 @@ export class Golfer {
     }
     // both hands stay on the club: if either arm can't reach its wrist target, move the club (both hands) toward
     // that shoulder (the trail arm used to fall short of the grip in the through-swing)
+    // the head stays on the ball: where the lead arm can't reach the grip (late in the downswing and through impact the
+    // hands follow the swing circle, and the lead shoulder rises and opens away from it), the chest stays squarer to
+    // the ball until the lead shoulder is back over the hands, rather than the club lifting off the ball. (The rig's
+    // arms are short for his height, so there is no slack to take up.) Solved exactly (bisection), so it moves smoothly.
+    {
+      const maxR = (this.rig.len.upper + this.rig.len.fore) * 0.998, sh = this.rig.P[BONE.upperL];
+      const err = () => { this.rig.apply(p); return p.wristL.distanceTo(sh) - maxR; };
+      const t0 = p.chestTurn;
+      if (err() > 1e-4) {
+        let lo = t0 - 0.7, hi = t0;
+        p.chestTurn = lo;
+        if (err() < 0) { for (let it = 0; it < 12; it++) { p.chestTurn = (lo + hi) / 2; if (err() > 0) hi = p.chestTurn; else lo = p.chestTurn; } p.chestTurn = lo; }
+        this.rig.apply(p);
+      }
+    }
     // (the trail shoulder blade reaches first: its joint slides up to 4.5 cm toward the grip)
     for (let pass = 0; pass < 3; pass++) {
       const need = p.wristR.clone().sub(this.rig.wristPos.R);

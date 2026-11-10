@@ -153,7 +153,8 @@ const CSS = `
 .aim-rail .aim-back { left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 18px); transform: translateX(-50%); padding: 14px 26px 15px; font: 600 18px/1 'Fredoka', 'Nunito', system-ui, sans-serif; background: linear-gradient(#ffe066, #f2c21b); box-shadow: 0 4px 0 #b48a12, 0 8px 18px rgba(10,20,40,.3), inset 0 1px 0 #fff6c2; }
 .aim-rail .aim-back:active { transform: translateX(-50%) translateY(2px) scale(.96); }
 body:not(.aiming) .aim-rail button { opacity: 0; pointer-events: none; }
-body.aiming .hud .bc, body.aiming .hud .bl, body.aiming .hud .tr, body.aiming .hud .br { opacity: 0 !important; pointer-events: none !important; transition: opacity .25s; }
+body.aiming .hud .bc, body.aiming .hud .bl, body.aiming .hud .br { opacity: 0 !important; pointer-events: none !important; transition: opacity .25s; }
+body.aiming .hud .tr { top: calc(max(12px, env(safe-area-inset-top)) + 136px); }   /* lie and wind stay on in aim view, under the close button */
 .aim-label { position: fixed; z-index: 29; left: 0; top: 0; pointer-events: none; transform: translate(-50%, -100%); display: flex; align-items: baseline; gap: 6px; font: 600 13px/1 'Fredoka', 'Nunito', system-ui, sans-serif; color: #fff6e2; background: rgba(20,40,75,.9); border-radius: 999px; padding: 6px 12px 7px; box-shadow: 0 0 0 2px #ffd23f, 0 4px 12px rgba(10,20,40,.35); white-space: nowrap; transition: opacity .2s; }
 .aim-label .n { font: 400 24px/0.9 'Anton', 'Barlow Condensed', sans-serif; color: #ffd23f; letter-spacing: .01em; }
 .aim-label .u { font: 600 9.5px/1 'Barlow', sans-serif; letter-spacing: .2em; color: #ffd23f; margin-left: -3px; }
