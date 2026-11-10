@@ -123,7 +123,7 @@ const buzz = (p: number | number[]) => { try { navigator.vibrate?.(p); } catch {
 /** the swing-stick puck: a real Pro V1x, model mark facing the player, cached as an image */
 let puckCache = '';
 function puckURL() {
-  if (!puckCache) { const m = mat3Identity(); mat3Rotate(m, 0, Math.PI); mat3Rotate(m, 0.18, 0); puckCache = shadeBall(160, m).toDataURL(); }
+  if (!puckCache) { const m = mat3Identity(); mat3Rotate(m, 0.18, 0); puckCache = shadeBall(160, m).toDataURL(); }
   return puckCache;
 }
 onBallTexUpdate(() => { puckCache = ''; const u = puckURL(); document.querySelectorAll('.puck-img').forEach(i => i.setAttribute('href', u)); });
@@ -143,7 +143,8 @@ export function padSVG(skin: Skin) {
     <path class="trail-d" d="" fill="none" stroke="${trailD}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>`;
   if (skin === 'f') {
     // a chunky toy stick: cream bezel on a turf disc, a groove you pull the ball down, a power arc that fills
-    const arcPt = (f: number, r = 80) => { const a = ((262 - 150 * f) * Math.PI) / 180; return [Math.cos(a) * r, Math.sin(a) * r]; };
+    // the power arc fills from the bottom up the left side to the top: full power (and its yardage) sits at the top dot
+    const arcPt = (f: number, r = 80) => { const a = ((112 + 150 * f) * Math.PI) / 180; return [Math.cos(a) * r, Math.sin(a) * r]; };
     const [ax0, ay0] = arcPt(0), [ax1, ay1] = arcPt(1);
     const beads = [0.25, 0.5, 0.75, 1].map((f, i) => { const [x, y] = arcPt(f); const [lx, ly] = arcPt(f, 66); return `<g class="bead" data-f="${f}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i === 3 ? 6 : 4.5}"/></g>`; void lx; void ly; }).join('');
     const stripes = Array.from({ length: 7 }, (_, i) => `<rect x="${-90 + i * 26}" y="-90" width="13" height="180" fill="rgba(255,255,255,.045)"/>`).join('');
@@ -164,10 +165,10 @@ export function padSVG(skin: Skin) {
     <circle r="91" fill="url(#${id}r)"/>
     <circle r="82" fill="url(#${id}t)"/>
     <g clip-path="url(#${id}c)">${stripes}<circle r="82" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="6"/></g>
-    <path d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="rgba(6,20,43,.45)" stroke-width="15" stroke-linecap="round"/>
-    <path class="power-arc" d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 0 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="url(#${id}p)" stroke-width="15" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
+    <path d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 1 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="rgba(6,20,43,.45)" stroke-width="15" stroke-linecap="round"/>
+    <path class="power-arc" d="M${ax0.toFixed(1)} ${ay0.toFixed(1)} A80 80 0 0 1 ${ax1.toFixed(1)} ${ay1.toFixed(1)}" fill="none" stroke="url(#${id}p)" stroke-width="15" stroke-linecap="round" pathLength="100" stroke-dasharray="0 100" opacity="0"/>
     ${beads}
-    <g class="pfull"><line class="pf-ring" x1="${(Math.cos(112*Math.PI/180)*70).toFixed(1)}" y1="${(Math.sin(112*Math.PI/180)*70).toFixed(1)}" x2="${(Math.cos(112*Math.PI/180)*92).toFixed(1)}" y2="${(Math.sin(112*Math.PI/180)*92).toFixed(1)}" stroke="#fffaf0" stroke-width="4" stroke-linecap="round"/><g class="pf-lab" transform="translate(${(Math.cos(112*Math.PI/180)*60).toFixed(1)} ${(Math.sin(112*Math.PI/180)*60 - 4).toFixed(1)})"><rect x="-16" y="-9" width="32" height="18" rx="9" fill="#fffaf0" stroke="#13294b" stroke-width="1.2"/><text y="4.5" text-anchor="middle">165</text></g></g>
+    <g class="pfull"><g class="pf-lab" transform="translate(${(Math.cos(262*Math.PI/180)*80).toFixed(1)} ${(Math.sin(262*Math.PI/180)*80).toFixed(1)})"><rect x="-16" y="-9" width="32" height="18" rx="9" fill="#fffaf0" stroke="#13294b" stroke-width="1.2"/><text y="4.5" text-anchor="middle">165</text></g></g>
     <g class="ptarget" visibility="hidden"><line class="pt-ring" stroke="#ff4fa3" stroke-width="5" stroke-linecap="round"/><line class="pt-track" x1="-21" x2="21" stroke="#ff4fa3" stroke-width="4" stroke-linecap="round"/><g class="pt-lab"><rect x="-17" y="-9" width="34" height="18" rx="9" fill="#ff4fa3" stroke="#fff" stroke-width="1.5"/><text y="4.5" text-anchor="middle">150</text></g></g>
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="url(#${id}g)"/>
     <rect x="-17" y="-74" width="34" height="166" rx="17" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="3"/>
@@ -566,11 +567,12 @@ export class Hud {
     this.el.querySelector('#padHint')?.remove();
     if (hint) this.q('.br').insertAdjacentHTML('beforeend', `<div class="pad-hint" id="padHint">${hint}</div>`);
     if (f === null) return;
-    const a = ((262 - 150 * f) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
+    const a = ((112 + 150 * f) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
     const L = g.querySelector('.pt-ring')!; L.setAttribute('x1', (c * 70).toFixed(1)); L.setAttribute('y1', (sn * 70).toFixed(1)); L.setAttribute('x2', (c * 92).toFixed(1)); L.setAttribute('y2', (sn * 92).toFixed(1));
     const T = g.querySelector('.pt-track')!, ty = (f * 80).toFixed(1); T.setAttribute('y1', ty); T.setAttribute('y2', ty);
-    const lr = f > 0.8 ? 46 : 64;   // close to the full mark: tuck this label inward so the two don't overlap
-    g.querySelector('.pt-lab')!.setAttribute('transform', `translate(${(c * lr - 6).toFixed(1)} ${(sn * lr).toFixed(1)})`);
+    // inside the ring beside its tick; near the top it would sit on the groove and the full label, so it drops below it
+    const lab = f > 0.78 ? [-44, -56 + (1 - f) * 40] : [c * 62 - 4, sn * 62];
+    g.querySelector('.pt-lab')!.setAttribute('transform', `translate(${lab[0].toFixed(1)} ${lab[1].toFixed(1)})`);
     g.querySelector('text')!.textContent = String(Math.round(yds));
   }
   setPad(pt: [number, number], trailB: [number, number][], trailD: [number, number][], atTop: boolean) {
@@ -586,7 +588,7 @@ export class Hud {
       svg.querySelector('.trail-b')!.setAttribute('d', ribbon(trailB, 3, 11));
       svg.querySelector('.trail-d')!.setAttribute('d', ribbon(trailD, 5, 13));
       const depth = trailB.reduce((m, p) => Math.max(m, p[1]), 0), f = clamp(depth / 80, 0, 1);
-      svg.querySelector('.power-arc')!.setAttribute('stroke-dasharray', `${(f * 100).toFixed(1)} 100`);
+      const arc = svg.querySelector('.power-arc')!; arc.setAttribute('stroke-dasharray', `${(f * 100).toFixed(1)} 100`); arc.setAttribute('opacity', f > 0.004 ? '1' : '0');
       svg.querySelectorAll<SVGGElement>('.bead').forEach(b => b.classList.toggle('lit', f >= +b.dataset.f! - 0.02));
       svg.classList.toggle('maxed', f >= 0.98);
       // on the aim distance's pull: a glow and a tick

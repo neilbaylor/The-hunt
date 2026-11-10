@@ -99,7 +99,7 @@ scene.add(fill, fill.target);
 // ── HUD + sound ──
 const hud = new Hud(document.body, profile);
 hud.onSpinTick = lvl => sound.whirr(lvl);
-if (QS.get('coin')) document.body.dataset.coin = QS.get('coin')!;   // club coin colourway try-outs (a|b|c|d)
+{ const c = QS.get('chip') ?? QS.get('coin'); if (c && /^[abcd]$/.test(c)) document.body.dataset.coin = c; }   // club chip colourway try-outs: ?chip=a|b|c|d (navy until the owner picks)
 hud.el.classList.add('hidden');
 const sound = new Sound();
 hud.club = 6; hud.mode = 'full'; hud.lie = 0; hud.render(null);
@@ -118,6 +118,8 @@ const aimCtl = new AimController({
   onChange: () => { golfer.root.rotation.y = -aim.dir; golfer.root.updateMatrixWorld(true); if (state === 'ready') teeUp(); },
 });
 hud.onLie = () => { sound.ui(); teeUp(); };
+// ?lie=3 or ?lie=rough: start on that sample lie (HUD checks)
+{ const l = QS.get('lie'); if (l) { const i = /^\d+$/.test(l) ? +l : LIES.findIndex(x => x.name.toLowerCase().replace(/\s+/g, '').startsWith(l.toLowerCase())); if (i >= 0 && i < LIES.length) { hud.lie = i; hud.render(null); } } }
 
 function teeUp() {
   // off the tee box: driver teed high (ball's equator at the top of the face, ~3.7 cm of tee showing),
@@ -301,7 +303,7 @@ function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
     // the ball and his hips, looking straight down the target line) and pulled back so the club at the top and the
     // finish fit. side: +1 for a left-hander (he stands on +x of the ball), -1 for a right-hander
     out.set(0.95 * side, 2.4, 4.4);   // off to his side and up, so the flight preview reads as an arc curving away
-    look.set(0.5 * side, 0.55, -6);
+    look.set(0.22 * side, 0.55, -6);
   } else {
     out.set(-0.85 * side, 1.62, 5.6);
     look.set(0.45 * side, 0.92, -22);
@@ -368,7 +370,7 @@ const turf = (() => {
 })();
 
 // the aim preview: a pure strike's flight in still air for the current club, mode, aim, curve and strike point
-const preview = new AimPreview(scene);
+const preview = new AimPreview(scene, 240, (x, z) => range?.heightAt(x, z) ?? 0);
 function updatePreview() {
   const strikePt = (hud as unknown as { strike?: { x: number; y: number } }).strike ?? { x: 0, y: 0 };
   const key = [hud.club, hud.mode, hud.lie, aim.dir.toFixed(3), aim.distanceYds.toFixed(1), aim.curve.toFixed(2), strikePt.x.toFixed(2), strikePt.y.toFixed(2)].join('|');
@@ -687,7 +689,9 @@ function frame(now: number) {
   { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? 2.4 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   tracer.update(camera, state === 'ready' ? 0.6 : 1);
   if (state === 'ready' && !SW.active) updatePreview();
-  preview.update(dt, camera, renderer.domElement, state === 'ready' && !SW.active && !aimCtl.active && camMode === 'address');
+  // one tracer for both views: it lies down onto the ground as the camera flies up to the aim view (and lifts back)
+  const aimFk = clamp((now - camFly.t0) / 1000 / CAM_FLY_S, 0, 1), aimE = aimFk * aimFk * (3 - 2 * aimFk);
+  preview.update(dt, camera, renderer.domElement, state === 'ready' && !SW.active && camMode === 'address', camFly.aim ? aimE : 1 - aimE);
   focus.copy(state === 'flight' || state === 'result' ? ball.pos : golfer.ballWorld(tmp));
   updateWind(now);
   range?.setWind(WIND); // the flags stream with the ball's wind (a light breeze when there is none)

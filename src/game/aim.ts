@@ -97,6 +97,36 @@ function makeRing() {
   return { group: g, chevron: holder };
 }
 
+/** the aim view's bullseye: concentric pin-yellow rings with a thin navy edge (so they read on striped grass from
+ *  overhead), a soft glow between them, a centre dot, and a slow ripple running outward. Radius 1 = the outer ring. */
+function makeBullseye() {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { t: { value: 0 } },
+    vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `uniform float t; varying vec2 vP;
+      float band(float r, float c, float w, float aa) { return smoothstep(c - w - aa, c - w, r) * (1.0 - smoothstep(c + w, c + w + aa, r)); }
+      void main(){
+        float r = length(vP), aa = fwidth(r) * 1.2;
+        vec3 Y = vec3(1.0, 0.824, 0.247), N = vec3(0.078, 0.157, 0.294);
+        float y1 = band(r, 1.0, 0.035, aa), e1 = band(r, 1.0, 0.06, aa);
+        float y2 = band(r, 0.64, 0.028, aa), e2 = band(r, 0.64, 0.05, aa);
+        float y3 = band(r, 0.30, 0.024, aa), e3 = band(r, 0.30, 0.045, aa);
+        float dot = 1.0 - smoothstep(0.075, 0.075 + aa, r), dotE = 1.0 - smoothstep(0.105, 0.105 + aa, r);
+        float yel = max(max(y1, y2), max(y3, dot)), edge = max(max(e1, e2), max(e3, dotE));
+        float glow = (1.0 - smoothstep(0.0, 1.0, r)) * 0.16 + exp(-pow((r - 1.0) * 9.0, 2.0)) * 0.22;
+        float ph = fract(t * 0.45), ripple = exp(-pow((r - ph * 1.25) * 14.0, 2.0)) * (1.0 - ph) * 0.45 * step(r, 1.25);
+        vec3 c = mix(N, Y, yel); float a = max(edge * 0.55, yel * 0.95);
+        a = max(a, glow + ripple); if (edge < 0.01) c = Y;
+        if (a < 0.004) discard;
+        gl_FragColor = vec4(c, a);
+      }`,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+  });
+  const m = new THREE.Mesh(new THREE.CircleGeometry(1.3, 96), mat); m.rotation.x = -Math.PI / 2; m.renderOrder = 7;
+  const g = new THREE.Group(); g.add(m);
+  return { group: g, mat };
+}
+
 function makeWindArrow() {
   const sh = new THREE.Shape(); sh.moveTo(0, -1); sh.lineTo(0.6, -0.2); sh.lineTo(0.22, -0.2); sh.lineTo(0.22, 0.9); sh.lineTo(-0.22, 0.9); sh.lineTo(-0.22, -0.2); sh.lineTo(-0.6, -0.2); sh.closePath();
   const m = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshBasicMaterial({ color: '#cfeaff', transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }));
@@ -124,8 +154,10 @@ const CSS = `
 .aim-rail .aim-back:active { transform: translateX(-50%) translateY(2px) scale(.96); }
 body:not(.aiming) .aim-rail button { opacity: 0; pointer-events: none; }
 body.aiming .hud .bc, body.aiming .hud .bl, body.aiming .hud .tr, body.aiming .hud .br { opacity: 0 !important; pointer-events: none !important; transition: opacity .25s; }
-.aim-label { position: fixed; z-index: 29; left: 0; top: 0; pointer-events: none; transform: translate(-50%, -100%); font: 600 14px/1.1 'Fredoka', 'Nunito', system-ui, sans-serif; color: #14284b; background: #fff6e2; border-radius: 999px; padding: 6px 11px; box-shadow: 0 2px 0 #c9b385, 0 4px 10px rgba(10,20,40,.3); white-space: nowrap; transition: opacity .2s; }
-.aim-label b { color: #b8860b; font-weight: 700; }
+.aim-label { position: fixed; z-index: 29; left: 0; top: 0; pointer-events: none; transform: translate(-50%, -100%); display: flex; align-items: baseline; gap: 6px; font: 600 13px/1 'Fredoka', 'Nunito', system-ui, sans-serif; color: #fff6e2; background: rgba(20,40,75,.9); border-radius: 999px; padding: 6px 12px 7px; box-shadow: 0 0 0 2px #ffd23f, 0 4px 12px rgba(10,20,40,.35); white-space: nowrap; transition: opacity .2s; }
+.aim-label .n { font: 400 24px/0.9 'Anton', 'Barlow Condensed', sans-serif; color: #ffd23f; letter-spacing: .01em; }
+.aim-label .u { font: 600 9.5px/1 'Barlow', sans-serif; letter-spacing: .2em; color: #ffd23f; margin-left: -3px; }
+.aim-label b { color: #fff6e2; font-weight: 600; }
 .aim-label.off { opacity: 0; }
 .aim-tip { position: fixed; z-index: 29; left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); transform: translateX(-50%); font: 500 13px/1.25 'Nunito', system-ui, sans-serif; color: #fff; background: rgba(20,40,75,.82); padding: 9px 14px; border-radius: 14px; text-align: center; pointer-events: none; max-width: calc(100vw - 32px); box-shadow: 0 4px 14px rgba(0,0,0,.25); transition: opacity .25s; }
 .aim-tip b { color: #f2c21b; }
@@ -153,7 +185,8 @@ export class AimController {
   private marker = makeRing();
   private aimLine = new Ribbon(80, CREAM, { opacity: 0.75, dash: 5 });   // the straight start line: quiet cream dashes under the yellow shape
   private pathLine = new Ribbon(96, new THREE.Color('#ffd23f'), { opacity: 0.8, glow: true });   // same pin-yellow glow as the swing-view flight preview
-  private ring = makeRing();
+  private ring = makeRing();   // (unused in the aim view now: see bullseye)
+  private bull = makeBullseye();
   private handle = makeHandle();
   private windArrow = makeWindArrow();
   private wind = new THREE.Vector3();
@@ -166,9 +199,10 @@ export class AimController {
   private pts = new Map<number, { x: number; y: number }>();
   private pinch0 = 0; private zoom0 = 1;
   private t = 0;
+  private bullPop = 0;
 
   constructor(private o: AimOptions) {
-    o.scene.add(this.guide.mesh, this.marker.group, this.aimLine.mesh, this.pathLine.mesh, this.ring.group, this.handle, this.windArrow);
+    o.scene.add(this.guide.mesh, this.marker.group, this.aimLine.mesh, this.pathLine.mesh, this.ring.group, this.bull.group, this.handle, this.windArrow);
     const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
     this.rail = document.createElement('div'); this.rail.className = 'aim-rail off';
     this.rail.innerHTML = `
@@ -288,7 +322,7 @@ export class AimController {
       aim.distanceYds = clamp(want, c.min, c.max);
       // the ring stops at the club's reach: a little bump when it hits the end
       const atEdge = want < c.min || want > c.max;
-      if (atEdge && !this.atEdge) { try { navigator.vibrate?.(12); } catch { /* not allowed */ } this.ring.group.scale.multiplyScalar(1.08); }
+      if (atEdge && !this.atEdge) { try { navigator.vibrate?.(12); } catch { /* not allowed */ } this.bullPop = 1; }
       this.atEdge = atEdge;
       this.changed();
     } else if (this.drag === 'bend') {
@@ -331,7 +365,8 @@ export class AimController {
     }
     // 2. aim view: straight dashed aim line, cyan shot shape, ring, bend handle, distance label
     const a = this.active;
-    this.aimLine.mesh.visible = a; this.pathLine.mesh.visible = a; this.ring.group.visible = a; this.handle.visible = a;
+    this.aimLine.mesh.visible = a; this.pathLine.mesh.visible = false;   // the shot shape is the flight preview laid on the ground (preview.ts)
+    this.ring.group.visible = false; this.bull.group.visible = a; this.handle.visible = a;
     if (a) {
       const camD = this.o.camera.position.distanceTo(b.clone().lerp(T, 0.5));
       const w = clamp(camD * 0.012, 0.25, 2.2);
@@ -341,13 +376,17 @@ export class AimController {
       const cp: THREE.Vector3[] = []; for (let i = 0; i <= 90; i++) cp.push(this.shapePoint(i / 90, new THREE.Vector3()));
       this.pathLine.set(cp, w * 0.75);
       this.ring.group.position.set(T.x, T.y + 0.06, T.z); this.ring.group.scale.setScalar(disp);
+      // the bullseye: a gentle breathing pulse, and a pop when the ring hits the end of the club's reach
+      this.bull.mat.uniforms.t.value = this.t;
+      this.bullPop = Math.max(0, this.bullPop - dt * 3);
+      this.bull.group.position.set(T.x, T.y + 0.06, T.z); this.bull.group.scale.setScalar(disp * (1 + 0.03 * Math.sin(this.t * 2.4) + 0.12 * this.bullPop));
       this.ring.chevron.rotation.y = -aim.dir; this.ring.chevron.children[0].scale.setScalar(clamp(w * 4.2 / disp, 0.3, 1.1));
       this.shapePoint(0.5, this.handle.position); this.handle.position.y += 0.1; this.handle.scale.setScalar(w * 2.1);
       // floating label above the ring
       const s = this.screenOf(T.clone().add(new THREE.Vector3(0, 0, 0)).addScaledVector(d, disp * 1.1));
       this.label.classList.toggle('off', !s.ok);
       this.label.style.transform = `translate(${s.x}px, ${s.y - 10}px) translate(-50%, -100%)`;
-      this.label.innerHTML = `${Math.round(aim.distanceYds)} yds · <b>${this.shapeName()}</b>`;
+      this.label.innerHTML = `<span class="n">${Math.round(aim.distanceYds)}</span><span class="u">YDS</span><b>${this.shapeName()}</b>`;
       // a subtle wind arrow beside the ring, pointing where it blows
       const ws = Math.hypot(this.wind.x, this.wind.z);
       this.windArrow.visible = ws > 0.3;

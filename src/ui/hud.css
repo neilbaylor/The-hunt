@@ -666,3 +666,17 @@ body[data-coin="c"] .hud.skin-f .list button[aria-pressed="true"] b, body[data-c
 body[data-coin="d"] .hud.skin-f .club-btn .big { background: linear-gradient(160deg, #fff1a6 0%, #ffd23f 45%, #e0a419 100%); color: #13241b; box-shadow: inset 0 -3px 0 rgba(120,80,0,.35), inset 0 2px 0 rgba(255,255,255,.6), 0 0 0 2px #fffaf0, 0 0 0 4px #c9a227; }
 body[data-coin="d"] .hud.skin-f .list button[aria-pressed="true"] { background: linear-gradient(160deg, #fff1a6, #ffd23f 50%, #e0a419); color: #13241b; box-shadow: 0 0 0 2px #c9a227; }
 body[data-coin="d"] .hud.skin-f .list button[aria-pressed="true"] b, body[data-coin="d"] .hud.skin-f .list button[aria-pressed="true"] span { color: #13241b; }
+
+/* the power arc fills bottom → top; full power is the gold dot at the top, with the club's full yardage on it */
+.pad-f .bead[data-f="1"] circle { fill: #ffd23f; stroke: #b48a12; }
+.pad-f .pfull .pf-lab rect { filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+/* the picker's shot-type segment follows the chip colourway too */
+body[data-coin="a"] .hud .pop .seg button[aria-pressed="true"] { background: #ffd23f; color: #1f4d36; box-shadow: 0 0 0 2px #c9a227; }
+body[data-coin="b"] .hud .pop .seg button[aria-pressed="true"] { background: #1f4d36; color: #fbf3df; box-shadow: 0 0 0 2px #ffd23f; }
+body[data-coin="c"] .hud .pop .seg button[aria-pressed="true"] { background: #fffdf5; color: #1f4d36; box-shadow: 0 0 0 2px #ffd23f, 0 0 0 4px #1f4d36; }
+body[data-coin="c"] .hud.skin-f .club-btn .big { box-shadow: inset 0 -3px 0 rgba(150,120,60,.25), 0 0 0 3px #ffd23f, 0 0 0 5px #1f4d36; }
+body[data-coin="c"] .hud.skin-f .list button[aria-pressed="true"] { box-shadow: 0 0 0 3px #ffd23f, 0 0 0 5px #1f4d36; }
+body[data-coin="d"] .hud .pop .seg button[aria-pressed="true"] { background: linear-gradient(160deg, #fff1a6, #ffd23f 50%, #e0a419); color: #13241b; box-shadow: 0 0 0 2px #c9a227; }
+/* the lie %: same size, but heavier and higher contrast (a filled pill with a crisp edge) so "100" reads at a glance */
+.lie-c .lie-q { font: 900 12px/1 'Nunito', var(--h-body); letter-spacing: .01em; padding: 3px 7px 3px; box-shadow: inset 0 -1.5px 0 rgba(0,0,0,.22), 0 0 0 1.5px rgba(255,255,255,.9); text-shadow: 0 1px 0 rgba(0,0,0,.25); }
+.lie-c .lie-q.good { background: #0f8f47; }
