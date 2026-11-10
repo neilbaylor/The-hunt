@@ -369,6 +369,7 @@
   "sleeveEase": 0.005,
   "sleeveRound": 0.3,
   "shortsEase": 0.004,
+  "shortsTubeMax": 0.096,
   "pantsGap": 0.006,
   "pantsLoose": 0.008,
   "shoeGap": 0.007,

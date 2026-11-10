@@ -521,7 +521,8 @@ for sfx in 'lr':
         t = float(np.dot(Vpants[vi] - hip, ax) / L2)
         if 0.2 < t < 0.34:   # the thigh itself (not the hips and seat above it)
             c = hip + ax * t; r_tube = max(r_tube, float(np.linalg.norm(Vpants[vi] - c)) + pants_off[vi])
-    r_tube += C.get('shortsEase', 0.008)
+    r_tube = min(r_tube + C.get('shortsEase', 0.008), C.get('shortsTubeMax', C['thighR']))
+    print('shorts leg', sfx, 'tube radius', round(r_tube, 3))
     for vi in np.nonzero(pants)[0]:
         if wsum(vi, [f'thigh_{sfx}', f'calf_{sfx}']) < 0.5 or Vpants[vi, 1] > hip[1] + 0.02:
             continue
