@@ -251,7 +251,9 @@ export class Golfer {
       this.hands = buildHands(this.club, towardL, towardR, this.body.materials.glove, this.body.materials.skin);
     }
     this.club.group.add(this.hands.group);
+    this.headAnchor = null;
     this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
+    this.headAnchor = this.headCentre();
   }
 
   /** one hand's frame on the grip, in club space: its long axis, palm normal and wrist position */
@@ -382,6 +384,17 @@ export class Golfer {
     const clav = (v: number) => Math.max(-0.1, Math.min(0.1, v));
     p.shrugL = clav(key.shrug); p.shrugR = clav(-key.shrug * 0.5 + key.pro);
     this.feet(p, key.heel, key.shift, key.hipTurn);
+    // steady head: from address to impact the head stays where it was at address (within a couple of cm); the spine
+    // takes up the hips' turn and slide with a little more or less side bend and forward bend. Faded out after
+    // impact so the head rises into the finish.
+    const headW = s.phase === 'back' || s.phase === 'down' ? 1 : s.phase === 'follow' ? 1 - smooth(0.04, 0.3, -phi / Math.abs(PHI_FINISH)) : 0;
+    if (headW > 0.001 && this.headAnchor) {
+      // a pro's head isn't frozen: it settles ~1.5 cm back and ~2 cm down into the delivery (still inside the
+      // owner's 4 cm / 2.5 cm), then back up to impact
+      const uD = s.phase === 'down' ? 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi) : 0, uB = s.phase === 'back' ? Math.max(0, phi) / PHI_TOP : s.phase === 'down' ? 1 : 0;
+      const dip = smooth(0.15, 0.55, uD) * (1 - smooth(0.7, 1, uD));
+      this.steadyHead(p, headW, -0.012 * smooth(0, 0.6, uB) * (1 - smooth(0.6, 1, uD)), -0.018 * dip);
+    }
 
     // hands on the circle, carried round the body by beta; club rotated in the plane by phi + hinge
     const hands = this.circleC.clone()
@@ -520,7 +533,12 @@ export class Golfer {
         const wristNow = this.hands.wristLead.clone().applyQuaternion(qc).add(g.position);
         qc.premultiply(aim);
         g.quaternion.copy(qc);
-        g.position.copy(wristNow.lerp(wristT, w)).sub(this.hands.wristLead.clone().applyQuaternion(qc));
+        // blend round the lead shoulder (direction and reach separately), not along the chord, so the lead arm
+        // stays long through the blend
+        const shL = this.rig.P[BONE.upperL], dN = wristNow.clone().sub(shL), dT = wristT.clone().sub(shL);
+        const lenB = dN.length() + (dT.length() - dN.length()) * w;
+        const dirB = dN.normalize().applyQuaternion(new THREE.Quaternion().setFromUnitVectors(dN.clone(), dT.clone().normalize()).slerp(new THREE.Quaternion(), 1 - w));
+        g.position.copy(shL).addScaledVector(dirB, lenB).sub(this.hands.wristLead.clone().applyQuaternion(qc));
         p.wristL.copy(this.hands.wristLead.clone().applyQuaternion(qc).add(g.position));
         p.wristR.copy(this.hands.wristTrail.clone().applyQuaternion(qc).add(g.position));
         this.rig.apply(p);
@@ -567,6 +585,27 @@ export class Golfer {
     if (this.extras && this.handFrame) this.poseHands(qc, key.heel);
     this.char.updateMatrixWorld(true);
     return this.club.group.localToWorld(this.clubHeadWorld.set(0, 0, 0));
+  }
+
+  /** head centre (char space) after rig.apply: the base of the neck plus an offset up the chest's frame, so it doesn't
+   *  depend on where the eyes look */
+  headCentre(out = new THREE.Vector3()) { return out.set(0, 0.18, 0).applyQuaternion(this.rig.Q[BONE.chest]).add(this.rig.P[BONE.neck]); }
+  private headAnchor: THREE.Vector3 | null = null;
+  /** two Newton steps on (chest side bend, chest forward bend) that put the head centre back over its address spot */
+  private steadyHead(p: BodyPose, w: number, offX = 0, offY = 0) {
+    const H = new THREE.Vector3(), at = () => { this.rig.apply(p); return this.headCentre(H).clone(); };
+    const d = 0.02;
+    for (let it = 0; it < 2; it++) {
+      const h0 = at();
+      const ex = (this.headAnchor!.x + offX - h0.x) * w, ey = (this.headAnchor!.y + offY - h0.y) * w;
+      if (Math.abs(ex) + Math.abs(ey) < 0.002) break;
+      p.chestSide += d; const hs = at(); p.chestSide -= d;
+      p.chestTilt += d; const ht = at(); p.chestTilt -= d;
+      const a = (hs.x - h0.x) / d, b = (ht.x - h0.x) / d, c = (hs.y - h0.y) / d, e = (ht.y - h0.y) / d;
+      const det = a * e - b * c; if (Math.abs(det) < 1e-6) break;
+      p.chestSide += Math.max(-0.3, Math.min(0.3, (e * ex - b * ey) / det));
+      p.chestTilt += Math.max(-0.3, Math.min(0.3, (a * ey - c * ex) / det));
+    }
   }
 
   /** hands follow the club, fingers wrap the grip, toes stay flat */

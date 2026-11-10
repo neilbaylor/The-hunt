@@ -509,7 +509,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const s = i / COLS, a = open + s * (2 * Math.PI - 2 * open);   // a = 0 at the front, PI at the back
       const endw = Math.max(0, 1 - Math.min(s, 1 - s) / 0.17), fr = Math.max(0, Math.cos(a));
       // stand: 3 cm at the back, a little lower round the front of the neck, down to ~8 mm where the ends meet
-      const sh = 0.026 - 0.004 * fr - 0.0045 * Math.abs(Math.sin(a)) - 0.014 * Math.pow(endw, 1.4);
+      const back = Math.max(0, -Math.cos(a)), sh = 0.024 + 0.008 * back * back - 0.004 * fr - 0.003 * Math.abs(Math.sin(a)) - 0.013 * Math.pow(endw, 1.4);   // ~3.2 cm at the nape, ~2.1 cm at the sides
       A.push(a); EW.push(endw); SH.push(sh);
       S.push(neck(a, -0.004, -0.006));                               // the foot of the stand, tucked into the neckline
       // the top of the stand: hugging the neck 4.5 mm clear of it (the neck narrows above the shirt's opening)
@@ -542,7 +542,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     // at the front it runs straight from over the shoulder down to the point. The points: ~7.5 cm from the side
     // of the neck to the tip, tips 3.5 cm either side of the centre and 4.7 cm below the neckline's front
     const a1 = 1.15;
-    const E = A.map((a, i) => walk(a, Math.max(0.008, 0.042 + 0.002 * Math.abs(Math.sin(a)) - SH[i])));
+    const E = A.map((a, i) => walk(a, Math.max(0.008, 0.042 + 0.004 * Math.max(0, -Math.cos(a)) + 0.002 * Math.abs(Math.sin(a)) - SH[i])));
     for (let pass = 0; pass < 2; pass++) {
       const e0 = E.map(v => v.clone());
       for (let i = 1; i < COLS; i++) onShirt(E[i].copy(e0[i]).multiplyScalar(0.5).addScaledVector(e0[i - 1], 0.25).addScaledVector(e0[i + 1], 0.25), 0);
@@ -651,7 +651,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
         gx.fillStyle = '#' + cc.getHexString(); gx.fillRect(0, y, 4, 1);
       }
     }, true, 1);
-    const collarTex = ramp([[0, 0.22], [0.05, 0.62], [0.16, 0.86], [0.2, 0.97], [0.27, 1.0], [0.72, 1.0], [0.8, 1.04], [0.835, 0.85], [0.86, 0.5], [1, 0.42]], 512);
+    const collarTex = ramp([[0, 0.22], [0.05, 0.62], [0.16, 0.86], [0.2, 0.97], [0.27, 1.0], [0.7, 1.02], [0.79, 1.1], [0.835, 0.85], [0.86, 0.5], [1, 0.42]], 512);
     collarTex.wrapS = collarTex.wrapT = THREE.ClampToEdgeWrapping; collarTex.repeat.set(1, 1);
     const collarMat = new THREE.MeshPhysicalMaterial({ map: collarTex, roughness: 0.9, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(shirtC, 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide });
     const bits: THREE.Mesh[] = [new THREE.Mesh(g, collarMat), new THREE.Mesh(capG, collarMat)];   // collar, its shadow line, placket and buttons: baked into one mesh below
@@ -673,7 +673,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
         strip(ks.map(k => under(i, k)), ks.map(k => foot(L[i][k], L[i][k].clone().sub(L[j][k]).normalize())));
       }
       const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); sg.setAttribute('uv', new THREE.Float32BufferAttribute(su, 2)); sg.setIndex(si); sg.computeVertexNormals();
-      const shadowTex = ramp([[0, 0.62], [0.5, 0.45], [1, 0.3]], 32);
+      const shadowTex = ramp([[0, 0.5], [0.5, 0.35], [1, 0.22]], 32);
       shadowTex.wrapS = shadowTex.wrapT = THREE.ClampToEdgeWrapping; shadowTex.repeat.set(1, 1);
       bits.push(new THREE.Mesh(sg, new THREE.MeshPhysicalMaterial({ map: shadowTex })));
     }
@@ -726,6 +726,21 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
         }
         const top = [...acc].sort((p1, p2) => p2[1] - p1[1]).slice(0, 4), tot = top.reduce((t, e) => t + e[1], 0) || 1;
         top.forEach(([bi, w], k) => { outI[v * 4 + k] = bi; outW[v * 4 + k] = w / tot; });
+      }
+      // the collar proper (above the neckline: stand, roll, the leaf round the neck) turns partly with the neck, so
+      // it keeps its shape and stays clear of the chin when the head turns and tilts; the points and the placket
+      // below stay with the chest
+      for (let v = 0; v < n; v++) {
+        const x = pa.getX(v), y = pa.getY(v), z = pa.getZ(v), a = Math.atan2(x - c.x, z - c.z);
+        const t = THREE.MathUtils.smoothstep(y - Y(a), -0.004, 0.02), sN = 0.5 * t;
+        if (sN <= 0) continue;
+        const ws: [number, number][] = [];
+        for (let k = 0; k < 4; k++) if (outI[v * 4 + k] !== ni && outW[v * 4 + k] > 0) ws.push([outI[v * 4 + k], outW[v * 4 + k]]);
+        ws.sort((p1, p2) => p2[1] - p1[1]); ws.length = Math.min(3, ws.length);
+        const rest = ws.reduce((q, e) => q + e[1], 0) || 1;
+        for (let k = 0; k < 4; k++) { outI[v * 4 + k] = 0; outW[v * 4 + k] = 0; }
+        ws.forEach(([bi, w], k) => { outI[v * 4 + k] = bi; outW[v * 4 + k] = w / rest * (1 - sN); });
+        outI[v * 4 + 3] = ni; outW[v * 4 + 3] = ws.length ? sN : 1;
       }
       cm.geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(outI, 4)); cm.geometry.setAttribute('skinWeight', new THREE.BufferAttribute(outW, 4));
     }
