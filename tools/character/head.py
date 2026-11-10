@@ -596,7 +596,12 @@ EXPR = {
     'grimace': {'mouth-depression-retraction': 0.6, 'mouth-retraction': 0.3, 'neck-platysma': 0.5, 'eyebrows-left-down': 0.5, 'eyebrows-right-down': 0.5, 'eye-left-slit': 0.4, 'eye-right-slit': 0.4},
     'browUp': {'eyebrows-left-up': 1.0, 'eyebrows-right-up': 1.0},
     'browDown': {'eyebrows-left-down': 0.8, 'eyebrows-right-down': 0.8, 'eyebrows-left-inner-up': 0.2, 'eyebrows-right-inner-up': 0.2},
-    'jawOpen': {'mouth-open': 0.4},
+    'jawOpen': {'mouth-open': 0.5},
+    # visemes (with jawOpen and smile): rounded O/U, wide E/I, F/V (lower lip up under the teeth), M/B/P (lips pressed)
+    'pucker': {'mouth-pursing': 0.7, 'mouth-protusion': 0.5},
+    'wide': {'mouth-retraction': 0.7, 'mouth-corner-puller': 0.15},
+    'lipIn': {'mouth-elevation': 0.6},
+    'press': {'mouth-compression': 0.6},
 }
 morph_d = {}
 base_obj = os.path.join(A.mpfb, '3dobjs/base.obj')
@@ -654,6 +659,18 @@ if os.path.exists(base_obj):
         print(f'  expression {name}: {int((np.linalg.norm(dv, axis=1) > 2e-4).sum())} verts move, max {np.linalg.norm(dv, axis=1).max() * 1000:.1f} mm')
 else:
     print('(no MakeHuman data at', A.mpfb, '- no expressions)')
+# two shaped by hand round his own mouth: lift the corners (a pleasant rest), and draw the pouty lower lip in
+if len(morph_d) or True:
+    mc_l, mc_r, up_, lo_ = lm_f[61], lm_f[291], lm_f[13], lm_f[14]
+    cl = np.zeros_like(LV)
+    for c_ in (mc_l, mc_r):
+        w_ = np.exp(-(np.linalg.norm((LV - c_) * [1, 1.3, 1], axis=1) / 0.011) ** 2) * (LV[:, 2] > c_[2] - 0.02)
+        cl += w_[:, None] * np.array([np.sign(c_[0] - (mc_l[0] + mc_r[0]) / 2) * 0.0012, 0.0028, 0.0])
+    morph_d['cornerLift'] = cl
+    seam_y = (up_[1] + lo_[1]) / 2; half_w = abs(mc_r[0] - mc_l[0]) / 2
+    ll = np.exp(-((LV[:, 0] - (mc_l[0] + mc_r[0]) / 2) / (half_w * 0.75)) ** 2 * 1.5) * np.exp(-((LV[:, 1] - (seam_y - 0.006)) / 0.006) ** 2) * (LV[:, 2] > up_[2] - 0.015)
+    morph_d['unpout'] = ll[:, None] * np.array([0, 0.0008, -0.0018])
+    print('  rest-mouth morphs: corner lift 2.8 mm, lower lip in 1.8 mm')
 # the rest face: ease the generator's grin toward a relaxed smile before anything is painted on it (the low-res mesh,
 # the hi-res surface the texture is projected onto, and the landmarks all move together)
 if A.rest == 'closed' and 'smile' in morph_d and A.rest_smile:
@@ -1216,6 +1233,13 @@ put('hair', np.round(np.clip(hair_v, 0, 1) * 255).astype(np.uint8))
 if iris_png is not None: put('irisPng', iris_png)
 put('normalJpg', normal_jpg)
 put('skinIndex', bidx.ravel()); put('skinWeight', bw.ravel()); put('seam', seamw)
+# the mouth: per-vertex (across, up, off-plane) round the lip seam (the shader draws the mouth's inside as it opens)
+mc_c = (lm_f[13] + lm_f[14]) / 2; MX = (lm_f[291] - lm_f[61]) / 2; MY = (lm_f[0] - lm_f[17]) / 2; MY = MY - MX * (MY @ MX) / (MX @ MX)
+dmo = LV - mc_c; mx_, my_ = dmo @ MX / (MX @ MX), dmo @ MY / (MY @ MY); mnrm = np.cross(MX, MY); mnrm /= np.linalg.norm(mnrm); mdep = dmo @ mnrm
+mouthA = np.tile([9.0, 9.0, 9.0], (len(LV), 1)); mnear = (np.abs(mx_) < 2.5) & (np.abs(my_) < 3) & (np.abs(mdep) < 0.03)
+mouthA[mnear] = np.c_[mx_, my_, mdep][mnear]
+_ma = mouthA[vmap]; _mi = np.nonzero(_ma[:, 0] < 8)[0]
+put('mouth_i', _mi.astype(np.uint16 if len(UV) < 65536 else np.uint32)); put('mouth_v', _ma[_mi].astype(np.float32).ravel())
 _ea, _eb = eyeA[vmap], eyeB[vmap]; _ei = np.nonzero(_ea[:, 0] < 8)[0]          # sparse: only the verts round the eyes
 put('eye_i', _ei.astype(np.uint16 if len(UV) < 65536 else np.uint32)); put('eye_v', np.c_[_ea[_ei], _eb[_ei]].astype(np.float32).ravel())
 # expressions: sparse, int16 in 10 µm units

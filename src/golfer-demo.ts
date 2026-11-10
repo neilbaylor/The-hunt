@@ -45,6 +45,7 @@ golfer.body.setSmile(+(q.get('smile') ?? 0));
 // face (generated head): &expr=smile:0.8,grimace:0,browUp:0,blink:1 &gaze=x,y (-1..1)
 { const face = (golfer.body as any).face;
   if (face && q.has('gaze')) { const [gx, gy] = q.get('gaze')!.split(',').map(Number); face.setGaze(gx, gy ?? 0); }
+  if (face && q.has('say')) face.say(q.get('say')!);
   if (face && q.has('expr')) face.setExpression(Object.fromEntries(q.get('expr')!.split(',').map(t => { const [k, v] = t.split(':'); return [k, +v]; }))); }
 // debugging the generated head's look: &headmat=basic shows its texture unlit; &nofill drops its warm self-fill
 golfer.body.root.traverse(o => {

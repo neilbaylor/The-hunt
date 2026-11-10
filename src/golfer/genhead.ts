@@ -40,7 +40,15 @@ export interface GenHead {
   face: FaceController;
 }
 
-export interface Expression { smile?: number; grimace?: number; browUp?: number; browDown?: number; jawOpen?: number; blink?: number }
+/** the face's clock (s): real time, or a fixed clock for frame-by-frame captures (window.__faceClock) */
+const MOUTH_INSIDE = false;
+const faceNow = () => ((globalThis as { __faceClock?: number }).__faceClock ?? performance.now() / 1000);
+
+export interface Expression {
+  smile?: number; grimace?: number; browUp?: number; browDown?: number; jawOpen?: number; blink?: number;
+  /** mouth shapes (visemes use these too) and the rest-mouth shaping: corners lifted, lower lip drawn in */
+  pucker?: number; wide?: number; lipIn?: number; press?: number; cornerLift?: number; unpout?: number;
+}
 export interface FaceController {
   /** expression weights 0..1 (smile adds to the portrait's own smile; blink overrides the idle blink) */
   setExpression(e: Expression): void;
@@ -48,6 +56,12 @@ export interface FaceController {
   lookAt(target: THREE.Vector3 | null): void;
   /** gaze directly: x = across (+ toward the golfer's left), y = up, each -1..1; null = back to idle */
   setGaze(x: number | null, y?: number): void;
+  /** talk: drives the mouth through visemes from the text (letter timing), with jaw motion; durationMs spreads it */
+  say(text: string, durationMs?: number): void;
+  /** true while say() is speaking */
+  talking(): boolean;
+  /** a small nod (radians, + = chin down) the caller may add to the head while talking */
+  nod(): number;
 }
 
 /** builds the head in the body's bind space. eye / ipd: the body's eye centre and eyeball spacing now
@@ -96,6 +110,10 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     for (let j = 0; j < ii.length; j++) { for (let c = 0; c < 4; c++) eyeA[ii[j] * 4 + c] = vv[j * 6 + c]; eyeB[ii[j] * 2] = vv[j * 6 + 4]; eyeB[ii[j] * 2 + 1] = Math.min(0.3, Math.max(-0.2, vv[j * 6 + 5])); }
   }
   if (G.arrays.hair) g.setAttribute('hair', new THREE.BufferAttribute(arr('hair'), 1));   // 0..255 hair weight (for the hair cards)
+  // mouth: per-vertex (across, up, off-plane) round the lip seam; the shader draws the inside as the lips part
+  const mouthA = new Float32Array(nv * 3).fill(9);
+  if (G.arrays.mouth_i) { const ii = arr('mouth_i'), vv = arr('mouth_v') as Float32Array; for (let j = 0; j < ii.length; j++) for (let c = 0; c < 3; c++) mouthA[ii[j] * 3 + c] = vv[j * 3 + c]; }
+  g.setAttribute('mouthA', new THREE.BufferAttribute(mouthA, 3));
   g.setAttribute('eyeA', new THREE.BufferAttribute(eyeA, 4)); g.setAttribute('eyeB', new THREE.BufferAttribute(eyeB, 2));
   const t = new THREE.Texture(gh.tex); t.needsUpdate = true; t.flipY = true; t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
@@ -110,7 +128,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     nim.onload = () => { const nt = new THREE.Texture(nim); nt.needsUpdate = true; nt.flipY = true; nt.anisotropy = 4; mat.normalMap = nt; mat.normalScale.set(0.3, 0.3); mat.needsUpdate = true; URL.revokeObjectURL(nurl); };
     nim.src = nurl;
   }
-  const face = { gaze: new THREE.Vector2(), blink: { value: 0 }, gazeU: { value: new THREE.Vector2() }, fill: { value: 0.65 } };
+  const face = { gaze: new THREE.Vector2(), blink: { value: 0 }, gazeU: { value: new THREE.Vector2() }, fill: { value: 0.65 }, mouthOpen: { value: 0 }, teeth: { value: 0.4 } };
   // the irises cropped from the unwrap (a small PNG inside head.bin); a flat blue-grey until it decodes
   const c0 = document.createElement('canvas'); c0.width = c0.height = 2; const g0 = c0.getContext('2d')!; g0.fillStyle = '#7d97a8'; g0.fillRect(0, 0, 2, 2);
   const irisTex = new THREE.Texture(c0); irisTex.colorSpace = THREE.SRGBColorSpace; irisTex.needsUpdate = true;
@@ -126,12 +144,12 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   mat.onBeforeCompile = sh => {
     sh.uniforms.uGaze = face.gazeU; sh.uniforms.uBlink = face.blink;
     sh.uniforms.uIris = { value: irisCol }; sh.uniforms.uIrisTex = irisU; sh.uniforms.uSclera = { value: sclera }; sh.uniforms.uLid = { value: new THREE.Color(G.skinColor[0], G.skinColor[1], G.skinColor[2]).convertSRGBToLinear().multiplyScalar(0.85) };
-    sh.uniforms.uFill = face.fill;
+    sh.uniforms.uFill = face.fill; sh.uniforms.uMouthOpen = face.mouthOpen; sh.uniforms.uTeeth = face.teeth;
     // mostly the photo-baked texture itself (it already carries his real light and shade), a soft lit share for form
     sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = mix(outgoingLight, diffuseColor.rgb * vec3(1.0, 0.97, 0.94), uFill);\n#include <opaque_fragment>');
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 eyeA; attribute vec2 eyeB; varying vec4 vEyeA; varying vec2 vEyeB;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEyeA = eyeA; vEyeB = eyeB;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec4 vEyeA; varying vec2 vEyeB; uniform vec2 uGaze; uniform float uBlink; uniform vec3 uIris; uniform vec3 uLid; uniform sampler2D uIrisTex; uniform vec3 uSclera; uniform float uFill;')
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 eyeA; attribute vec2 eyeB; varying vec4 vEyeA; varying vec2 vEyeB; attribute vec3 mouthA; varying vec3 vMouth;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEyeA = eyeA; vEyeB = eyeB; vMouth = mouthA;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec4 vEyeA; varying vec2 vEyeB; uniform vec2 uGaze; uniform float uBlink; uniform vec3 uIris; uniform vec3 uLid; uniform sampler2D uIrisTex; uniform vec3 uSclera; uniform float uFill; varying vec3 vMouth; uniform float uMouthOpen; uniform float uTeeth;')
       .replace('#include <map_fragment>', `#include <map_fragment>
       {
         // the eye opening, drawn here so it can look around and blink: e = (across, up), |e| < 1 inside
@@ -163,6 +181,24 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
           eye = mix(eye, lidc, lid);
           eye = mix(eye, vec3(0.06, 0.04, 0.035), (1.0 - smoothstep(0.0, 0.16, abs(e.y + 0.15 * e.x * e.x - lidY))) * step(0.02, uBlink + 0.02) * 0.9);
           diffuseColor.rgb = mix(diffuseColor.rgb, eye, inside);
+        }
+      }
+      {
+        // the inside of the mouth, where the lip seam opens (rest-pose mouth coordinates: the band round the seam
+        // stretches as the lower lip comes down): dark cavity, upper teeth along the top, lower teeth and tongue below
+        vec3 m = vMouth; float ax = abs(m.x);
+        float band = 0.26 * (1.0 - smoothstep(0.7, 1.0, ax));
+        float inM = (1.0 - smoothstep(band * 0.25, band * 1.15, abs(m.y))) * step(abs(m.z), 0.012) * smoothstep(0.0, 0.12, uMouthOpen);   // soft: the seam's triangles stretch unevenly
+        if (inM > 0.0) {
+          float yy = m.y / max(band, 1e-3);                                     // -1 (lower lip) .. 1 (upper lip)
+          vec3 cav = vec3(0.10, 0.03, 0.03) * (0.6 + 0.4 * (1.0 - ax));
+          vec3 teeth = vec3(0.82, 0.79, 0.72) * (0.85 + 0.15 * (1.0 - ax));
+          float upT = smoothstep(-0.1, 0.7, yy) * (1.0 - smoothstep(0.45, 0.9, ax)) * uTeeth * 0.85;
+          float loT = smoothstep(0.0, -0.8, yy) * (1.0 - smoothstep(0.35, 0.75, ax)) * uTeeth * 0.5;
+          float tongue = smoothstep(-0.1, -0.6, yy) * (1.0 - loT) * smoothstep(0.25, 0.6, uMouthOpen);
+          vec3 inside = mix(cav, teeth, max(upT, loT));
+          inside = mix(inside, vec3(0.45, 0.16, 0.15), tongue * 0.7);
+          diffuseColor.rgb = mix(diffuseColor.rgb, inside, inM);
         }
       }`);
   };
@@ -200,7 +236,20 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   // ── the face's life: idle blinks every 2–6 s (~120 ms), small glances, a look-at target, expressions ──
   mesh.updateMorphTargets();
   const infl = mesh.morphTargetInfluences ?? [], dict = mesh.morphTargetDictionary ?? {};
-  const expr: Required<Expression> = { smile: 0, grimace: 0, browUp: 0, browDown: 0, jawOpen: 0, blink: -1 };
+  // rest: corners lifted and the lower lip drawn in (a relaxed, pleasant mouth); everything else neutral
+  const expr: Required<Expression> = { smile: 0, grimace: 0, browUp: 0, browDown: 0, jawOpen: 0, blink: -1, pucker: 0, wide: 0, lipIn: 0, press: 0, cornerLift: 1, unpout: 1 };
+  const MORPHS = ['smile', 'grimace', 'browUp', 'browDown', 'jawOpen', 'pucker', 'wide', 'lipIn', 'press', 'cornerLift', 'unpout'] as const;
+  type MK = typeof MORPHS[number];
+  // talking: visemes from letters, ~70 ms a letter, pauses at spaces and punctuation
+  const VIS: Record<string, Partial<Record<MK, number>>> = {
+    A: { jawOpen: 0.75 }, E: { wide: 0.7, jawOpen: 0.35 }, I: { wide: 0.85, jawOpen: 0.2 }, O: { pucker: 0.8, jawOpen: 0.45 },
+    U: { pucker: 1.0, jawOpen: 0.15 }, M: { press: 0.9 }, F: { lipIn: 0.85, jawOpen: 0.08 }, C: { jawOpen: 0.25, wide: 0.25 }, _: {},
+  };
+  const vOf = (ch: string) => 'a'.includes(ch) ? 'A' : 'e'.includes(ch) ? 'E' : 'iy'.includes(ch) ? 'I' : 'o'.includes(ch) ? 'O' : 'uwq'.includes(ch) ? 'U'
+    : 'mbp'.includes(ch) ? 'M' : 'fv'.includes(ch) ? 'F' : /[a-z]/.test(ch) ? 'C' : '_';
+  let speech: { t: number; v: string }[] = [], speechT0 = 0, speechEnd = 0;
+  const vis: Record<MK, number> = Object.fromEntries(MORPHS.map(k => [k, 0])) as Record<MK, number>;
+  let nodV = 0, lastGx = 0, blinkTwice = false;
   let target: THREE.Vector3 | null = null, forced: THREE.Vector2 | null = null;
   let nextBlink = 1.5 + Math.random() * 3, blinkT = -1, nextGlance = 1, last = -1;
   const idleGaze = new THREE.Vector2(), cur = new THREE.Vector2();
@@ -208,11 +257,13 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   const eyeBind = eye.clone(), m4 = new THREE.Matrix4(), tb = new THREE.Vector3();
   const mirroredX = (G as any).mirrored ? -1 : 1;
   mesh.onBeforeRender = () => {
-    const now = performance.now() / 1000, dt = last < 0 ? 0 : Math.min(0.1, now - last); last = now;
+    const now = faceNow(), dt = last < 0 ? 0 : Math.min(0.1, now - last); last = now;
     // blink
-    if (blinkT < 0 && now > nextBlink) { blinkT = 0; nextBlink = now + 2 + Math.random() * 4; }
+    // natural blinks: every 2-6 s, sometimes twice in a row
+    if (blinkT < 0 && now > nextBlink) { blinkT = 0; blinkTwice = Math.random() < 0.2; nextBlink = now + 2 + Math.random() * 4; }
     let b = 0;
-    if (blinkT >= 0) { blinkT += dt; const t = blinkT / 0.12; b = t < 0.45 ? t / 0.45 : Math.max(0, 1 - (t - 0.45) / 0.55); if (t >= 1) blinkT = -1; }
+    if (blinkT >= 0) { blinkT += dt; const t = blinkT / 0.12; b = t < 0.45 ? t / 0.45 : Math.max(0, 1 - (t - 0.45) / 0.55); if (t >= 1) { blinkT = blinkTwice ? -0.12 : -1; if (blinkTwice) { blinkTwice = false; } } }
+    if (blinkT < -0.01 && blinkT > -0.5) { blinkT += dt; if (blinkT >= 0) blinkT = 0; }   // the second of a double blink, ~0.12 s later
     face.blink.value = expr.blink >= 0 ? expr.blink : b;
     // gaze: a forced gaze, else the target, else idle glances (saccades: quick moves, then hold)
     let gx = 0, gy = 0;
@@ -227,8 +278,30 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     }
     gx = Math.max(-1, Math.min(1, gx)); gy = Math.max(-1, Math.min(1, gy));
     const k2 = 1 - Math.exp(-dt * 30);                                  // saccade: ~0.1 s
+    // a big look-away gets a blink, as people do
+    if (Math.abs(gx - lastGx) > 0.5 && blinkT < 0) { blinkT = 0; } lastGx = gx;
     cur.x += (gx - cur.x) * k2; cur.y += (gy - cur.y) * k2; face.gazeU.value.copy(cur);
-    for (const n of ['smile', 'grimace', 'browUp', 'browDown', 'jawOpen'] as const) if (dict[n] !== undefined) infl[dict[n]] = expr[n];
+    // speech: the current viseme (eased in and out), jaw motion with it, small nods on stressed vowels
+    const tgt: Partial<Record<MK, number>> = {};
+    if (now < speechEnd) {
+      const st = now - speechT0; let k = 0; while (k < speech.length - 1 && speech[k + 1].t <= st) k++;
+      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = w_;
+      nodV += ((speech[k].v === 'A' || speech[k].v === 'O' ? 0.035 : 0) - nodV) * (1 - Math.exp(-dt * 6));
+    } else nodV += (0 - nodV) * (1 - Math.exp(-dt * 4));
+    const kv = 1 - Math.exp(-dt * 22);
+    for (const n of MORPHS) vis[n] += ((tgt[n] ?? 0) - vis[n]) * kv;
+    const talkingNow = now < speechEnd + 0.15;
+    for (const n of MORPHS) if (dict[n] !== undefined) {
+      let v = expr[n] + vis[n];
+      if (talkingNow && (n === 'cornerLift' || n === 'unpout')) v *= 0.6;          // talking relaxes the rest shaping
+      if (n === 'press' && (expr.jawOpen + vis.jawOpen) > 0.2) v = 0;
+      infl[dict[n]] = Math.max(-1, Math.min(1.2, v));
+    }
+    // the mouth opens with the jaw (and a little with the smile); teeth show on a big grin or when open
+    // (the painted mouth-inside reads as a zig-zag along the decimated lip seam; off until the mesh gets a real lip
+    //  split with 3D teeth and a mouth cavity behind it)
+    face.mouthOpen.value = MOUTH_INSIDE ? Math.min(1, expr.jawOpen + vis.jawOpen + Math.max(0, expr.smile - 0.6) * 0.5 + vis.wide * 0.15) : 0;
+    face.teeth.value = Math.min(1, 0.4 + face.mouthOpen.value);
     if (dict.blink !== undefined) infl[dict.blink] = face.blink.value * 0.8;
   };
   const ctl: FaceController = {
@@ -236,6 +309,15 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     setExpression(e) { for (const k3 of Object.keys(e) as (keyof Expression)[]) if (e[k3] !== undefined) (expr as any)[k3] = k3 === 'blink' ? e[k3]! : Math.max(k3 === 'smile' ? -1 : 0, Math.min(1, e[k3]!)); },
     lookAt(t) { target = t ? t.clone() : null; },
     setGaze(x, y = 0) { forced = x === null ? null : new THREE.Vector2(x, y); },
+    say(text, durationMs) {
+      const chars = text.toLowerCase().split(''); const per = durationMs ? durationMs / 1000 / Math.max(1, chars.length) : 0.07;
+      speech = []; let t = 0;
+      for (const ch of chars) { const v = vOf(ch); speech.push({ t, v }); t += v === '_' ? (/[,.!?;:]/.test(ch) ? per * 3.5 : per * 1.4) : per; }
+      speech.push({ t, v: '_' });
+      speechT0 = faceNow(); speechEnd = speechT0 + t;
+    },
+    talking() { return faceNow() < speechEnd; },
+    nod() { return nodV; },
   };
   return { mesh, seam, visor, tint: new THREE.Color(G.skinTint[0], G.skinTint[1], G.skinTint[2]), skin: { xform: G.skinXform, tone: G.seamTone }, face: ctl };
 }
