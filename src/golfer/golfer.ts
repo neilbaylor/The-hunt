@@ -275,10 +275,13 @@ export class Golfer {
     this.headAnchor = null; this.legAddr = { L: 9, R: 9 };
     this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
     this.headAnchor = this.headCentre();
-    this.aoaFix = 0;
-    { const nat = this.pathAngleDeg(); this.aoaFix = Math.tan(THREE.MathUtils.degToRad(this.attackAngleDeg())) - Math.tan(THREE.MathUtils.degToRad(nat)); }
-    this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
     { const m = this.legMiss(this.pose); this.legAddr = { L: m.L + 1e-3, R: m.R + 1e-3 }; }
+    // calibrate the attack angle on the keyed swing: measure the path as posed, store the slope to add
+    this.aoaFix = 0;
+    { const src = this.swingSource; this.swingSource = 'keyed';
+      const nat = this.pathAngleDeg(); this.aoaFix = Math.tan(THREE.MathUtils.degToRad(this.attackAngleDeg())) - Math.tan(THREE.MathUtils.degToRad(nat));
+      this.swingSource = src; }
+    this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
   }
 
   /** one hand's frame on the grip, in club space: its long axis, palm normal and wrist position */
@@ -609,11 +612,12 @@ export class Golfer {
       this.rig.apply(p);
     }
     // attack angle: through impact the head's path is tilted to this club's attack angle (down with the wedges, level
-    // with a long iron, up with the teed driver) by raising or lowering the hands a little either side of the ball;
+    // with a long iron, up with the teed driver) by raising or lowering the hands (and the body with them) a little either side of the ball;
     // nothing at the ball itself, fading out within ~half a metre
     if ((s.phase === 'down' || s.phase === 'follow') && this.aoaFix) {
       const x = g.position.x - this.clubAt.x, dy = this.aoaFix * x * Math.exp(-((x / 0.3) ** 2));
-      if (Math.abs(dy) > 1e-5) { g.position.y += dy; p.wristL.y += dy; p.wristR.y += dy; this.rig.apply(p); }
+      // (the whole body rides with the hands, on the legs, so the arms keep their shape)
+      if (Math.abs(dy) > 1e-5) { g.position.y += dy; p.wristL.y += dy; p.wristR.y += dy; p.pelvis.y += dy; this.rig.apply(p); }
     }
     // both hands stay on the club: if either arm can't reach its wrist target, move the club (both hands) toward
     // that shoulder (the trail arm used to fall short of the grip in the through-swing)
@@ -692,6 +696,18 @@ export class Golfer {
     for (const [w, r] of [[pin.address, ref.addr], [pin.impact, ref.imp]] as const) {
       if (w < 1e-4) continue;
       qc.slerp(r.quat, w); g.position.lerp(r.pos, w); p.poleL.lerp(r.poleL, w); p.poleR.lerp(r.poleR, w);
+    }
+    // the club head never goes below where it sat at address (the takeaway brushes the turf, it doesn't dig): if the
+    // captured shaft would put it lower, tip the club up about the lead wrist
+    const dig = ref.addr.pos.y - g.position.y;
+    if (dig > 1e-4) {
+      const grip = this.hands.wristLead.clone().applyQuaternion(qc).add(g.position), armV = g.position.clone().sub(grip), len = armV.length();
+      const ax = new THREE.Vector3().crossVectors(armV, new THREE.Vector3(0, 1, 0));
+      if (ax.lengthSq() > 1e-8) {
+        const ang = Math.asin(Math.min(1, (armV.y + dig) / len)) - Math.asin(Math.max(-1, armV.y / len));
+        const qf = new THREE.Quaternion().setFromAxisAngle(ax.normalize(), ang);
+        qc.premultiply(qf); g.position.copy(grip).add(armV.applyQuaternion(qf));
+      }
     }
     g.quaternion.copy(qc);
     p.wristL.copy(this.hands.wristLead).applyQuaternion(qc).add(g.position);
