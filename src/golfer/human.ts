@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import type { Body, Skeleton as SkelInfo } from './body';
 import type { GolferProfile } from './profile';
-import { buildVisor } from './headwear';
+import { buildVisor, preloadVisorLogo } from './headwear';
 import { applyFabric } from './fabric';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildGenHead, buildHairCards, hideAboveSeam, loadGenHead, type GenHeadData, type FaceController } from './genhead';
@@ -45,7 +45,7 @@ export async function loadHuman(binUrl: string, skinUrl: string, eyesUrl: string
 
 /** loadHuman plus the generated head */
 export async function loadHumanWithHead(binUrl: string, skinUrl: string, eyesUrl: string, smileUrl: string | undefined, headBin: string, headTex: string): Promise<HumanData> {
-  const [h, head] = await Promise.all([loadHuman(binUrl, skinUrl, eyesUrl, smileUrl), loadGenHead(headBin, headTex).catch(e => { console.warn('generated head failed to load', e); return undefined; })]);
+  const [h, head] = await Promise.all([loadHuman(binUrl, skinUrl, eyesUrl, smileUrl), loadGenHead(headBin, headTex).catch(e => { console.warn('generated head failed to load', e); return undefined; }), preloadVisorLogo()]);
   return { ...h, head };
 }
 

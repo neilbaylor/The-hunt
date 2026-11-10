@@ -5,6 +5,14 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Headwear } from './profile';
 import pizzaHutUrl from '../assets/brand/pizza-hut-classic.svg?url';
 
+let logoImg: HTMLImageElement | null = null;
+/** load and decode the visor logo up front, so the band has it from the first frame (slow networks: no blank visor) */
+export function preloadVisorLogo(): Promise<void> {
+  if (logoImg) return Promise.resolve();
+  const img = new Image(); img.src = pizzaHutUrl;
+  return img.decode().then(() => { logoImg = img; }).catch(() => new Promise<void>(res => { img.onload = () => { logoImg = img; res(); }; img.onerror = () => res(); }));
+}
+
 // The front patch is drawn from the classic logo's vector art (src/assets/brand), so it's sharp at any size.
 // The band takes the top 512 rows; the bottom 128 rows hold plain patches (the visor's white and the brim's
 // slightly greyer underside), so the whole visor is one mesh with one texture.
@@ -25,15 +33,16 @@ function logoTexture(kind: Headwear['logo'], base: string, sx = 1, under = base)
   g.setLineDash([]);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 16;
   if (kind === 'pizza-hut') {
-    const img = new Image();
-    img.onload = () => {
+    const draw = (img: HTMLImageElement) => {
       // the patch spans about a fifth of the band, centred on the front (u = 0.5)
       // sx: texture pixels per metre round the band ÷ pixels per metre up it, so the logo keeps its true proportions
       const h = H * 0.78, w = h * (img.width / img.height || 1.254) * sx;
       g.drawImage(img, W / 2 - w / 2, H / 2 - h / 2, w, h);   // dead centre of the band (the whole band face is visible)
       t.needsUpdate = true;
     };
-    img.src = pizzaHutUrl;
+    // preloaded (preloadVisorLogo, awaited with the character): drawn before the first frame; else as soon as it loads
+    if (logoImg) draw(logoImg);
+    else { const img = new Image(); img.onload = () => draw(img); img.src = pizzaHutUrl; }
   }
   return t;
 }
