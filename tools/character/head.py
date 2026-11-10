@@ -464,6 +464,10 @@ lowest = FV[:, 1].min()
 capf = cap[GF].all(1) & (FV[GF][:, :, 1].max(1) < lowest + 0.012)
 # and the generator's flared rim round the bottom of the neck stub: the loft below takes over from here
 capf |= FV[GF][:, :, 1].min(1) < lowest + A.crop
+# and everything below the neck cut (3.5 cm under the chin): a generator that went on down the neck (the Hunyuan3D-2.1
+# head from his photo has a neck stub flaring into the shirt) would otherwise sit below the collar seam, its rim a flat
+# 'bib' that swings out over the collar when he lifts his chin; the loft below grows the neck from this cut instead
+capf |= FV[GF][:, :, 1].min(1) < y_cut_front
 if A.neck == 'cap': capf[:] = False
 GF2 = GF[~capf]
 hm = trimesh.Trimesh(FV, GF2, process=False); hm.remove_unreferenced_vertices()
@@ -1582,9 +1586,9 @@ tint = np.ones(3)   # (superseded by skinXform; kept so older loaders still read
 
 # ── sanity: every vertex weighted (summing to 1) to the head and neck chain only, nothing far below the jaw ──
 _wsum = np.array([sum(v for _, v in w) for w in wts]); assert np.allclose(_wsum, 1, atol=1e-3), 'skin weights must sum to 1'
-_ok_b = {B.index(n_) for n_ in ('head', 'neck_01', 'spine_02', 'spine_03', 'clavicle_l', 'clavicle_r') if n_ in B}
-_bad_w = [i for i, w in enumerate(wts) if any(v > 0.05 and b_ not in _ok_b for b_, v in w)]
-if _bad_w: print(f'  (re-weighting {len(_bad_w)} verts that leaned on arm bones to their head/neck share)')
+_ok_b = {B.index(n_) for n_ in ('head', 'neck_01', 'spine_02', 'spine_03') if n_ in B}   # never the clavicles or arms: rounding the shoulders at address dragged the neck out over the collar
+_bad_w = [i for i, w in enumerate(wts) if any(v > 0 and b_ not in _ok_b for b_, v in w)]
+if _bad_w: print(f'  re-weighting {len(_bad_w)} verts that leaned on shoulder/arm bones to their spine/neck/head share')
 for i in _bad_w:
     w = [(b_, v) for b_, v in wts[i] if b_ in _ok_b and v > 0] or [(hb, 1.0)]; t_ = sum(v for _, v in w)
     wts[i] = [(b_, v / t_) for b_, v in w] + [(0, 0.0)] * (4 - len(w))
