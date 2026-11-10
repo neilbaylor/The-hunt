@@ -438,6 +438,8 @@ export class Golfer {
     p.hipTurn = key.hipTurn + st.open; p.hipTilt = key.hipTilt; p.hipSide = key.hipSide;
     p.chestTurn = key.chestTurn + st.open * 0.5; p.chestTilt = key.chestTilt + breathe + this.tiltAdj * (s.phase === 'follow' ? 1 - smooth(0.25, 0.9, -phi / Math.abs(PHI_FINISH)) : 1); p.chestSide = key.chestSide + this.sideAdj * (s.phase === 'follow' ? 1 - smooth(0.1, 0.6, -phi / Math.abs(PHI_FINISH)) : 1);
     p.pelvis.copy(this.pelvisBase); p.pelvis.x += key.shift * k;
+    // (a short club's set-up already has the weight forward: that is part of the shift, not extra)
+    p.pelvis.x -= PEL_FWD * (1 - clubLengthT(this.club.spec)) * k * smooth(A.shift, I.shift, key.shift);
     // a wider stance (driver) needs a longer slide to get the hips, and the head, over the lead foot by the finish
     p.pelvis.x += Math.max(0, key.shift) / HOLD.shift * (this.halfStance() - 0.197 * k); p.pelvis.y -= key.drop * k;
     // clavicles: within anatomical limits (±0.11 rad keeps the shoulder joint within 2 cm of its rest place)
