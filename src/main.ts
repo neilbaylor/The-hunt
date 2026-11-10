@@ -82,7 +82,7 @@ const divots = createDivots(scene, (x, z) => range?.heightAt(x, z) ?? 0);
 // clear of the ball and the line; the front pocket turned toward the swing camera
 const standBag = createStandBag();
 { const bx = golfer.lefty ? 2.15 : -2.15, bz = -3.3; standBag.position.set(bx, range?.heightAt(bx, bz) ?? 0, bz);
-  standBag.rotation.y = Math.atan2(-((golfer.lefty ? 0.7 : -0.7) - bx), -(3.6 - bz)) + (golfer.lefty ? 0.4 : -0.4); scene.add(standBag); }
+  standBag.rotation.y = golfer.lefty ? 2.5 : -2.5; scene.add(standBag); } // pocket three-quarter to the swing cam, legs back and out
 const tee = new THREE.Mesh(new THREE.LatheGeometry([
   [0.0002, -0.031], [0.0013, -0.027], [0.002, -0.017], [0.0022, 0.006], [0.0027, 0.012], [0.0046, 0.018], [0.0066, 0.0214],
   [0.0074, 0.0231], [0.0068, 0.0236], [0.0058, 0.0226], [0.0036, 0.0212], [0.0, 0.0207],

@@ -65,9 +65,9 @@ const TIMES: Record<TimeOfDay, TimePreset> = {
   golden: {
     elev: 9, azim: 238,
     // a hazy summer evening, sun low and nearly into the camera: creamy pale sky, golden light, cool green shade
-    sky: { turbidity: 10, rayleigh: 0.95, mieCoefficient: 0.008, mieDirectionalG: 0.84 },
+    sky: { turbidity: 12, rayleigh: 0.6, mieCoefficient: 0.012, mieDirectionalG: 0.86 },
     clouds: 0.1, sunColor: '#ffc466', sunI: 8.2, hemiSky: '#b4c0c8', hemiGround: '#46502c', hemiI: 0.15,
-    fog: '#ecdfc2', fogDensity: 0.0008, envI: 0.25, groundBounce: '#4e5e2c', trans: 1.25,
+    fog: '#efdfbe', fogDensity: 0.0012, envI: 0.25, groundBounce: '#556028', trans: 1.25,
   },
   midday: {
     elev: 48, azim: -28,
@@ -79,7 +79,7 @@ const TIMES: Record<TimeOfDay, TimePreset> = {
 };
 
 const TEE = { cx: 0, cz: 2, hx: 7, hz: 8, r: 0.45 }; // tee box rounded rectangle (x∈[-7,7], z∈[-6,10])
-const TEE_DROP = 0.32; // how far the tee box stands above the ground around it
+const TEE_DROP = 0.14; // how far the tee box stands above the ground around it
 const FW_START = -6.5, FW_END = -322, CAP0 = 14, CAP1 = 26, FIRST_CUT = 2.6;
 const FRINGE = 2.1;
 
@@ -228,9 +228,9 @@ function surfaceAt(x: number, z: number): Surface {
 // ───────────────────────── colours ─────────────────────────
 const lin = (hex: string) => new THREE.Color(hex); // THREE.Color converts sRGB hex to linear
 const COL = {
-  rough: lin('#2a5526'), roughDry: lin('#6a7334'), meadow: lin('#4a6b2c'), cut: lin('#377232'),
-  fwDark: lin('#387a2c'), fwLight: lin('#62a03a'), fringe: lin('#3f8833'),
-  green: lin('#5ea341'), greenLight: lin('#72b04a'), tee: lin('#3c8433'), teeLight: lin('#4c943a'),
+  rough: lin('#33561f'), roughDry: lin('#6a7334'), meadow: lin('#4a6b2c'), cut: lin('#377232'),
+  fwDark: lin('#3f7a28'), fwLight: lin('#6ca438'), fringe: lin('#3f8833'),
+  green: lin('#5ea341'), greenLight: lin('#72b04a'), tee: lin('#4a8a32'), teeLight: lin('#5a9a3a'),
   sand: lin('#f1e8d2'), sandDark: lin('#d2c39f'), lip: lin('#2f5f1c'), forest: lin('#1d3313'), forestLeaf: lin('#1b3412'), forestLeafLight: lin('#3f5f22'),
 };
 const v3 = (c: THREE.Color) => `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`;
@@ -702,7 +702,7 @@ vec3 groundColor(vec2 p) {
   float tm = inside(teeSD(p), 0.0);
   vec3 tc = mix(${v3(COL.tee)}, ${v3(COL.teeLight)}, 0.45);
   // tee: a crisp diagonal cross-cut, each pass light one way and dark the other
-  tc *= 1.0 + 0.1 * mowSheen(stripes(p.x / 1.75), vec2(1.0, 0.0)) + 0.035 * mowSheen(stripes(p.y / 1.75), vec2(0.0, 1.0));
+  tc *= 1.0 + 0.06 * mowSheen(stripes(p.x / 1.75), vec2(1.0, 0.0)) + 0.025 * mowSheen(stripes(p.y / 1.75), vec2(0.0, 1.0));
   tc *= 0.95 + 0.08 * n1 + 0.04 * n2;
   // tee box wear: a few lighter scuffs and divots near the ball
   float wear = smoothstep(0.62, 0.8, texture2D(uNoise, p * 0.9 + 3.1).g) * (1.0 - smoothstep(1.5, 4.0, length(p - vec2(0.3, -0.6))));
@@ -756,7 +756,7 @@ vec3 groundColor(vec2 p) {
       // turf is a poor mirror: damp the sky sheen that makes grass look plastic at grazing angles
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n// greens keep a soft putting-surface sheen\nreflectedLight.directSpecular *= mix(0.3, 0.5, gSheen);\nreflectedLight.indirectSpecular *= mix(0.25, 0.32, gSheen);');
   };
-  m.customProgramCacheKey = () => 'range-ground-v11';
+  m.customProgramCacheKey = () => 'range-ground-v12';
   return m;
 }
 
@@ -833,8 +833,8 @@ function teeBoxGeometry(): THREE.BufferGeometry {
   s.lineTo(x1, y1 - r); s.quadraticCurveTo(x1, y1, x1 - r, y1);
   s.lineTo(x0 + r, y1); s.quadraticCurveTo(x0, y1, x0, y1 - r);
   s.lineTo(x0, y0 + r); s.quadraticCurveTo(x0, y0, x0 + r, y0);
-  const depth = 0.8, bev = 0.07;
-  const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: true, bevelThickness: bev, bevelSize: 0.08, bevelSegments: 3, curveSegments: 6 });
+  const depth = 0.8, bev = 0.12;
+  const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: true, bevelThickness: bev, bevelSize: 0.32, bevelSegments: 6, curveSegments: 6 });
   g.rotateX(-Math.PI / 2);
   g.translate(0, -(depth + bev), 0);
   g.deleteAttribute('uv');
@@ -958,7 +958,7 @@ function farTreeGeo(kind = 0, cheap = false): THREE.BufferGeometry {
   const lumps: [number, number, number, number][] = [[0, 6.3, 0, 2.7], [1.6, 5.4, 0.6, 2.1], [-1.4, 5.6, -0.8, 2.2], [0.3, 7.6, -0.5, 1.8]];
   // cheap (low detail): two bigger lumps, about half the triangles
   const use: [number, number, number, number][] = cheap ? [[0.2, 6.2, -0.2, 3.0], [1.0, 5.0, 0.6, 2.3]] : lumps;
-  return finish([trunk(2.8), ...use.map(([x, y, z, r]) => blob(x, y, z, r, 1.05, 0, C, leaf, 3.2, 9.5))]);
+  return finish([trunk(2.8), ...use.map(([x, y, z, r]) => blob(x, y, z, r, 1.05, cheap ? 0 : 1, C, leaf, 3.2, 9.5))]);
 }
 
 // ───────────────────────── card trees (alpha-tested foliage cards) ─────────────────────────
@@ -1117,7 +1117,7 @@ function branch(B: CardBuf, from: THREE.Vector3, to: THREE.Vector3, r0: number, 
   c.translate(0, len / 2, 0);
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
   c.applyQuaternion(q); c.translate(from.x, from.y, from.z);
-  B.solidRect(c, bark, len / 4, (_x, y) => 0.6 + 0.4 * clamp(y / 6, 0, 1));
+  B.solidRect(c, bark, len / 4, (_x, y) => 0.42 + 0.3 * clamp(y / 8, 0, 1)); // dark trunks, a little lighter up in the crown
 }
 /** leafy canopy built from lumps of cards around dark cores */
 function leafyTree(hi: boolean, trunkH: number, trunkR: number, lumps: [number, number, number, number][], sy: number, tex: [number, number, number, number], cardSize: number, density: number, bark = UV_BARK_RECT): THREE.BufferGeometry {
@@ -1137,7 +1137,8 @@ function leafyTree(hi: boolean, trunkH: number, trunkR: number, lumps: [number, 
   if (hi) for (let i = 0; i < 5; i++) { const a = rand() * 6.28, y = trunkH * (0.55 + rand() * 0.25); branch(B, new THREE.Vector3(0.05, y, 0), new THREE.Vector3(Math.cos(a) * 1.6, y + 0.6 + rand() * 0.8, Math.sin(a) * 1.6), trunkR * 0.18, trunkR * 0.05, bark); }
   const d = new THREE.Vector3(), rnd = new THREE.Vector3(), u = new THREE.Vector3(), v = new THREE.Vector3(), fN = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
   for (const [lx, ly, lz, r] of lumps) {
-    const core = new THREE.IcosahedronGeometry(r * 0.5, hi ? 1 : 0); core.scale(1, sy, 1); core.translate(lx, ly, lz);
+    // a smooth inner mass (no facets) so you never see through to a hard polyhedron
+    const core = new THREE.SphereGeometry(r * 0.42, hi ? 10 : 6, hi ? 7 : 4); core.scale(1, sy, 1); core.translate(lx, ly, lz);
     // the core is leafy too (alpha-tested leaf texture, shaded dark) so it reads as deep foliage, not a ball
     B.solidRect(core, [UV_LEAF[0] + 0.06, UV_LEAF[1] + 0.1, UV_LEAF[2] - 0.06, UV_LEAF[3] - 0.1], 1, (_x, y) => 0.3 + 0.34 * clamp((y - bottom) / (top - bottom), 0, 1));
     const count = Math.round(density * r * r * (hi ? 1 : 0.38));
@@ -1163,19 +1164,19 @@ function leafyTree(hi: boolean, trunkH: number, trunkR: number, lumps: [number, 
 const lift = (l: [number, number, number, number][], dy: number) => l.map(([x, y, z, r]) => [x, y + dy, z, r] as [number, number, number, number]);
 function broadleafCards(hi: boolean) {
   // a mature oak: a tall clean trunk and a broad, billowy crown of big masses lifted high
-  return leafyTree(hi, 7.2, 0.34, lift([[0, 6.8, 0, 3.0], [2.3, 5.9, 0.6, 2.3], [-2.2, 6.1, -0.4, 2.4], [0.3, 5.7, -2.3, 2.2], [-0.4, 5.6, 2.2, 2.2], [0.6, 8.6, 0.2, 2.0]], 2.8), 0.86, UV_LEAF, 3.2, 2.6);
+  return leafyTree(hi, 7.2, 0.22, lift([[0, 6.8, 0, 3.0], [2.3, 5.9, 0.6, 2.3], [-2.2, 6.1, -0.4, 2.4], [0.3, 5.7, -2.3, 2.2], [-0.4, 5.6, 2.2, 2.2], [0.6, 8.6, 0.2, 2.0]], 2.8), 0.86, UV_LEAF, 2.3, 5.0);
 }
 function broadleafB(hi: boolean) {
   // an older, wider, flatter-topped tree with an irregular crown
-  return leafyTree(hi, 6.4, 0.4, lift([[0.4, 6.3, 0.2, 2.8], [2.9, 5.4, 0.9, 2.2], [-2.7, 5.6, -0.3, 2.5], [-0.8, 5.1, -2.6, 2.1], [1.1, 5.0, 2.5, 2.0], [-1.2, 7.6, 0.8, 1.9], [1.6, 7.2, -1.2, 1.8]], 2.4), 0.78, UV_LEAF, 3.1, 2.8);
+  return leafyTree(hi, 6.4, 0.26, lift([[0.4, 6.3, 0.2, 2.8], [2.9, 5.4, 0.9, 2.2], [-2.7, 5.6, -0.3, 2.5], [-0.8, 5.1, -2.6, 2.1], [1.1, 5.0, 2.5, 2.0], [-1.2, 7.6, 0.8, 1.9], [1.6, 7.2, -1.2, 1.8]], 2.4), 0.78, UV_LEAF, 2.2, 5.2);
 }
 function mapleCards(hi: boolean) {
   // a rounder, denser maple crown
-  return leafyTree(hi, 5.4, 0.3, lift([[0, 6.2, 0, 2.7], [1.6, 5.2, 0.4, 2.0], [-1.5, 5.3, -0.5, 2.1], [0.2, 5.0, -1.7, 1.9], [-0.3, 5.1, 1.7, 1.9], [0.3, 7.7, -0.2, 1.9]], 1.6), 0.96, UV_LEAF, 3.0, 3.0);
+  return leafyTree(hi, 5.4, 0.2, lift([[0, 6.2, 0, 2.7], [1.6, 5.2, 0.4, 2.0], [-1.5, 5.3, -0.5, 2.1], [0.2, 5.0, -1.7, 1.9], [-0.3, 5.1, 1.7, 1.9], [0.3, 7.7, -0.2, 1.9]], 1.6), 0.96, UV_LEAF, 2.1, 5.4);
 }
 function poplarCards(hi: boolean) {
   // a birch: white bark, a tall loose crown of small light leaf masses
-  return leafyTree(hi, 4.2, 0.2, [[0, 5.4, 0, 1.7], [0.5, 7.2, 0.2, 1.6], [-0.3, 9.0, -0.2, 1.4], [0.2, 10.5, 0, 1.0], [1.2, 6.2, -0.6, 1.2]], 1.2, UV_SMALL, 2.2, 3.6, UV_BIRCH_RECT);
+  return leafyTree(hi, 4.2, 0.2, [[0, 5.4, 0, 1.7], [0.5, 7.2, 0.2, 1.6], [-0.3, 9.0, -0.2, 1.4], [0.2, 10.5, 0, 1.0], [1.2, 6.2, -0.6, 1.2]], 1.2, UV_SMALL, 1.7, 5.5, UV_BIRCH_RECT);
 }
 function pineCards(hi: boolean): THREE.BufferGeometry {
   const B = new CardBuf();
@@ -1821,7 +1822,7 @@ reflectedLight.indirectSpecular *= 0.3;`);
       idx.forEach(([m, i], k) => { im.setMatrixAt(k, m); im.setColorAt(k, farTint[i]); });
       im.computeBoundingSphere();
       scene.add(im);
-      thin.push({ im, full: idx.length, f: { low: 0.28, med: 0.7, high: 1 } });
+      thin.push({ im, full: idx.length, f: { low: 0.28, med: 0.5, high: 1 } });
     }
   }
 
@@ -1914,7 +1915,7 @@ gl_Position = projectionMatrix * mvPosition;`);
     im.receiveShadow = true;
     im.name = 'grass';
     scene.add(im);
-    thin.push({ im, full: n, f: { low: 0.3, med: 0.75, high: 1 } });
+    thin.push({ im, full: n, f: { low: 0.3, med: 0.6, high: 1 } });
     // a patch of blades that follows the ball once it is down the range (landing and rest cameras): rough reads
     // tall and breaks the ball's silhouette, fairway reads as cut turf. Re-laid when the ball has moved on.
     const PATCH = 12000, PR = 4;

@@ -131,7 +131,7 @@ export function createStandBag(): THREE.Mesh {
   const merged = mergeGeometries(parts, false)!;
   merged.computeBoundingSphere();
   // cloth: matte with a soft sheen at grazing angles
-  const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, sheen: 0.6, sheenRoughness: 0.7, sheenColor: new THREE.Color('#ffffff') });
+  const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, sheen: 0.25, sheenRoughness: 0.8, sheenColor: new THREE.Color('#ffffff') });
   const m = new THREE.Mesh(merged, mat);
   m.castShadow = true; m.receiveShadow = true; m.name = 'stand-bag';
   // a soft contact shadow under the base and the two feet (the sun's shadow map may not reach this far)
