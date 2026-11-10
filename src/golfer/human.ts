@@ -226,7 +226,8 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
   const genHair = gen ? buildHairCards(gen, { color: p.look.hair, eye: new THREE.Vector3(...(M.eye as [number, number, number])), band: O.headwear ? { y: gen.visor.center[1] } : undefined }) : null;
   if (genHair) { const hb = M.bones.indexOf('head'); genHair.geometry.translate(-J[hb].x, -J[hb].y, -J[hb].z); bones[hb].add(genHair); meshes.push(genHair); }
   const shirtTwist = { value: 0 };
-  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.86, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.shirt), 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  // matte: a faint sheen in the shirt's own colour and little sky reflection, so the green holds from every angle (no pale mint face-on)
+  const shirtMat = new THREE.MeshPhysicalMaterial({ color: O.shirt, roughness: 0.9, specularIntensity: 0.6, envMapIntensity: 0.45, sheen: 0.08, sheenColor: new THREE.Color(O.shirt).multiplyScalar(1.3), sheenRoughness: 0.7, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   {
     // the crest sits on the wearer's left chest; a left-hander is drawn mirrored, so it goes on the rig's right and is flipped back
     // the Malbon script 'm' (vector, traced from the brand artwork) as white embroidery: a soft thread shadow,
@@ -284,7 +285,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     na.needsUpdate = true;
   };
   weldNormals(shirtMesh);
-  const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.85, sheen: 0.15, sheenColor: new THREE.Color('#ffffff').lerp(new THREE.Color(O.pants), 0.8), sheenRoughness: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const pantsMat = new THREE.MeshPhysicalMaterial({ color: O.pants, roughness: 0.88, specularIntensity: 0.6, envMapIntensity: 0.45, sheen: 0.06, sheenColor: new THREE.Color(O.pants), sheenRoughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   applyFabric(pantsMat, 'chino', fu);
   const pantsMesh = add('pants', pantsMat); weldNormals(pantsMesh);
   const glove = new THREE.MeshPhysicalMaterial({ color: O.glove, roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color('#ffffff'), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
@@ -659,7 +660,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }, true, 1);
     const collarTex = ramp([[0, 0.22], [0.05, 0.62], [0.16, 0.86], [0.2, 0.97], [0.27, 1.0], [0.7, 1.02], [0.79, 1.1], [0.835, 0.85], [0.86, 0.5], [1, 0.42]], 512);
     collarTex.wrapS = collarTex.wrapT = THREE.ClampToEdgeWrapping; collarTex.repeat.set(1, 1);
-    const collarMat = new THREE.MeshPhysicalMaterial({ map: collarTex, roughness: 0.9, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(shirtC, 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide });
+    const collarMat = new THREE.MeshPhysicalMaterial({ map: collarTex, roughness: 0.9, sheen: 0.08, sheenColor: shirtC.clone().multiplyScalar(1.3), sheenRoughness: 0.7, side: THREE.DoubleSide });
     const bits: THREE.Mesh[] = [new THREE.Mesh(g, collarMat), new THREE.Mesh(capG, collarMat)];   // collar, its shadow line, placket and buttons: baked into one mesh below
     // the shadow line: a thin skirt from under every free edge down onto the shirt, dark at the edge fading out
     {
@@ -708,7 +709,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
     // one skinned mesh, one atlas: one draw call; too small to need a shadow of its own
     const baked = bakeAtlas(bits, 512);
-    const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.95, specularIntensity: 0.7, envMapIntensity: 0.35, sheen: 0.18, sheenColor: collarMat.sheenColor, sheenRoughness: 0.8, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.95, specularIntensity: 0.7, envMapIntensity: 0.35, sheen: 0.08, sheenColor: collarMat.sheenColor, sheenRoughness: 0.8, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const cm = skinned(baked.geometry, bitsMat); cm.name = 'collar'; cm.castShadow = false;
     // the collar rides on the shoulders more than the shirt's neckline does (40% of the neck's weight), so the
     // lead point isn't dragged round by the chin at the top
