@@ -66,6 +66,12 @@ export class Rig {
     this.eyeOff = body.skel.eye.clone().sub(joint[BONE.head]);
   }
 
+  /** lengthen (or shorten) both arms: the elbow and wrist joints move out along the arm, the mesh follows through its skin weights */
+  scaleArms(sc: number) {
+    for (const fo of [BONE.foreL, BONE.foreR]) { this.off[fo].multiplyScalar(sc); this.body.bones[fo].position.copy(this.off[fo]); }
+    (this.len as { upper: number; fore: number }).upper *= sc; (this.len as { upper: number; fore: number }).fore *= sc;
+  }
+
   private fk(i: number) {
     const par = PARENT[i];
     if (par >= 0) this.P[i].copy(this.off[i]).applyQuaternion(this.Q[par]).add(this.P[par]);

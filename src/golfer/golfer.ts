@@ -100,6 +100,7 @@ const ADDRESS_TOE_UP = +(globalThis.location ? new URLSearchParams(globalThis.lo
 const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search) : null, _fv = (n: string, d: number[]) => _fq?.get(n)?.split(',').map(Number) ?? d;
 // held-finish targets in the chest's frame (URL-tunable on golfer.html: fg = hands from the neck, fs = shaft back/down
 // added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
+const ARM_SCALE = +(_fq?.get('arm') ?? 1.08);
 const SIDE_ADJ = _fv('sa', [-0.16, 0.16]);
 const FIN = { g: _fv('fg', [0.15, 0.22, -0.17]), s: _fv('fs', [0.8, 0.6]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
@@ -154,6 +155,12 @@ export class Golfer {
     if (human) { const b = buildHumanBody(human, profile); this.body = b; this.extras = b.extras; }
     else this.body = buildBody(profile);
     this.rig = new Rig(this.body);
+    // Neil's arms: the base mesh's are short for 6'3" (shoulder to wrist 56 cm, about 0.295 of his height, where 0.32 is
+    // typical), which left no slack to reach the club. Lengthened to ~0.32 of his height; the hand rides out with the wrist.
+    if (this.extras && ARM_SCALE !== 1) {
+      this.rig.scaleArms(ARM_SCALE);
+      for (const sd of ['L', 'R'] as const) this.body.bones[this.extras.hand[sd]].position.multiplyScalar(ARM_SCALE);
+    }
     this.char.add(this.body.root);
     this.char.rotation.y = Math.PI / 2;         // char +Z (facing) → world +X; char +X (target) → world -Z
     this.root.add(this.char);
