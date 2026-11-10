@@ -449,6 +449,8 @@ export class Golfer {
       const top = keysAt(KF_BACK, Math.min(1, s.topPhi / PHI_TOP), { ...A });
       const w = 1 - smooth(0, 0.85, u);
       for (const n of KEY_NAMES) key[n] += (top[n] - T[n]) * w;
+      // long clubs: the hands drop further out into the slot at delivery, so the trail elbow still leads the hip
+      { const lt = clubLengthT(this.club.spec); key.lift -= 0.3 * lt * lt * smooth(0.45, 0.62, u) * (1 - smooth(0.62, 0.8, u)); }
     } else {
       // short finishes (punch, pitch) stop part-way along the same path and hold
       const f = Math.min(1, -phi / Math.abs(PHI_FINISH));
