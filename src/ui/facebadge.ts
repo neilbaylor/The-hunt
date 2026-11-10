@@ -131,10 +131,10 @@ export class FaceBadge {
     // nods and tilts turn the head about the top of the neck (a little below and behind the ears)
     const pv = new THREE.Vector3(e.x, e.y - 0.09, e.z - 0.05);
     const pivot = new THREE.Group(); pivot.position.copy(pv); b.group.position.copy(pv).negate(); pivot.add(b.group); scene.add(pivot);
-    // front-on and level: from straight ahead at nose height, a long lens framing visor top to chin
-    const cam = new THREE.PerspectiveCamera(15, 1, 0.3, 3);
-    const look = new THREE.Vector3(e.x, e.y - 0.022, e.z);
-    cam.position.set(look.x, look.y + 0.01, look.z + 0.95); cam.lookAt(look);
+    // front-on and level: from straight ahead at eye height, a long lens framing visor top to chin
+    const cam = new THREE.PerspectiveCamera(19.5, 1, 0.3, 3);
+    const look = new THREE.Vector3(e.x, e.y - 0.002, e.z);                 // visor top to chin, a little neck
+    cam.position.set(look.x, look.y + 0.02, look.z + 0.95); cam.lookAt(look);
     b.face.setTalkScale(2);                                    // a small badge wants the mouth shapes bigger
     b.face.setExpression({ smile: 0.4 });
     this.own = { scene, cam, pivot, face: b.face, dirty: 2 };
