@@ -11,6 +11,7 @@ export interface GenHeadData {
     seam: { point: number[]; normal: number[]; band: number };
     skinTint: number[]; skinColor: number[]; hairColor: number[]; skinXform?: number[][]; seamTone?: number[];
     morphs?: string[]; morphUnit?: number;
+    mouthRig?: Record<'center' | 'left' | 'right' | 'upper' | 'lower' | 'chin' | 'nose' | 'jawLip' | 'jawChin', number[]> | null;
   };
   buf: ArrayBuffer; blobStart: number; tex: HTMLImageElement;
 }
@@ -206,6 +207,44 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   const mesh = new THREE.SkinnedMesh(g, mat);
   mesh.name = 'gen-head'; mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false;
   root.add(mesh); mesh.bind(skeleton);
+  // ── the inside of the mouth (the lips are split along the seam in head.py): a dark cavity, an upper row of teeth
+  //    fixed to the head, lower teeth and tongue riding down with the jaw. Built in bind space, carried by the head bone.
+  let mouthParts: { lower: THREE.Group; lowerBase: THREE.Vector3; jaw: THREE.Vector3 } | null = null;
+  const MR = G.mouthRig;
+  const hbI = boneNames.indexOf('head');
+  if (MR && hbI >= 0) {
+    const P = (k: keyof NonNullable<typeof MR>) => place(new THREE.Vector3(...(MR[k] as [number, number, number])));
+    const c = P('center'), L = P('left'), Rr = P('right'), U = P('upper'), Lo = P('lower');
+    const jaw = new THREE.Vector3(...(MR.jawLip as [number, number, number])).multiplyScalar(k);
+    const w = L.distanceTo(Rr), fwd = new THREE.Vector3(0, 0, 1);
+    const rig = new THREE.Group(); rig.name = 'mouth-inside';
+    const cav = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.07, 0.02, 0.02), side: THREE.BackSide }));
+    cav.scale.set(w * 0.42, 0.016, 0.02); cav.position.copy(c).addScaledVector(fwd, -0.022); rig.add(cav);
+    const teethMat = new THREE.MeshStandardMaterial({ color: '#e7e1d4', roughness: 0.45 });
+    const arc = (y0: number, h: number, back: number, span: number) => {
+      // a row of teeth: a curved strip following the dental arch, facing out
+      const R0 = w * 0.5, seg = 18, pos: number[] = [], idx: number[] = [];
+      const cz = c.z - back - R0;
+      for (let i = 0; i <= seg; i++) {
+        const a = -span + (2 * span * i) / seg, x = c.x + Math.sin(a) * R0, z = cz + Math.cos(a) * R0;
+        pos.push(x, y0, z, x, y0 - h, z);
+      }
+      for (let i = 0; i < seg; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); }
+      const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g2.setIndex(idx); g2.computeVertexNormals();
+      return new THREE.Mesh(g2, teethMat);
+    };
+    rig.add(arc(U.y + 0.001, 0.0078, 0.007, 0.72));                         // upper teeth, behind the upper lip
+    const lower = new THREE.Group();
+    lower.add(arc(Lo.y - 0.0008, 0.0068, 0.0085, 0.62));                    // lower teeth, a little further back
+    const tongue = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshStandardMaterial({ color: '#a85a55', roughness: 0.5 }));
+    tongue.scale.set(w * 0.32, 0.006, 0.02); tongue.position.set(c.x, Lo.y - 0.004, c.z - 0.02); lower.add(tongue);
+    rig.add(lower);
+    teethMat.side = THREE.DoubleSide;
+    // into the head bone's space (as the hair cards are)
+    rig.applyMatrix4(skeleton.boneInverses[hbI]);
+    skeleton.bones[hbI].add(rig);
+    mouthParts = { lower, lowerBase: lower.position.clone(), jaw };   // (the rig's own space is bind space)
+  }
 
   const seam = { p: place(new THREE.Vector3(...(G.seam.point as [number, number, number]))), n: new THREE.Vector3(...(G.seam.normal as [number, number, number])).normalize() };
 
@@ -302,7 +341,9 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     //  split with 3D teeth and a mouth cavity behind it)
     face.mouthOpen.value = MOUTH_INSIDE ? Math.min(1, expr.jawOpen + vis.jawOpen + Math.max(0, expr.smile - 0.6) * 0.5 + vis.wide * 0.15) : 0;
     face.teeth.value = Math.min(1, 0.4 + face.mouthOpen.value);
-    if (dict.blink !== undefined) infl[dict.blink] = face.blink.value * 0.8;
+    // (the eyelid geometry from the transferred blink closes one eye more than the other: the drawn lids alone blink, evenly)
+    if (dict.blink !== undefined) infl[dict.blink] = 0;
+    if (mouthParts) mouthParts.lower.position.copy(mouthParts.lowerBase).addScaledVector(mouthParts.jaw, Math.max(0, expr.jawOpen + vis.jawOpen) + 0.25 * vis.pucker);
   };
   const ctl: FaceController = {
     // smile < 0 eases the portrait's own smile toward neutral

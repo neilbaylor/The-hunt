@@ -681,6 +681,66 @@ if A.rest == 'closed' and 'smile' in morph_d and A.rest_smile:
     lm_f = lm_f + (d_lv[iq_] * wq_[..., None]).sum(1)
     LV = LV + d_lv
     print(f'  rest smile {A.rest_smile:+.2f} of the smile unit (before the bake)')
+# ── the lips part: split the mesh along the lip seam (a mesh path from corner to corner hugging the seam), so the
+#    lower lip separates as the jaw opens and the mouth's inside (cavity, teeth, tongue: built in genhead.ts) shows ──
+mouth_rig = None
+if 'jawOpen' in morph_d:
+    import heapq
+    seam_pts = (lm_f[[78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308]] + lm_f[[78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308]]) / 2
+    seg_d = lambda P: np.min(np.stack([np.linalg.norm(np.cross(P - a, b - a), axis=1) / np.linalg.norm(b - a) + np.maximum(0, -((P - a) @ (b - a)) / np.linalg.norm(b - a)) + np.maximum(0, ((P - b) @ (b - a)) / np.linalg.norm(b - a)) for a, b in zip(seam_pts[:-1], seam_pts[1:])]), 0)
+    vd = seg_d(LV)
+    nbr2 = [set() for _ in range(len(LV))]
+    for a_, b_, c_ in LF: nbr2[a_] |= {b_, c_}; nbr2[b_] |= {a_, c_}; nbr2[c_] |= {a_, b_}
+    s0 = int(np.argmin(np.linalg.norm(LV - lm_f[78], axis=1))); s1 = int(np.argmin(np.linalg.norm(LV - lm_f[308], axis=1)))
+    dist = {s0: 0.0}; prev = {}; pq = [(0.0, s0)]
+    while pq:
+        d0, u = heapq.heappop(pq)
+        if u == s1: break
+        if d0 > dist.get(u, 1e9): continue
+        for v in nbr2[u]:
+            if vd[v] > 0.006: continue
+            nd = d0 + np.linalg.norm(LV[v] - LV[u]) + 8 * vd[v]
+            if nd < dist.get(v, 1e9): dist[v] = nd; prev[v] = u; heapq.heappush(pq, (nd, v))
+    if s1 in prev:
+        path = [s1]
+        while path[-1] != s0: path.append(prev[path[-1]])
+        path = path[::-1]
+        inner_v = path[1:-1]                                         # the corners stay joined
+        # which side of the seam a face lies on: its centre against the seam line at that x (y up)
+        sx_, sy_ = seam_pts[:, 0], seam_pts[:, 1]; o_ = np.argsort(sx_)
+        seam_y_at = lambda x: np.interp(x, sx_[o_], sy_[o_])
+        on = set(inner_v); newid = {}
+        LVl, LFl = list(LV), LF.copy()
+        for fi, f in enumerate(LF):
+            if not (set(f) & on): continue
+            c3 = LV[f].mean(0)
+            if c3[1] < seam_y_at(c3[0]):                             # a lower-lip face: it takes the copies
+                for k_, v in enumerate(f):
+                    if v in on:
+                        if v not in newid: newid[v] = len(LVl); LVl.append(LV[v].copy())
+                        LFl[fi, k_] = newid[v]
+        LV2 = np.array(LVl); nnew = len(LV2) - len(LV)
+        # morphs: an upper copy moves like the upper lip next to it, a lower copy like the lower lip
+        upper_n = {v: [n for n in nbr2[v] if n not in on and LV[n][1] >= seam_y_at(LV[n][0])] for v in on}
+        lower_n = {v: [n for n in nbr2[v] if n not in on and LV[n][1] < seam_y_at(LV[n][0])] for v in on}
+        for k_, dv in list(morph_d.items()):
+            d2 = np.r_[dv, np.zeros((nnew, 3))]
+            for v, nv in newid.items():
+                d2[nv] = dv[v]
+                if k_ not in ('jawOpen', 'smile', 'wide', 'pucker', 'grimace'): continue   # the rest shapes keep the lips together
+                if upper_n[v]: d2[v] = dv[upper_n[v]].mean(0)
+                if lower_n[v]: d2[nv] = dv[lower_n[v]].mean(0)
+            morph_d[k_] = d2
+        wts = wts + [wts[v] for v in sorted(newid, key=lambda v: newid[v])]
+        LV, LF = LV2, LFl
+        jaw_lo = np.array([morph_d['jawOpen'][newid[v]] for v in newid]).mean(0)
+        jaw_chin = morph_d['jawOpen'][np.argsort(np.linalg.norm(LV - lm_f[152], axis=1))[:6]].mean(0)
+        mc_c = (lm_f[13] + lm_f[14]) / 2
+        mouth_rig = {'center': mc_c, 'left': lm_f[61], 'right': lm_f[291], 'upper': lm_f[13], 'lower': lm_f[14],
+                     'chin': lm_f[152], 'nose': lm_f[2], 'jawLip': jaw_lo, 'jawChin': jaw_chin}
+        print(f'  lips split along {len(inner_v)} seam verts; jaw opens the lower lip {np.linalg.norm(jaw_lo) * 1000:.1f} mm at jawOpen 1')
+    else:
+        print('  (no lip seam path found: lips stay joined)')
 # ───────────────────────── unwrap ─────────────────────────
 atlas = xatlas.Atlas(); atlas.add_mesh(LV.astype(np.float32), LF.astype(np.uint32))
 co = xatlas.ChartOptions(); co.max_cost = 2.0
@@ -1250,6 +1310,7 @@ for name, dv in morph_d.items():
     put('morph_' + name + '_i', nz.astype(np.uint16 if len(UV) < 65536 else np.uint32)); put('morph_' + name + '_d', np.round(d[nz] / 1e-5).astype(np.int16).ravel())
     mnames.append(name)
 meta = {
+    'mouthRig': ({k_: list(map(float, mir(np.asarray(v_)[None])[0])) for k_, v_ in mouth_rig.items()} if mouth_rig else None),
     'faceShape': {'params': (list(map(float, qf)) if qf is not None else None), 'ratios': ratio_table},
     'arrays': desc, 'bones': [B[i] for i in bones_used],
     'eye': list(map(float, eye_mh)), 'ipd': float(ipd_mh),

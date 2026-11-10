@@ -465,17 +465,22 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const skinNear = surfaceOf(skin, bodyKeep, bodyIn).near, genNear = gen ? surfaceOf(gen.mesh as THREE.SkinnedMesh, bodyKeep, bodyIn).near : null;
     // the neckline as a smooth closed curve: a low-order Fourier fit of radius and height against angle round the neck
     const sam = ring0.map(q => ({ a: Math.atan2(q.x - c.x, q.z - c.z), r: Math.hypot(q.x - c.x, q.z - c.z), y: q.y })).sort((x, y) => x.a - y.a);
+    // the shirt's neckline has a small notch at the centre back (a dip of ~3 cm over 2 cm): the collar's line
+    // ignores it (fitted to the ring without it), only the stand's hidden foot reaches down into it
+    const notch = sam.filter((o, i) => { const nb = [-2, -1, 1, 2].map(d => sam[(i + d + sam.length) % sam.length].y); return o.y < Math.max(...nb) - 0.01; });
+    const fitSam = sam.filter(o => !notch.includes(o));
     const fit = (key: 'r' | 'y', NH = 3) => {
       const co: [number, number][] = [];
       for (let k = 0; k <= NH; k++) {
         let ca = 0, sa = 0;
-        sam.forEach((o, i) => { const a0 = sam[(i - 1 + sam.length) % sam.length].a, a1 = sam[(i + 1) % sam.length].a; const da = (((a1 - a0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / 2; ca += o[key] * Math.cos(k * o.a) * da; sa += o[key] * Math.sin(k * o.a) * da; });
+        fitSam.forEach((o, i) => { const a0 = fitSam[(i - 1 + fitSam.length) % fitSam.length].a, a1 = fitSam[(i + 1) % fitSam.length].a; const da = (((a1 - a0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / 2; ca += o[key] * Math.cos(k * o.a) * da; sa += o[key] * Math.sin(k * o.a) * da; });
         co.push([ca / (k ? Math.PI : 2 * Math.PI), sa / Math.PI]);
       }
       return (a: number) => co.reduce((s, [ca, sa], k) => s + ca * Math.cos(k * a) + (k ? sa * Math.sin(k * a) : 0), 0);
     };
     const R = fit('r'), Y = fit('y');
     const neck = (a: number, dr = 0, dy = 0) => new V3(c.x + Math.sin(a) * (R(a) + dr), Y(a) + dy, c.z + Math.cos(a) * (R(a) + dr));
+    const notchDy = (a: number) => notch.reduce((m, o) => { const da = Math.abs((((a - o.a) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI); return Math.min(m, da < 0.12 ? o.y - Y(o.a) - 0.004 : 0); }, 0);
     const radial = (a: number) => new V3(Math.sin(a), 0, Math.cos(a));
     const offSurf = (nr: typeof near) => (v: THREE.Vector3, gap: number) => { const { q, n } = nr(v); const d = v.clone().sub(q).dot(n); if (d < gap) v.addScaledVector(n, gap - d); return v; };
     const shirtLift = offSurf(near), skinOnly = offSurf(skinNear), genLift = genNear ? offSurf(genNear) : null;
@@ -500,7 +505,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       // stand: 3 cm at the back, a little lower round the front of the neck, down to ~8 mm where the ends meet
       const sh = 0.03 - 0.005 * fr - 0.017 * Math.pow(endw, 1.4);
       A.push(a); EW.push(endw); SH.push(sh);
-      S.push(neck(a, -0.0015, -0.006));                              // the foot of the stand, tucked into the neckline
+      S.push(neck(a, -0.0015, Math.min(-0.006, notchDy(a))));        // the foot of the stand, tucked into the neckline
       // the top of the stand: hugging the neck 4.5 mm clear of it (the neck narrows above the shirt's opening)
       const G = neck(a, -0.002, sh), { q, n } = skinNear(G), H = q.addScaledVector(n, 0.0045);
       const hug = 1 - endw * endw;
@@ -510,7 +515,20 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const p0 = P.map(v => v.clone());
       for (let i = 1; i < COLS; i++) { P[i].x = 0.5 * p0[i].x + 0.25 * (p0[i - 1].x + p0[i + 1].x); P[i].z = 0.5 * p0[i].z + 0.25 * (p0[i - 1].z + p0[i + 1].z); }
     }
-    for (let i = 0; i <= COLS; i++) skinLift(P[i], 0.0035);
+    // keep the stand clear of the neck (and the generated head's neck, which bulges at the back): the outward push
+    // each row needs is spread smoothly along the collar (widened, then blurred), so a local bulge lifts the
+    // stand in a gentle swell rather than denting it
+    const SR = S.map((s0, i) => [...Array(NS).keys()].map(k => s0.clone().lerp(P[i], k / (NS - 1))));
+    {
+      const out0 = S.map((s0, i) => { const r = radial(A[i]); return r.addScaledVector(P[i].clone().sub(s0).normalize(), -r.dot(P[i].clone().sub(s0).normalize())).normalize(); });
+      for (let k = 1; k < NS; k++) {
+        let push = SR.map((rw, i) => { const v = rw[k].clone(); skinLift(v, k === NS - 1 ? 0.0035 : 0.003); return Math.max(0, v.sub(rw[k]).dot(out0[i])); });
+        const W = 7; push = push.map((_, i) => Math.max(...push.slice(Math.max(0, i - W), i + W + 1)));
+        for (let pass = 0; pass < 40; pass++) push = push.map((v, i) => (i && i < COLS ? 0.5 * v + 0.25 * (push[i - 1] + push[i + 1]) : v));
+        SR.forEach((rw, i) => rw[k].addScaledVector(out0[i], push[i]));
+      }
+      SR.forEach((rw, i) => P[i].copy(rw[NS - 1]));
+    }
     // each column's frame: up the stand, and out (away from the neck)
     const TU = P.map((p, i) => p.clone().sub(S[i]).normalize());
     const OU = TU.map((t, i) => { const r = radial(A[i]); return r.addScaledVector(t, -r.dot(t)).normalize(); });
@@ -548,7 +566,6 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
     // the stand's rows (lifted clear of the neck), and a check that keeps the leaf outside them (the leaf lies on
     // the stand's outside with the doubled fabric between)
-    const SR = S.map((s0, i) => [...Array(NS).keys()].map(k => (k ? skinLift(s0.clone().lerp(P[i], k / (NS - 1)), 0.003) : s0.clone())));
     const clearStand = (i: number, v: THREE.Vector3) => {
       const t = v.clone().sub(S[i]).dot(TU[i]), st = SR[i].map(q => { const d = q.clone().sub(S[i]); return [d.dot(TU[i]), d.dot(OU[i])]; });
       if (t < st[0][0] - 0.004 || t > st[NS - 1][0]) return;
