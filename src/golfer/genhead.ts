@@ -284,6 +284,8 @@ export function buildHairCards(head: GenHead, opts: { color: string; eye: THREE.
     const rel = root.clone().sub(e);
     // thinner at the crown (a little scalp shows), and thinning toward the temples
     if (rel.y > 0.1 && rel.z < -0.04 && rand() < 0.45) { k--; if (++skipped > N * 20) break; continue; }
+    // no strays over the forehead: the front hairline is the painted one
+    if (rel.z > -0.01 && rel.y < 0.085) { k--; if (++skipped > N * 20) break; continue; }
     const top = THREE.MathUtils.smoothstep(rel.y, 0.045, 0.085);           // 0 at the sides and back, 1 on top
     const front = THREE.MathUtils.smoothstep(rel.z, -0.03, 0.02);          // the front of the top: pushed up and back
     // growth: straight back on top (and up off the forehead), down and back at the sides and nape

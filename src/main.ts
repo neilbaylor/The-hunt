@@ -18,7 +18,7 @@ import { Hud, viewport, type CardData } from './ui/hud';
 import { tourBallMaterial } from './ui/ballmat';
 import { FaceBadge, AVATAR_LAYER, type Outcome } from './ui/facebadge';
 import { AimController, aim } from './game/aim';
-import { MODES as SHOT_MODES } from './game/shot';
+import { MODES as SHOT_MODES, FULL_MIN } from './game/shot';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const smooth = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -583,8 +583,10 @@ function frame(now: number) {
     const f = hud.mode === 'full' ? (pw - FULL_MIN) / (1 - FULL_MIN) : pw;
     const hint = hud.mode === 'full' && f < 0 ? (CLUB_SPECS[hud.club].id.match(/PW|°/) ? 'Too short for a full swing · try Pitch' : 'Too short for a full swing · try Punch') : '';
     hud.setPowerTarget(f >= 0.97 ? null : clamp(f, 0, 1), aim.distanceYds, hint);
-  } else hud.setPowerTarget(null, 0);
-  else if (state === 'flight') hud.edLive(Math.hypot(ball.pos.x - ball.start.x, ball.pos.z - ball.start.z) / YD);
+  } else {
+    hud.setPowerTarget(null, 0);
+    if (state === 'flight') hud.edLive(Math.hypot(ball.pos.x - ball.start.x, ball.pos.z - ball.start.z) / YD);
+  }
   aimCtl.setEnabled(state === 'ready');
   aimCtl.update(dt, state === 'ready' || state === 'swinging');
 

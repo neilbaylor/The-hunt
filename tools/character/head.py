@@ -1121,6 +1121,17 @@ tex = np.zeros((T, T, 3), np.float32); have = np.zeros((T, T), np.uint8)
 tex[ty, tx] = out; have[ty, tx] = 255
 # dilate into the gutters so mips don't bleed black
 tex = cv2.inpaint(np.clip(tex, 0, 255).astype(np.uint8), 255 - have, 3, cv2.INPAINT_TELEA)
+# clean-up of the photo-built face: a light edge-preserving smoothing over the face, a stronger despeckle on the lips,
+# nose and brows (the selfies' compression noise and stray pixels read as artifacts up close)
+def _near(idx, r):
+    d = np.min(np.stack([np.linalg.norm(cp - lm_f[i], axis=1) for i in idx]), 0); return np.clip(1 - d / r, 0, 1)
+w_face = (m_ if real_ok else np.zeros(len(cp)))
+w_spot = np.maximum.reduce([_near([0, 17, 61, 291, 13, 14, 37, 267, 84, 314], 0.012), _near([1, 2, 4, 5, 98, 327, 48, 278], 0.012), _near([105, 66, 107, 334, 296, 336, 70, 300], 0.01)]) * (w_face > 0.2)
+Mf = np.zeros((T, T), np.float32); Ms = np.zeros((T, T), np.float32); Mf[ty, tx] = w_face; Ms[ty, tx] = w_spot
+Mf = cv2.GaussianBlur(Mf, (0, 0), 2)[..., None]; Ms = cv2.GaussianBlur(Ms, (0, 0), 2)[..., None]
+bil = cv2.bilateralFilter(tex, 7, 22, 3).astype(np.float32); med = cv2.medianBlur(cv2.bilateralFilter(tex, 9, 30, 4), 5).astype(np.float32)
+tex = np.clip(tex * (1 - 0.6 * Mf) + bil * 0.6 * Mf, 0, 255)
+tex = np.clip(tex * (1 - Ms) + med * Ms, 0, 255).astype(np.uint8)
 Image.fromarray(tex).save(os.path.join(A.out, 'head.jpg'), quality=88, optimize=True)
 dbg('head_tex.png', tex)
 
