@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 
 /** on-screen widths (CSS px): the solid core, and the whole ribbon with its glow */
-const CORE_PX = 4.5, HALF_PX = 7;
+const CORE_PX = 5.5, HALF_PX = 8.5;   // a ~4.5 px yellow core inside a ~1 px dark border, then the glow
 
 export class AimPreview {
   readonly mesh: THREE.Mesh;
@@ -18,7 +18,7 @@ export class AimPreview {
   private t = 0;
   visible = false;
 
-  constructor(scene: THREE.Scene, private max = 240) {
+  constructor(scene: THREE.Scene, private max = 240, private ground: (x: number, z: number) => number = () => 0) {
     this.pos = new Float32Array(max * 2 * 3); this.along = new Float32Array(max * 2);
     const across = new Float32Array(max * 2); for (let i = 0; i < max; i++) { across[i * 2] = -1; across[i * 2 + 1] = 1; }
     this.geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
@@ -34,14 +34,16 @@ export class AimPreview {
       fragmentShader: `uniform float t; uniform float op; uniform float core; varying float vS; varying float vX;
         void main(){
           float x = abs(vX);
-          float body = 1.0 - smoothstep(core - 0.12, core + 0.04, x);
-          float glow = pow(1.0 - x, 2.2) * 0.38;
+          float inner = 1.0 - smoothstep(core * 0.62, core * 0.78, x);            // the yellow body
+          float body = 1.0 - smoothstep(core - 0.06, core + 0.06, x);             // body + its subtle dark border
+          float glow = pow(max(0.0, 1.0 - x), 2.2) * 0.34;
           float along = smoothstep(0.0, 0.05, vS) * (1.0 - smoothstep(0.86, 1.0, vS) * 0.55);
           float p = exp(-pow((fract(vS - t * 0.35) - 0.5) * 9.0, 2.0)) * 0.35;
-          vec3 c = mix(vec3(1.0, 0.824, 0.247), vec3(1.0, 0.95, 0.7), p * body);
-          float a = (body * 0.7 + glow * (1.0 - body)) * along * op;
+          vec3 yel = mix(vec3(1.0, 0.824, 0.247), vec3(1.0, 0.95, 0.7), p);
+          vec3 c = mix(vec3(0.078, 0.157, 0.294), yel, inner);                     // navy edge round the yellow core
+          float a = (body * mix(0.5, 0.78, inner) + glow * (1.0 - body)) * along * op;
           if (a < 0.004) discard;
-          gl_FragColor = vec4(c, a);
+          gl_FragColor = vec4(body > 0.01 ? c : vec3(1.0, 0.824, 0.247), a);
         }`,
       // depth-tested against the golfer (he hides it), drawn before the other transparent things (hair cards, visor)
       transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
@@ -78,21 +80,25 @@ export class AimPreview {
     this.tag.innerHTML = `${Math.round(yds)}<small>YDS</small>`;
   }
 
-  update(dt: number, cam: THREE.Camera, canvas: HTMLElement, show: boolean) {
+  /** flat: 0 = the flight in the air (swing view) .. 1 = laid on the ground as the shot shape (aim view); the camera
+   *  flight between the two views drives it, so the swing view's tracer morphs into the aim view's line */
+  update(dt: number, cam: THREE.Camera, canvas: HTMLElement, show: boolean, flat = 0) {
     this.visible = show && this.pts.length > 2;
-    this.mesh.visible = this.ring.visible = this.visible; this.tag.hidden = !this.visible;
+    this.mesh.visible = this.visible; this.ring.visible = this.visible && flat < 0.5; this.tag.hidden = !this.visible || flat > 0.05;
     if (!this.visible) return;
     this.t += dt; this.mat.uniforms.t.value = this.t;
     const n = this.pts.length, cp = cam.position, tg = new THREE.Vector3(), v = new THREE.Vector3(), sd = new THREE.Vector3();
     // world size of one CSS pixel at unit distance, so the ribbon keeps a constant screen width (core + glow)
     const pc = cam as THREE.PerspectiveCamera, ch = Math.max(1, canvas.clientHeight || canvas.getBoundingClientRect().height);
     const pxAt1 = pc.isPerspectiveCamera ? 2 * Math.tan(THREE.MathUtils.degToRad(pc.fov / 2)) / ch / (pc.view?.enabled ? pc.view.height / pc.view.fullHeight : 1) : 0.002;
-    let total = 0; const acc = [0]; for (let i = 1; i < n; i++) { total += this.pts[i].distanceTo(this.pts[i - 1]); acc.push(total); }
+    const P = this.pts.map(p => flat <= 0 ? p : p.clone().setY(p.y + (this.ground(p.x, p.z) + 0.12 - p.y) * flat));
+    let total = 0; const acc = [0]; for (let i = 1; i < n; i++) { total += P[i].distanceTo(P[i - 1]); acc.push(total); }
+    const halfPx = HALF_PX * (1 + 0.25 * flat);   // a touch bolder from overhead
     for (let i = 0; i < n; i++) {
-      const p = this.pts[i];
-      tg.subVectors(this.pts[Math.min(n - 1, i + 1)], this.pts[Math.max(0, i - 1)]).normalize();
+      const p = P[i];
+      tg.subVectors(P[Math.min(n - 1, i + 1)], P[Math.max(0, i - 1)]).normalize();
       v.subVectors(p, cp); const d = v.length(); v.multiplyScalar(1 / d);
-      sd.crossVectors(tg, v).normalize().multiplyScalar(Math.max(0.004, d * pxAt1 * HALF_PX));
+      sd.crossVectors(tg, v).normalize().multiplyScalar(Math.max(0.004, d * pxAt1 * halfPx));
       this.pos.set([p.x + sd.x, p.y + sd.y, p.z + sd.z, p.x - sd.x, p.y - sd.y, p.z - sd.z], i * 6);
       this.along[i * 2] = this.along[i * 2 + 1] = acc[i] / Math.max(1e-3, total);
     }
@@ -105,7 +111,7 @@ export class AimPreview {
     const q = L.clone().add(new THREE.Vector3(0, 1.2 + dl * 0.012, 0)).project(cam), r = canvas.getBoundingClientRect();
     const sy = r.top + (-q.y * 0.5 + 0.5) * r.height;
     // only where the landing is actually in view, below the top HUD (never under the big distance number)
-    if (q.z > 1 || sy < 230 || Math.abs(q.x) > 0.95) { this.tag.hidden = true; return; }
+    if (q.z > 1 || sy < 230 || Math.abs(q.x) > 0.95 || flat > 0.05) { this.tag.hidden = true; return; }
     this.tag.style.transform = `translate(${(r.left + (q.x * 0.5 + 0.5) * r.width).toFixed(1)}px, ${sy.toFixed(1)}px) translate(-50%, -100%)`;
   }
 }
