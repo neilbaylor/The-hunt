@@ -59,3 +59,13 @@ if __name__ == '__main__':
     json.dump({'clip': prim, 'frame': P['frame'], 'club_len_seen_m': round(LP, 3), 'shaft_dir': np.round(D, 4).tolist(), 'source': how,
                'secondary_keys': {str(round(t, 2)): np.round(d, 3).tolist() for t, d in secKeys.items()}}, open(f'{HERE}/data/{prim}.shaft.json', 'w'))
     for f in range(n): print(f, np.round(D[f], 2), how[f])
+    # events the figure defines by the club (shaft horizontal): refine them from the fused shaft, keep the arm-only ones
+    arm = P.get('events_arm') or dict(P['events']); ev2 = dict(arm); y = D[:, 1]
+    def cross(lo, hi, up):
+        for i in range(int(np.floor(lo)), int(np.ceil(hi))):
+            if (up and y[i] < 0 <= y[i + 1]) or (not up and y[i] > 0 >= y[i + 1]): return round(i + (0 - y[i]) / (y[i + 1] - y[i]), 2)
+    for k, lo, hi, up in [('MB', arm['BA'], arm['LBA'], True), ('MD', arm['ED'], arm['BI'], False), ('MF', arm['BI'], arm['LF'], True)]:
+        c = cross(lo, hi, up)
+        if c is not None: ev2[k] = c
+    P['events_arm'] = arm; P['events'] = ev2; json.dump(P, open(f'{HERE}/data/{prim}.json', 'w'), separators=(',', ':'))
+    print('events by arm angle :', arm); print('events with the club:', ev2)

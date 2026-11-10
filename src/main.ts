@@ -707,7 +707,7 @@ function frame(now: number) {
   hud.tickSpin(dt, state === 'flight' && ball.phase === 'flight');
 
   updateCamera(simDt, now);
-  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? 2.4 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
+  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 1.2 : 2.4) : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   tracer.update(camera, state === 'ready' ? 0.6 : 1);
   if (state === 'ready' && !SW.active) updatePreview();
   // one tracer for both views: it lies down onto the ground as the camera flies up to the aim view (and lifts back)
