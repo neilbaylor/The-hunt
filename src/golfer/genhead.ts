@@ -181,11 +181,20 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
           // toward the lids the painted texture (lids, lashes, corners) takes over again
           eye = mix(eye, diffuseColor.rgb, smoothstep(0.62, 0.92, rr));
           // blink: the upper lid comes down to the lower; a lash line at its edge
-          float lidY = 1.0 - 2.05 * uBlink;
-          float lid = smoothstep(lidY - 0.06, lidY + 0.06, e.y + 0.15 * e.x * e.x);
-          vec3 lidc = uLid * (0.85 + 0.15 * smoothstep(1.0, 0.0, e.y));
-          eye = mix(eye, lidc, lid);
-          eye = mix(eye, vec3(0.06, 0.04, 0.035), (1.0 - smoothstep(0.0, 0.16, abs(e.y + 0.15 * e.x * e.x - lidY))) * step(0.02, uBlink + 0.02) * 0.9);
+          // the upper lid comes down over the eyeball (its edge stays curved: an arc that flattens as it closes), the
+          // lower lid rises ~15 %; lashes make a dark line along the meeting edge, a soft crease shows above
+          float bl = uBlink;
+          float meet = -0.2;                                               // where the lids meet, a little below centre
+          float upY = mix(1.0, meet, bl), loY = mix(-1.0, -0.82, bl);
+          float arc = (1.0 - 0.75 * bl) * 0.35 * e.x * e.x;                   // the lid edge's curve over the eyeball
+          float up = smoothstep(upY - 0.05, upY + 0.05, e.y + arc);
+          float lo = 1.0 - smoothstep(loY - 0.05, loY + 0.05, e.y - 0.1 * e.x * e.x);
+          float lidMask = max(up, lo) * step(0.001, bl);
+          vec3 lidc = uLid * (0.88 + 0.12 * smoothstep(1.0, meet, e.y));
+          lidc *= 1.0 - 0.18 * smoothstep(0.25, 0.0, abs(e.y - (upY + 0.55))) * bl;     // the crease above the lowered lid
+          eye = mix(eye, lidc, lidMask);
+          float lash = (1.0 - smoothstep(0.0, 0.1, abs(e.y + arc - upY))) * smoothstep(0.05, 0.3, bl);
+          eye = mix(eye, vec3(0.05, 0.035, 0.03), lash * 0.85);
           diffuseColor.rgb = mix(diffuseColor.rgb, eye, inside);
         }
       }
@@ -311,7 +320,9 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     // natural blinks: every 2-6 s, sometimes twice in a row
     if (blinkT < 0 && now > nextBlink) { blinkT = 0; blinkTwice = Math.random() < 0.2; nextBlink = now + 2 + Math.random() * 4; }
     let b = 0;
-    if (blinkT >= 0) { blinkT += dt; const t = blinkT / 0.12; b = t < 0.45 ? t / 0.45 : Math.max(0, 1 - (t - 0.45) / 0.55); if (t >= 1) { blinkT = blinkTwice ? -0.12 : -1; if (blinkTwice) { blinkTwice = false; } } }
+    if (blinkT >= 0) { blinkT += dt; const ms = blinkT * 1000, t = blinkT / 0.14;
+      // a real blink: the lid drops fast (40 ms, accelerating), holds 20 ms, rises slower (80 ms, easing out)
+      b = ms < 40 ? (ms / 40) ** 1.6 : ms < 60 ? 1 : Math.max(0, 1 - (1 - (1 - (ms - 60) / 80) ** 2)); if (t >= 1) { blinkT = blinkTwice ? -0.12 : -1; if (blinkTwice) { blinkTwice = false; } } }
     if (blinkT < -0.01 && blinkT > -0.5) { blinkT += dt; if (blinkT >= 0) blinkT = 0; }   // the second of a double blink, ~0.12 s later
     face.blink.value = expr.blink >= 0 ? expr.blink : b;
     // gaze: a forced gaze, else the target, else idle glances (saccades: quick moves, then hold)
@@ -353,7 +364,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     for (const n of MORPHS) vis[n] += ((tgt[n] ?? 0) - vis[n]) * kv;
     const talkingNow = now < speechEnd + 0.15;
     for (const n of MORPHS) if (dict[n] !== undefined) {
-      let v = expr[n] + vis[n] + (n === 'browUp' ? browE * 0.6 : 0);
+      let v = expr[n] + vis[n] + (n === 'browUp' ? browE * 0.6 : 0) + (n === 'browDown' ? 0.15 * face.blink.value : 0) + (n === 'smile' ? 0.06 * face.blink.value : 0);   // brows drop a hair, cheeks lift, as the lids close
       if (talkingNow && (n === 'cornerLift' || n === 'unpout')) v *= 0.6;          // talking relaxes the rest shaping
       if (n === 'press' && (expr.jawOpen + vis.jawOpen) > 0.2) v = 0;
       infl[dict[n]] = Math.max(-1, Math.min(1.2, v));

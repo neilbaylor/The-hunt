@@ -1219,6 +1219,15 @@ Mf = cv2.GaussianBlur(Mf, (0, 0), 2)[..., None]; Ms = cv2.GaussianBlur(Ms, (0, 0
 bil = cv2.bilateralFilter(tex, 7, 22, 3).astype(np.float32); med = cv2.medianBlur(cv2.bilateralFilter(tex, 9, 30, 4), 5).astype(np.float32)
 tex = np.clip(tex * (1 - 0.6 * Mf) + bil * 0.6 * Mf, 0, 255)
 tex = np.clip(tex * (1 - Ms) + med * Ms, 0, 255)
+# under the nose: the columella and the top of the philtrum to skin (a dark blend there read as a third nostril);
+# the two nostrils (landmarks near 98/327, inside the alae) stay dark
+nl_, nr_ = (lm_f[98] * 0.6 + lm_f[2] * 0.4), (lm_f[327] * 0.6 + lm_f[2] * 0.4)
+col_c = (lm_f[2] * 0.7 + lm_f[164] * 0.3)
+w_col = np.exp(-(((cp[:, 0] - col_c[0]) / 0.0045) ** 2 + ((cp[:, 1] - col_c[1]) / 0.006) ** 2)) * (cp[:, 2] > col_c[2] - 0.015) * (w_face > 0.2)
+w_col *= np.clip(np.minimum(np.linalg.norm(cp - nl_, axis=1), np.linalg.norm(cp - nr_, axis=1)) / 0.004 - 0.6, 0, 1)
+Mc = np.zeros((T, T), np.float32); Mc[ty, tx] = w_col; Mc = cv2.GaussianBlur(Mc, (0, 0), 1.5)[..., None]
+_lip_skin = np.median(out[(np.abs(cp[:, 0] - col_c[0]) < 0.012) & (cp[:, 1] < col_c[1] - 0.006) & (cp[:, 1] > lm_f[0][1] + 0.002) & (w_face > 0.5)], 0) if True else skin_c
+tex = np.clip(tex * (1 - 0.85 * Mc) + np.array(_lip_skin, np.float32) * 0.85 * Mc, 0, 255)
 # brows: the photo median leaves them as flat dark bands; soften (blur) and lift them a touch toward the skin
 w_brow = _near([70, 63, 105, 66, 107, 336, 296, 334, 293, 300, 46, 53, 52, 65, 55, 276, 283, 282, 295, 285], 0.012) * (w_face > 0.2)
 Mb = np.zeros((T, T), np.float32); Mb[ty, tx] = w_brow; Mb = cv2.GaussianBlur(Mb, (0, 0), 3)[..., None]
