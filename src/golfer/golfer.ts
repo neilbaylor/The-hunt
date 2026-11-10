@@ -520,8 +520,11 @@ export class Golfer {
       // full finish target, built in the chest's frame: hands up past the lead shoulder, shaft wrapped behind the neck
       const qChest = this.rig.Q[BONE.chest], neck = this.rig.P[BONE.neck];
       const L = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(qChest);
-      const gripFin = neck.clone().add(L(0.04, 0.1, 0.16));   // hands up by the lead ear, in front of the face (Rory)   // hands by the lead ear, a little behind (Rory)
-      const shaftFin = new THREE.Vector3(-0.88, -0.3, 0.33).normalize();   // back behind the head, away from the target, a little down (Rory)   // across the back of the shoulders, angled down behind            // grip → club head
+      const gripFin = neck.clone().add(L(0.06, 0.2, 0.06));   // hands just above and behind the lead ear, face clear under the arms (Rory)
+      // the club wraps round: the shaft runs behind the neck about parallel to the shoulder line, the head out past the
+      // trail shoulder, angled a little down and back (Rory)
+      const shLine = this.rig.P[BONE.upperR].clone().sub(this.rig.P[BONE.upperL]).setY(0).normalize();
+      const shaftFin = shLine.add(new THREE.Vector3(-0.25, -0.28, 0)).normalize();   // grip → club head
       const faceFin = L(0, 0.35, -0.9).normalize();                  // where the club face points
       // club local frame: shaft runs hosel → butt along shaftDir, face looks along +X
       const mLocal = new THREE.Matrix4(), mFin = new THREE.Matrix4();

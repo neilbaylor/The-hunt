@@ -1,5 +1,5 @@
 """Build the hand-drawn finish options board from real-game frames rendered by the option-board script.
-   python3 concepts/styles/options.py <frames dir> <face box intro x,y,w,h in 390-wide coords> <face box flight x,y,w,h>
+   python3 concepts/styles/options.py <frames dir> <face box intro x,y,w,h in 390-wide coords> <head-and-shoulders box intro x,y,w,h>
 Writes concepts/styles/options.html (artifact page fragment) and <frames dir>/options-sheet.jpg."""
 import base64, io, os, sys
 from PIL import Image, ImageDraw
@@ -35,11 +35,11 @@ for r, (key, name, desc) in enumerate(V):
     x = 170
     for f, _ in FR:
         sheet.paste(img(f'{f}-{key}').resize((CW, CH)), (x, y)); x += CW + 6
-    for f, box in (('intro', fi), ('flight', ff)):
+    for f, box in (('intro', fi), ('intro', ff)):
         fc = crop(img(f'{f}-{key}'), box).resize((FW, int(FW * box[3] / box[2])))
         sheet.paste(fc, (x, y)); x += FW + 6
     figs = ''.join(f'<figure><img src="{uri(img(f"{f}-{key}"), 520)}" alt="{name}: {lab}"><figcaption>{lab}</figcaption></figure>' for f, lab in FR)
-    faces = ''.join(f'<figure class="face"><img src="{uri(crop(img(f"{f}-{key}"), box), 520)}" alt="{name}: face, {lab}"><figcaption>Face · {lab}</figcaption></figure>' for f, box, lab in (('intro', fi, 'intro'), ('flight', ff, 'follow-through')))
+    faces = ''.join(f'<figure class="face"><img src="{uri(crop(img(f"{f}-{key}"), box), 520)}" alt="{name}: face, {lab}"><figcaption>Face · {lab}</figcaption></figure>' for f, box, lab in (('intro', fi, 'close'), ('intro', ff, 'head & shoulders')))
     tag = '<code>?style=real</code>' if key == 'none' else ('<code>default</code>' if key == 'soft' else f'<code>?style={key}</code>')
     cards.append(f'<article class="v{" real" if key == "none" else ""}"><header><h2>{name}</h2>{tag}<p>{desc}</p></header><div class="faces">{faces}</div><div class="frames">{figs}</div></article>')
 sheet.save(f'{src}/options-sheet.jpg', quality=82)

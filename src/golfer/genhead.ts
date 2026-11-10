@@ -103,14 +103,14 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   // the same skin response as the body's skin (human.ts skinMat) so the head and neck don't differ in sheen
   // the texture carries his real (softened) shading from the photos: keep the real-time shading gentle so the two
   // don't stack into mud — matte, little sheen, a soft normal map, and a warm self-fill (below) that lifts the shadow side
-  const mat = new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.72, sheen: 0.15, sheenColor: new THREE.Color('#ff9a7a'), sheenRoughness: 0.6, specularIntensity: 0.5 });
+  const mat = new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.8, sheen: 0.1, sheenColor: new THREE.Color('#ff9a7a'), sheenRoughness: 0.6, specularIntensity: 0.25 });
   // surface detail baked from the hi-res generated head (ear folds, creases, hair), a JPEG inside head.bin
   if (G.arrays.normalJpg) {
     const jb = arr('normalJpg') as Uint8Array, nurl = URL.createObjectURL(new Blob([jb as BlobPart], { type: 'image/jpeg' })), nim = new Image();
-    nim.onload = () => { const nt = new THREE.Texture(nim); nt.needsUpdate = true; nt.flipY = true; nt.anisotropy = 4; mat.normalMap = nt; mat.normalScale.set(0.45, 0.45); mat.needsUpdate = true; URL.revokeObjectURL(nurl); };
+    nim.onload = () => { const nt = new THREE.Texture(nim); nt.needsUpdate = true; nt.flipY = true; nt.anisotropy = 4; mat.normalMap = nt; mat.normalScale.set(0.3, 0.3); mat.needsUpdate = true; URL.revokeObjectURL(nurl); };
     nim.src = nurl;
   }
-  const face = { gaze: new THREE.Vector2(), blink: { value: 0 }, gazeU: { value: new THREE.Vector2() }, fill: { value: 0.12 } };
+  const face = { gaze: new THREE.Vector2(), blink: { value: 0 }, gazeU: { value: new THREE.Vector2() }, fill: { value: 0.65 } };
   // the irises cropped from the unwrap (a small PNG inside head.bin); a flat blue-grey until it decodes
   const c0 = document.createElement('canvas'); c0.width = c0.height = 2; const g0 = c0.getContext('2d')!; g0.fillStyle = '#7d97a8'; g0.fillRect(0, 0, 2, 2);
   const irisTex = new THREE.Texture(c0); irisTex.colorSpace = THREE.SRGBColorSpace; irisTex.needsUpdate = true;
@@ -127,7 +127,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     sh.uniforms.uGaze = face.gazeU; sh.uniforms.uBlink = face.blink;
     sh.uniforms.uIris = { value: irisCol }; sh.uniforms.uIrisTex = irisU; sh.uniforms.uSclera = { value: sclera }; sh.uniforms.uLid = { value: new THREE.Color(G.skinColor[0], G.skinColor[1], G.skinColor[2]).convertSRGBToLinear().multiplyScalar(0.85) };
     sh.uniforms.uFill = face.fill;
-    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.indirectDiffuse += diffuseColor.rgb * vec3(1.0, 0.93, 0.86) * uFill;');
+    // mostly the photo-baked texture itself (it already carries his real light and shade), a soft lit share for form
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'outgoingLight = mix(outgoingLight, diffuseColor.rgb * vec3(1.0, 0.97, 0.94), uFill);\n#include <opaque_fragment>');
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 eyeA; attribute vec2 eyeB; varying vec4 vEyeA; varying vec2 vEyeB;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEyeA = eyeA; vEyeB = eyeB;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec4 vEyeA; varying vec2 vEyeB; uniform vec2 uGaze; uniform float uBlink; uniform vec3 uIris; uniform vec3 uLid; uniform sampler2D uIrisTex; uniform vec3 uSclera; uniform float uFill;')
@@ -331,7 +332,11 @@ export function hideAboveSeam(mat: THREE.Material, seam: { p: THREE.Vector3; n: 
       ${T ? `{ // the top of the neck, just under the jaw: warmed and shaded toward the head's under-jaw tone
         float nd = ${d}; float nk = (1.0 - smoothstep(0.0, 0.03, -nd)) * step(nd, 0.0) * step(${f(seam.p.y - 0.08)}, vB.y) * step(abs(vB.x), 0.12);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${f(T[0])}, ${f(T[1])}, ${f(T[2])}), 0.55 * nk) * (1.0 - 0.12 * nk * nk);
-      }` : ''}`);
+      }` : ''}`)
+      // the neck under the head shares the head's mostly-unlit look, fading out down the neck
+      .replace('#include <opaque_fragment>', `{ float un = 0.65 * (1.0 - smoothstep(0.0, 0.1, -(${d}))) * step(${f(seam.p.y - 0.15)}, vB.y) * step(abs(vB.x), 0.13);
+        outgoingLight = mix(outgoingLight, diffuseColor.rgb * vec3(1.0, 0.97, 0.94), un); }
+      #include <opaque_fragment>`);
   };
   mat.customProgramCacheKey = () => prevKey() + '-genhead';
 }

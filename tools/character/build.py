@@ -474,7 +474,7 @@ if C.get('hang', 0) > 0:
         cc = sh_j + tt[:, None] * ax; rv = Vs[arm] - cc; rl = np.linalg.norm(rv, axis=1)
         rmax = np.array([rl[np.abs(tt - t) < 0.06].max() for t in tt])
         bl = np.clip((tt - 0.12) / 0.3, 0, 1); bl = bl * bl * (3 - 2 * bl)
-        want = rl + bl * (C.get('sleeveEase', 0.008) + 0.7 * (rmax - rl))
+        want = rl + bl * (C.get('sleeveEase', 0.008) + C.get('sleeveRound', 0.7) * (rmax - rl))
         Vs[arm] = cc + rv / np.maximum(rl, 1e-6)[:, None] * want[:, None]
     # bridge the hollows round the seat (between the glutes, the small of the back): per 1 cm slice, the radius
     # round the torso axis is closed over ±12° so the fabric spans across instead of dipping in
@@ -519,7 +519,7 @@ for sfx in 'lr':
     for vi in np.nonzero(pants)[0]:
         if wsum(vi, [f'thigh_{sfx}', f'calf_{sfx}']) < 0.5: continue
         t = float(np.dot(Vpants[vi] - hip, ax) / L2)
-        if 0.12 < t < 0.36:
+        if 0.2 < t < 0.34:   # the thigh itself (not the hips and seat above it)
             c = hip + ax * t; r_tube = max(r_tube, float(np.linalg.norm(Vpants[vi] - c)) + pants_off[vi])
     r_tube += C.get('shortsEase', 0.008)
     for vi in np.nonzero(pants)[0]:
