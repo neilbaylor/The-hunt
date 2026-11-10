@@ -260,7 +260,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const chest = J[M.bones.indexOf('spine_02')];
     const side = p.handed === 'left' ? -1 : 1;
     const cz = M.collar.reduce((a, c) => Math.max(a, c[2]), -9) - 0.01;
-    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.088, M.collar.reduce((a, c) => (c[2] > a[2] ? c : a))[1] - 0.098, cz)   /* as on the shirt: ~9 cm out, its foot level with the foot of the placket */ : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.05 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
+    applyFabric(shirtMat, 'polo', { ...fu, crest: { tex: crest, c: O.chestLogo === 'malbon-m' ? new THREE.Vector3(side * 0.088, M.collar.reduce((a, c) => (c[2] > a[2] ? c : a))[1] - 0.092, cz)   /* as on the shirt: ~9 cm out, its foot level with the foot of the placket */ : new THREE.Vector3(side * 0.085, chest.y + 0.12, cz), size: O.chestLogo === 'malbon-m' ? 0.05 : 0.07, flip: p.handed === 'left' }, tipping: new THREE.Color(O.topTrim ?? '#ffffff') });
   }
   const shirtMesh = add('shirt', shirtMat);
   // the shells are split along their UV seams; average the normals across those splits so the fabric shades
@@ -702,7 +702,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     }
     // one skinned mesh, one atlas: one draw call; too small to need a shadow of its own
     const baked = bakeAtlas(bits, 512);
-    const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.95, specularIntensity: 0.35, sheen: 0.08, sheenColor: collarMat.sheenColor, sheenRoughness: 0.8, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const bitsMat = new THREE.MeshPhysicalMaterial({ map: baked.texture, roughness: 0.95, specularIntensity: 0.7, sheen: 0.18, sheenColor: collarMat.sheenColor, sheenRoughness: 0.8, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const cm = skinned(baked.geometry, bitsMat); cm.name = 'collar'; cm.castShadow = false;
     // the collar rides on the shoulders more than the shirt's neckline does (40% of the neck's weight), so the
     // lead point isn't dragged round by the chin at the top
