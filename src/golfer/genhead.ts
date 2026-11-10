@@ -277,8 +277,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     const w = L.distanceTo(Rr), fwd = new THREE.Vector3(0, 0, 1);
     const rig = new THREE.Group(); rig.name = 'mouth-inside';
     const cav = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.07, 0.02, 0.02), side: THREE.BackSide }));
-    cav.scale.set(w * 0.42, 0.016, 0.02); cav.position.copy(c).addScaledVector(fwd, -0.022); rig.add(cav);
-    const teethMat = new THREE.MeshLambertMaterial({ color: '#a89e8c' });   // in the mouth's shade (matte, no sky reflection): never stark white
+    cav.scale.set(w * 0.52, 0.02, 0.022); cav.position.copy(c).addScaledVector(fwd, -0.022); rig.add(cav);
+    const teethMat = new THREE.MeshLambertMaterial({ color: '#857b6c' });   // in the mouth's shade (matte, no sky reflection): never stark white
     const arc = (y0: number, h: number, back: number, span: number) => {
       // a row of teeth: a curved strip following the dental arch, facing out
       const R0 = w * 0.5, seg = 18, pos: number[] = [], idx: number[] = [];
@@ -291,7 +291,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g2.setIndex(idx); g2.computeVertexNormals();
       return new THREE.Mesh(g2, teethMat);
     };
-    rig.add(arc(U.y + 0.001, 0.0078, 0.0105, 0.7));                         // upper teeth, recessed behind the upper lip (and its inner strip)
+    rig.add(arc(U.y + 0.001, 0.0056, 0.0105, 0.7));                         // upper teeth, recessed behind the upper lip (and its inner strip)
     const lower = new THREE.Group();
     lower.add(arc(Lo.y - 0.0008, 0.0068, 0.012, 0.6));                      // lower teeth, a little further back
     const tongue = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshLambertMaterial({ color: '#8a4844' }));
@@ -333,7 +333,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   const headBone = skeleton.bones[boneNames.indexOf('head')], hbIdx = boneNames.indexOf('head');
   const eyeBind = eye.clone(), m4 = new THREE.Matrix4(), tb = new THREE.Vector3();
   const mirroredX = (G as any).mirrored ? -1 : 1;
-  let lastChange = -9, gazeLeft = 0;
+  let lastChange = -9, gazeLeft = 0, blinkNow = 0;
+  const lidMorph = !!(G as { lidMorph?: boolean }).lidMorph;
   const tick = () => {
     const now = faceNow(); const dt = last < 0 ? 0 : Math.max(0, Math.min(0.1, now - last)); last = now;
     // blink
@@ -344,7 +345,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       // a real blink: the lid drops fast (40 ms, accelerating), holds 20 ms, rises slower (80 ms, easing out)
       b = ms < 40 ? (ms / 40) ** 1.6 : ms < 60 ? 1 : Math.max(0, 1 - (1 - (1 - (ms - 60) / 80) ** 2)); if (t >= 1) { blinkT = blinkTwice ? -0.12 : -1; if (blinkTwice) { blinkTwice = false; } } }
     if (blinkT < -0.01 && blinkT > -0.5) { blinkT += dt; if (blinkT >= 0) blinkT = 0; }   // the second of a double blink, ~0.12 s later
-    face.blink.value = expr.blink >= 0 ? expr.blink : b;
+    const bl = expr.blink >= 0 ? expr.blink : b; blinkNow = bl;
+    face.blink.value = lidMorph ? 0 : bl;                              // geometric lids (head.py) close the eyes; else the shader draws them
     // gaze: a forced gaze, else the target, else idle glances (saccades: quick moves, then hold)
     let gx = 0, gy = 0;
     if (forced) { gx = forced.x; gy = forced.y; }
@@ -386,7 +388,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     for (const n of MORPHS) vis[n] += ((tgt[n] ?? 0) - vis[n]) * kv;
     const talkingNow = now < speechEnd + 0.15;
     for (const n of MORPHS) if (dict[n] !== undefined) {
-      let v = expr[n] + vis[n] + (n === 'browUp' ? browE * 0.6 : 0) + (n === 'browDown' ? 0.15 * face.blink.value : 0) + (n === 'smile' ? 0.06 * face.blink.value : 0);   // brows drop a hair, cheeks lift, as the lids close
+      let v = expr[n] + vis[n] + (n === 'browUp' ? browE * 0.6 : 0) + (n === 'browDown' ? 0.15 * blinkNow : 0) + (n === 'smile' ? 0.06 * blinkNow : 0);   // brows drop a hair, cheeks lift, as the lids close
       if (talkingNow && (n === 'cornerLift' || n === 'unpout')) v *= 0.6;          // talking relaxes the rest shaping
       if (n === 'press' && (expr.jawOpen + vis.jawOpen) > 0.2) v = 0;
       infl[dict[n]] = Math.max(-1, Math.min(1.2, v));
@@ -396,8 +398,8 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     //  split with 3D teeth and a mouth cavity behind it)
     face.mouthOpen.value = MOUTH_INSIDE ? Math.min(1, expr.jawOpen + vis.jawOpen + Math.max(0, expr.smile - 0.6) * 0.5 + vis.wide * 0.15) : 0;
     face.teeth.value = Math.min(1, 0.4 + face.mouthOpen.value);
-    // (the eyelid geometry from the transferred blink closes one eye more than the other: the drawn lids alone blink, evenly)
-    if (dict.blink !== undefined) infl[dict.blink] = 0;
+    // the geometric lids (both eyes in one morph, head.py) blink; without them the shader draws the lids
+    if (dict.blink !== undefined) infl[dict.blink] = lidMorph ? blinkNow : 0;
     if (mouthParts) { const jo = expr.jawOpen + vis.jawOpen; mouthParts.lower.parent!.visible = jo > 0.02 || expr.smile > 0.85 || vis.wide > 0.05; }
     if (mouthParts) mouthParts.lower.position.copy(mouthParts.lowerBase).addScaledVector(mouthParts.jaw, Math.max(0, expr.jawOpen + vis.jawOpen) + 0.25 * vis.pucker);
   };

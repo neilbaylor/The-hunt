@@ -132,6 +132,10 @@ export class FaceBadge {
     // nods and tilts turn the head about the top of the neck (a little below and behind the ears)
     const pv = new THREE.Vector3(e.x, e.y - 0.09, e.z - 0.05);
     const pivot = new THREE.Group(); pivot.position.copy(pv); b.group.position.copy(pv).negate(); pivot.add(b.group); scene.add(pivot);
+    // a left-hander's golfer is drawn mirrored (and his head and visor built mirrored for it): mirror the badge back too,
+    // so it shows his true face and the visor logo reads the right way round
+    head.updateWorldMatrix(true, false);
+    if (head.matrixWorld.determinant() < 0) pivot.scale.x = -1;
     // front-on and level: from straight ahead at eye height, a long lens framing visor top to chin
     const cam = new THREE.PerspectiveCamera(19.5, 1, 0.3, 3);
     const look = new THREE.Vector3(e.x, e.y - 0.002, e.z);                 // visor top to chin, a little neck

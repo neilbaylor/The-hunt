@@ -48,6 +48,7 @@ ap.add_argument('--ear-back', type=float, default=0.0, help='ears swung back abo
 ap.add_argument('--ear-out', type=float, default=1.0, help='ear protrusion scale')
 ap.add_argument('--crop', type=float, default=0.01, help='metres cut off the bottom of the generated neck stub')
 ap.add_argument('--handed', default='left')
+ap.add_argument('--no-lids', dest='lids', action='store_false', help='skip the geometric eyelid blink (the shader draws the lids)')
 ap.add_argument('--nose-mirror', default='+', choices=['+', '-', 'none'], help="the side of the nose base (pre-mirror x) whose dark blotches are lifted to match the other side")
 ap.add_argument('--debug', default=None, help='directory for debug images')
 A = ap.parse_args()
@@ -517,11 +518,11 @@ if A.neck == 'loft':
     na = np.arctan2(neckv[:, 0] - axis_c[0], neckv[:, 2] - axis_c[1]); nr = np.hypot(neckv[:, 0] - axis_c[0], neckv[:, 2] - axis_c[1])
     def neck_r(a):
         da = np.abs((na - a + np.pi) % (2 * np.pi) - np.pi); sel = da < 0.15
-        return np.percentile(nr[sel], 97) if sel.sum() > 2 else nr.max()   # outside all of the body's neck
+        return np.percentile(nr[sel], 50) if sel.sum() > 2 else np.median(nr)   # the body's neck surface there (its median radius)
     top = LV[loop]
     ta = np.arctan2(top[:, 0] - axis_c[0], top[:, 2] - axis_c[1])
     OVER = 0.012   # the neck runs on past the seam, down inside the collar, over the body's neck
-    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) + 0.004), 0, axis_c[1] + math.cos(a) * (neck_r(a) + 0.004)] for a in ta]); bot[:, 1] = np.minimum(y_seam_at(bot[:, 2]) - OVER, top[:, 1] - 0.025)   # at the back the collar rides high: the neck still runs down
+    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) - 0.003), 0, axis_c[1] + math.cos(a) * (neck_r(a) - 0.003)] for a in ta])   # 3 mm INSIDE the body's neck: below the seam the body skin and the collar cover it, it never shows as a bib in front of the shirt; bot[:, 1] = np.minimum(y_seam_at(bot[:, 2]) - OVER, top[:, 1] - 0.025)   # at the back the collar rides high: the neck still runs down
     # smooth the bottom ring a little round the neck
     for _ in range(3): bot = 0.5 * bot + 0.25 * (np.roll(bot, 1, 0) + np.roll(bot, -1, 0))
     ROWS = 7
@@ -688,6 +689,81 @@ if A.rest == 'closed' and 'smile' in morph_d and A.rest_smile:
 mouth_rig = None
 STRIP_F0 = None
 LIPIN = np.zeros(len(LV))            # inner-lip strips: 0 = face surface, >0 = depth into the mouth (0..1)
+# ── local refinement helpers (red-green subdivision; new vertices carry weights and interpolated morphs) ──
+def split_faces(LF_, emid):
+    # red-green: each face re-triangulated by how many of its edges carry a new vertex (emid[(a, b)] -> id)
+    out = []
+    for f in LF_:
+        f = [int(f[0]), int(f[1]), int(f[2])]
+        m = [emid.get((min(f[i], f[(i + 1) % 3]), max(f[i], f[(i + 1) % 3]))) for i in range(3)]
+        n = sum(x is not None for x in m)
+        if n == 0: out.append(f); continue
+        if n == 3:
+            out += [[f[0], m[0], m[2]], [f[1], m[1], m[0]], [f[2], m[2], m[1]], [m[0], m[1], m[2]]]; continue
+        if n == 1:
+            k = [i for i in range(3) if m[i] is not None][0]
+            w = [f[k], f[(k + 1) % 3], f[(k + 2) % 3]]; out += [[w[0], m[k], w[2]], [m[k], w[1], w[2]]]; continue
+        k = [i for i in range(3) if m[i] is None][0]; r = (k + 1) % 3      # the unsplit edge goes to w[2]→w[0]
+        w = [f[r], f[(r + 1) % 3], f[(r + 2) % 3]]; m01, m12 = m[r], m[(r + 1) % 3]
+        out += [[m01, w[1], m12], [w[0], m01, m12], [w[0], m12, w[2]]]
+    return np.array(out, np.int64)
+def add_verts(P, pa, pb, t):
+    # new vertices on edges (pa→pb at t): positions given, weights from the nearer end, morphs interpolated
+    global LV, wts, LIPIN
+    n0 = len(LV); LV = np.r_[LV, P]
+    if len(LIPIN) == n0: LIPIN = np.r_[LIPIN, np.zeros(len(P))]
+    wts = wts + [wts[a if tt_ < 0.5 else b] for a, b, tt_ in zip(pa, pb, t)]
+    for k_ in morph_d: morph_d[k_] = np.r_[morph_d[k_], morph_d[k_][pa] * (1 - t)[:, None] + morph_d[k_][pb] * t[:, None]]
+    return np.arange(n0, n0 + len(P))
+hi_q = trimesh.proximity.ProximityQuery(hm)
+def refine(mask_fn, rounds, tag):
+    global LF
+    for rnd in range(rounds):
+        reg = mask_fn(LV, rnd)
+        fsel = reg[LF].all(1)
+        keys = np.unique(np.sort(np.r_[LF[fsel][:, [0, 1]], LF[fsel][:, [1, 2]], LF[fsel][:, [2, 0]]], 1), axis=0)
+        P = (LV[keys[:, 0]] + LV[keys[:, 1]]) / 2
+        cpt, cd, _ = hi_q.on_surface(P); ok = cd < 0.0006; P[ok] = cpt[ok]   # onto the hi-res surface where it lies close
+        ids = add_verts(P, keys[:, 0], keys[:, 1], np.full(len(keys), 0.5))
+        LF = split_faces(LF, {(int(a), int(b)): int(i) for (a, b), i in zip(keys, ids)})
+        print(f'  {tag} subdivided: {int(fsel.sum())} faces → +{len(keys)} verts')
+# ── the eyelids: a geometric blink. Each eye in its own frame (corners → across, up, forward), the eyeball's centre
+#    9 mm behind the opening; the upper lid (from its margin up toward the crease) and the lower lid rotate about the
+#    eyeball's horizontal axis, so they slide over its curve, until both margins meet 25 % of the way up the opening;
+#    the eye surface under them sinks a little so the lids stay in front. Both eyes in one morph: they blink together. ──
+EYES_LM = ((33, 133, [33, 246, 161, 160, 159, 158, 157, 173, 133], [33, 7, 163, 144, 145, 153, 154, 155, 133]),
+           (362, 263, [362, 398, 384, 385, 386, 387, 388, 466, 263], [362, 382, 381, 380, 374, 373, 390, 249, 263]))
+def eye_frame(ca, cb):
+    c3 = (lm_f[ca] + lm_f[cb]) / 2; X = lm_f[cb] - lm_f[ca]; hw = np.linalg.norm(X) / 2; X = X / (2 * hw)
+    Y = np.array([0, 1.0, 0]) - X * X[1]; Y /= np.linalg.norm(Y); Z = np.cross(X, Y)
+    if Z[2] < 0: Z = -Z
+    return c3, X, Y, Z, hw, c3 - Z * 0.009
+if A.lids:
+    for ca, cb, _, _ in EYES_LM:
+        c3, X, Y, Z, hw, C = eye_frame(ca, cb)
+        refine(lambda P, r, c3=c3, X=X, Y=Y, Z=Z, hw=hw: (np.abs((P - c3) @ X) < hw * 1.35) & ((P - c3) @ Y > -0.007) & ((P - c3) @ Y < 0.010) & ((P - c3) @ Z > -0.012), 2, 'eye region')
+    lid = np.zeros_like(LV)
+    for ca, cb, UPL, LOL in EYES_LM:
+        c3, X, Y, Z, hw, C = eye_frame(ca, cb)
+        d = LV - C; dx, dy, dz = d @ X, d @ Y, d @ Z
+        phi, rho = np.arctan2(dy, dz), np.hypot(dy, dz)
+        def contour(ids):
+            q = lm_f[ids] - C; xs, ph = q @ X, np.arctan2(q @ Y, q @ Z); o = np.argsort(xs); return xs[o], ph[o]
+        xu, pu = contour(UPL); xl, pl = contour(LOL)
+        xm = (xu[0] + xu[-1]) / 2
+        p_up, p_lo = np.interp(dx, xu, pu), np.interp(dx, xl, pl)
+        p_meet = p_lo + 0.25 * (p_up - p_lo)
+        wx = np.clip((hw * 1.25 - np.abs(dx - xm)) / (hw * 0.3), 0, 1)
+        near = (np.linalg.norm(d, axis=1) < 0.024) & (dz > -0.002) & (wx > 0)
+        s_up = (1 - sstep(p_up, p_up + 0.6, phi)) * (phi >= p_up - 0.015)
+        s_lo = (1 - sstep(p_lo, p_lo - 0.45, phi)) * (phi <= p_lo + 0.015)
+        dphi = ((p_meet - p_up) * s_up + (p_meet - p_lo) * s_lo) * wx * near
+        inside = (phi < p_up - 0.015) & (phi > p_lo + 0.015) & near
+        phi2 = phi + dphi; rho2 = rho * (1 + 0.03 * np.clip(s_up + s_lo, 0, 1) * wx * near) - 0.0012 * inside * wx
+        nd = np.outer(dx, X) + (rho2 * np.sin(phi2))[:, None] * Y + (rho2 * np.cos(phi2))[:, None] * Z
+        lid += np.where((near & ((dphi != 0) | inside))[:, None], nd - d, 0)
+        print(f'  eyelids: {int((np.abs(dphi) > 1e-4).sum())} lid verts rotate (upper {np.degrees((p_meet - p_up).mean()):.0f}°, lower {np.degrees((p_meet - p_lo).mean()):+.0f}°), {int(inside.sum())} eye-surface verts sink')
+    morph_d['blink'] = lid
 if 'jawOpen' in morph_d:
     # ── the lips part along a smooth curve across the full mouth width (a symmetric even polynomial through the
     #    landmark seam and its mirror, so the opening is centred). The lip region is subdivided twice first
@@ -703,41 +779,7 @@ if 'jawOpen' in morph_d:
         u = np.clip((np.asarray(x) - mcx) / half, -1.3, 1.3); return co_[0] + co_[1] * u ** 2 + co_[2] * u ** 4
     zlip = float(max(lm_f[13, 2], lm_f[14, 2]))
     print(f'  lip curve: centre x {mcx * 1000:.1f} mm, half-width {half * 1000:.1f} mm, sag {co_[1] * 1000:+.2f}/{co_[2] * 1000:+.2f} mm')
-    def split_faces(LF_, emid):
-        # red-green: each face re-triangulated by how many of its edges carry a new vertex (emid[(a, b)] -> id)
-        out = []
-        for f in LF_:
-            f = [int(f[0]), int(f[1]), int(f[2])]
-            m = [emid.get((min(f[i], f[(i + 1) % 3]), max(f[i], f[(i + 1) % 3]))) for i in range(3)]
-            n = sum(x is not None for x in m)
-            if n == 0: out.append(f); continue
-            if n == 3:
-                out += [[f[0], m[0], m[2]], [f[1], m[1], m[0]], [f[2], m[2], m[1]], [m[0], m[1], m[2]]]; continue
-            if n == 1:
-                k = [i for i in range(3) if m[i] is not None][0]
-                w = [f[k], f[(k + 1) % 3], f[(k + 2) % 3]]; out += [[w[0], m[k], w[2]], [m[k], w[1], w[2]]]; continue
-            k = [i for i in range(3) if m[i] is None][0]; r = (k + 1) % 3      # the unsplit edge goes to w[2]→w[0]
-            w = [f[r], f[(r + 1) % 3], f[(r + 2) % 3]]; m01, m12 = m[r], m[(r + 1) % 3]
-            out += [[m01, w[1], m12], [w[0], m01, m12], [w[0], m12, w[2]]]
-        return np.array(out, np.int64)
-    def add_verts(P, pa, pb, t):
-        # new vertices on edges (pa→pb at t): positions given, weights from the nearer end, morphs interpolated
-        global LV, wts
-        n0 = len(LV); LV = np.r_[LV, P]
-        wts = wts + [wts[a if tt_ < 0.5 else b] for a, b, tt_ in zip(pa, pb, t)]
-        for k_ in morph_d: morph_d[k_] = np.r_[morph_d[k_], morph_d[k_][pa] * (1 - t)[:, None] + morph_d[k_][pb] * t[:, None]]
-        return np.arange(n0, n0 + len(P))
-    hi_q = trimesh.proximity.ProximityQuery(hm)
-    for rnd in range(2):
-        reg = (np.abs(LV[:, 0] - mcx) < half + 0.007) & (np.abs(LV[:, 1] - seam_y_at(LV[:, 0])) < 0.009 - 0.002 * rnd) & (LV[:, 2] > zlip - 0.016)
-        fsel = reg[LF].all(1)
-        keys = np.unique(np.sort(np.r_[LF[fsel][:, [0, 1]], LF[fsel][:, [1, 2]], LF[fsel][:, [2, 0]]], 1), axis=0)
-        P = (LV[keys[:, 0]] + LV[keys[:, 1]]) / 2
-        # onto the hi-res surface where it lies close (never into the generator's teeth behind the lips)
-        cpt, cd, _ = hi_q.on_surface(P); ok = cd < 0.0006; P[ok] = cpt[ok]
-        ids = add_verts(P, keys[:, 0], keys[:, 1], np.full(len(keys), 0.5))
-        LF = split_faces(LF, {(int(a), int(b)): int(i) for (a, b), i in zip(keys, ids)})
-        print(f'  lip region subdivided: {int(fsel.sum())} faces → +{len(keys)} verts')
+    refine(lambda P, rnd: (np.abs(P[:, 0] - mcx) < half + 0.007) & (np.abs(P[:, 1] - seam_y_at(P[:, 0])) < 0.009 - 0.002 * rnd) & (P[:, 2] > zlip - 0.016), 2, 'lip region')
     # the cut: where the curve crosses an edge of the front lip surface, within the corners
     fv = LV[:, 1] - seam_y_at(LV[:, 0]); fv[np.abs(fv) < 1e-7] = 1e-7
     front = (LV[:, 2] > zlip - 0.010) & (np.abs(LV[:, 0] - mcx) < half + 0.004)
@@ -793,10 +835,12 @@ if 'jawOpen' in morph_d:
     chL = [int(cut[0])] + [newid[int(v)] for v in inner_v] + [int(cut[-1])]
     sx = (LV[chU, 0] - mcx) / half; taper = 0.3 + 0.7 * np.clip(1 - sx ** 2, 0, 1) ** 0.5   # never flat to nothing (zero-area faces get no UVs)
     newF = []
-    for chain, dy, sgn in ((chU, 0.0022, 1), (chL, -0.0022, -1)):
+    for chain, dy, sgn in ((chU, 0.0007, 1), (chL, -0.0007, -1)):
         prev = chain
-        for row, (back, d_y) in enumerate(((0.0035, dy), (0.0075, dy * 1.8))):
-            P = LV[chain] + np.c_[np.zeros(len(chain)), d_y * taper, -back * taper]
+        for row, (back, d_y) in enumerate(((0.0035, dy), (0.0075, dy * 2.2))):
+            # straight back into the mouth (never up through the lip's own surface), and toward the middle at the corners
+            # where the lips wrap round (else the strips poke out through the cheek)
+            P = LV[chain] + np.c_[(mcx - LV[chain, 0]) * (1 - taper) * (0.35 + 0.35 * row), d_y * taper, -back * taper]
             ids = np.arange(len(LV), len(LV) + len(chain))
             LV = np.r_[LV, P]; wts = wts + [wts[v] for v in chain]
             for k_ in morph_d: morph_d[k_] = np.r_[morph_d[k_], morph_d[k_][chain]]
@@ -1299,7 +1343,7 @@ tex[ty, tx] = out; have[ty, tx] = 255
 # first grow each chart's own colours outward a few texels (so bilinear/mip samples at a chart's edge, and sliver
 # triangles with no texel centre of their own, read their own chart, not a neighbour's hair), then fill the rest
 _hv = (have > 0).astype(np.float32); _tx = tex * _hv[..., None]
-for _ in range(10):
+for _ in range(32):
     _cs = cv2.blur(_tx, (3, 3)); _cn = cv2.blur(_hv, (3, 3))
     _new = (_hv == 0) & (_cn > 0)
     _tx[_new] = _cs[_new] / _cn[_new][:, None]; _hv[_new] = 1
@@ -1577,7 +1621,7 @@ meta = {
     'seam': {'point': list(map(float, mir(cen - pn * (0.010 if A.neck == 'loft' else 0.0)))), 'normal': list(map(float, mir(pn))), 'band': BAND},
     'skinTint': list(map(float, tint)), 'skinXform': [list(map(float, r_)) for r_ in skin_xform], 'seamTone': seam_tone, 'skinColor': list(map(float, skin_c / 255)), 'hairColor': list(map(float, hair_c / 255)),
     'mirrored': mirror, 'source': os.path.basename(A.raw), 'photos': [os.path.basename(p) for p in photos],
-    'tris': int(len(UF)), 'tex': T, 'morphs': mnames, 'morphUnit': 1e-5, 'eyes': eyes_uv,
+    'tris': int(len(UF)), 'tex': T, 'lidMorph': bool(A.lids), 'morphs': mnames, 'morphUnit': 1e-5, 'eyes': eyes_uv,
 }
 mj = json.dumps(meta).encode()
 while (8 + len(mj)) % 4: mj += b' '

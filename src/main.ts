@@ -311,7 +311,7 @@ function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
   if (swingView === 'front') {
     // across the ball (the golfer's toe line) and ahead toward the target, low; aimed at his chest so the face, the
     // arms at the top and the finish all fit. Mirrors itself for a lefty through side.
-    if (portrait()) { out.set(-3.7 * side, 0.85, -1.2); look.set(0.25 * side, 0.62, -0.1); }
+    if (portrait()) { out.set(-3.8 * side, 0.85, -1.2); look.set(0.25 * side, 1.3, -0.1); }
     else { out.set(-3.1 * side, 1.0, -2.2); look.set(0.2 * side, 1.0, 0.1); }
   } else if (portrait()) {
     // phone held upright: from behind, down the line, with the golfer near the centre of the frame (camera between
@@ -581,7 +581,7 @@ const INTRO_FLY_S = 1.9;
 const introFly = { t0: 0, pos: new THREE.Vector3(), look: new THREE.Vector3() };
 /** intro A's camera azimuth round his head: in front of him (within ±0.8 rad of straight on, toward his lead side
  *  preferred), with the sun about 50° off the line of sight behind him for a rim light. Worked out once. */
-let introTh: number | null = null, introExp0 = -1;
+let introTh: number | null = null, introExp0 = -1, introSun0 = -1, sunDim = 0;
 function introAngle() {
   if (introTh !== null) return introTh;
   const base = (golfer.lefty ? Math.PI : 0) + 0.42 * side;
@@ -757,10 +757,16 @@ function frame(now: number) {
   hud.tickSpin(dt, state === 'flight' && ball.phase === 'flight');
 
   updateCamera(simDt, now);
-  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 0.3 : 2.4) : swingView === 'front' && camMode === 'address' ? 0.25 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
+  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 0.55 : 2.4) : swingView === 'front' && camMode === 'address' ? 0.7 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   // the sunlit side of him (intro A, the face-on swing cam) sits a touch lower in exposure so the cream visor and skin keep detail
-  const expK = state === 'intro' && INTRO === 'a' ? 0.84 : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.72 : 1;
+  const expK = state === 'intro' && INTRO === 'a' ? 0.97 : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.95 : 1;
   post.setBloomScale(expK < 1 ? 0.2 : 1);
+  // intro A: the low sun hit his front full on and lifted the forest-green polo to mint; on the close-up it's dimmed so
+  // he reads in the same soft light as the swing view (warm fill on the face, rim from behind), restored on the tap
+  // the face-on swing cam has the same problem (the sun full on his front), so it dims the sun too, eased in and out
+  { const want = state === 'intro' && INTRO === 'a' ? 0.6 * introLensK : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.5 : 0;
+    sunDim += (want - sunDim) * (state === 'intro' ? 1 : Math.min(1, dt * 3));
+    if (range) { if (sunDim > 0.002) { if (introSun0 < 0) introSun0 = range.sun.intensity; range.sun.intensity = introSun0 * (1 - sunDim); } else if (introSun0 >= 0) { range.sun.intensity = introSun0; introSun0 = -1; } } }
   introRim.visible = state === 'intro' && INTRO === 'a';
   fill.color.set(state === 'intro' && INTRO === 'a' ? '#ffd6a0' : '#fff3e6');   // warmer key on the close-up
   if (expK < 1) { if (introExp0 < 0) introExp0 = renderer.toneMappingExposure; renderer.toneMappingExposure = introExp0 * expK; }
