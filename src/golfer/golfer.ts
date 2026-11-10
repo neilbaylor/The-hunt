@@ -100,7 +100,7 @@ const ADDRESS_TOE_UP = +(globalThis.location ? new URLSearchParams(globalThis.lo
 const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search) : null, _fv = (n: string, d: number[]) => _fq?.get(n)?.split(',').map(Number) ?? d;
 // held-finish targets in the chest's frame (URL-tunable on golfer.html: fg = hands from the neck, fs = shaft back/down
 // added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
-const SIDE_ADJ = _fv('sa', [-0.1, 0.1]);
+const SIDE_ADJ = _fv('sa', [-0.16, 0.16]);
 const FIN = { g: _fv('fg', [0.15, 0.22, -0.17]), s: _fv('fs', [0.8, 0.6]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
 const TRAIL_W = +(_fq?.get('tw') ?? 0);
@@ -279,7 +279,8 @@ export class Golfer {
     // calibrate the attack angle on the keyed swing: measure the path as posed, store the slope to add
     this.aoaFix = 0;
     { const src = this.swingSource; this.swingSource = 'keyed';
-      const nat = this.pathAngleDeg(); this.aoaFix = Math.tan(THREE.MathUtils.degToRad(this.attackAngleDeg())) - Math.tan(THREE.MathUtils.degToRad(nat));
+      const want = Math.tan(THREE.MathUtils.degToRad(this.attackAngleDeg()));
+      for (let it = 0; it < 3; it++) this.aoaFix += want - Math.tan(THREE.MathUtils.degToRad(this.pathAngleDeg()));
       this.swingSource = src; }
     this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
   }
@@ -430,7 +431,7 @@ export class Golfer {
       // owner's 4 cm / 2.5 cm), then back up to impact
       const uD = s.phase === 'down' ? 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi) : 0, uB = s.phase === 'back' ? Math.max(0, phi) / PHI_TOP : s.phase === 'down' ? 1 : 0;
       const dip = smooth(0.15, 0.55, uD) * (1 - smooth(0.7, 1, uD));
-      headOff[0] = -0.012 * smooth(0, 0.6, uB) * (1 - smooth(0.6, 1, uD)); headOff[1] = -0.018 * dip - 0.014 * smooth(0.7, 1, uD) - (s.phase === 'follow' ? 0.014 : 0);   // stays ~1.5 cm down through impact
+      headOff[0] = -0.012 * smooth(0, 0.6, uB) * (1 - smooth(0.6, 1, uD)); headOff[1] = -0.018 * dip;
       this.steadyHead(p, headW, headOff[0], headOff[1]);
     }
 
@@ -624,25 +625,25 @@ export class Golfer {
     // both hands stay on the club: if either arm can't reach its wrist target, move the club (both hands) toward
     // that shoulder (the trail arm used to fall short of the grip in the through-swing)
     // the head stays on the ball: where the lead arm can't reach the grip (late in the downswing and through impact the
-    // hands follow the swing circle, and the lead shoulder rises and opens away from it), the chest stays squarer to
-    // the ball until the lead shoulder is back over the hands, rather than the club lifting off the ball. (The rig's
+    // hands follow the swing circle, and the lead shoulder rises and opens away from it), the body gives (chest squarer to
+    // the ball, hips a touch nearer and lower) until the lead shoulder is back over the hands, rather than the club lifting off the ball. (The rig's
     // arms are short for his height, so there is no slack to take up.) Solved exactly (bisection), so it moves smoothly.
     {
-      const maxR = (this.rig.len.upper + this.rig.len.fore) * 0.998, sh = this.rig.P[BONE.upperL];
-      const err = () => { this.rig.apply(p); return p.wristL.distanceTo(sh) - maxR; };
-      const t0 = p.chestTurn;
-      if (err() > 1e-4) {
-        let lo = t0 - 0.7, hi = t0;
-        p.chestTurn = lo;
-        if (err() < 0) { for (let it = 0; it < 12; it++) { p.chestTurn = (lo + hi) / 2; if (err() > 0) hi = p.chestTurn; else lo = p.chestTurn; } p.chestTurn = lo; }
-        this.rig.apply(p);
+      const maxR = (this.rig.len.upper + this.rig.len.fore) * 0.9993, sh = this.rig.P[BONE.upperL];
+      const t0 = p.chestTurn, z0 = p.pelvis.z;
+      // one smooth give: the chest up to ~20° squarer, the hips up to 5 cm nearer the ball
+      const err = (t: number) => { p.chestTurn = t0 - 0.35 * t; p.pelvis.z = z0 + 0.05 * t; this.rig.apply(p); return p.wristL.distanceTo(sh) - maxR; };
+      if (s.phase !== 'address' && err(0) > 1e-4) {
+        let lo = 0, hi = 2;
+        if (err(hi) < 0) { for (let it = 0; it < 12; it++) { const m = (lo + hi) / 2; if (err(m) > 0) lo = m; else hi = m; } }
+        err(hi);
       }
     }
-    // (the trail shoulder blade reaches first: its joint slides up to 4.5 cm toward the grip)
+    // (the trail shoulder blade reaches first: its joint slides up to 7 cm toward the grip)
     for (let pass = 0; pass < 3; pass++) {
       const need = p.wristR.clone().sub(this.rig.wristPos.R);
       if (need.lengthSq() < 1e-7) break;
-      p.shoulderR!.add(need.multiplyScalar(1.05)).clampLength(0, 0.045);
+      p.shoulderR!.add(need.multiplyScalar(1.05)).clampLength(0, 0.07);
       this.rig.apply(p);
     }
     for (let pass = 0; pass < 4; pass++) {

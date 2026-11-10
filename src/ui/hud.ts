@@ -322,6 +322,9 @@ export class Hud {
   readonly el: HTMLDivElement;
   skin: Skin = 'f';
   club = 6; mode: ShotMode = 'full'; lie = 0;
+  /** the swing camera: behind him down the line (default) or face-on (low, in front, looking back up at him) */
+  view: 'behind' | 'front' = 'behind';
+  onView: (v: 'behind' | 'front') => void = () => {};
   readonly pad: HTMLDivElement;
   readonly spinCv: HTMLCanvasElement;
   spin = { x: 0, y: 0 };
@@ -517,7 +520,7 @@ export class Hud {
     const M = MODES[this.mode], id = CLUB_SPECS[this.club].id;
     // shot type for the selected club (only the ones it can play), then the clubs at that shot type's yardage
     const seg = (Object.keys(MODES) as ShotMode[]).filter(k => MODES[k].ok(id)).map(k => `<button type="button" data-mode="${k}" aria-pressed="${k === this.mode}">${MODES[k].label}</button>`).join('');
-    return `<div class="seg" role="group" aria-label="Shot type">${seg}</div><div class="list clubs" role="group" aria-label="Clubs">${CLUB_SPECS.map((c, i) => { const ok = M.ok(c.id); const [b, n] = clubUI(c.id); return `<button type="button" data-club="${i}" aria-pressed="${i === this.club}" aria-label="${n}, ${ok ? M.max(c.id) : MODES.full.max(c.id)} yards"><b>${b === 'D' ? 'Dr' : b}</b><span>${ok ? M.max(c.id) : MODES.full.max(c.id)} yds</span></button>`; }).join('')}</div>`;
+    return `<div class="seg" role="group" aria-label="Shot type">${seg}</div><div class="list clubs" role="group" aria-label="Clubs">${CLUB_SPECS.map((c, i) => { const ok = M.ok(c.id); const [b, n] = clubUI(c.id); return `<button type="button" data-club="${i}" aria-pressed="${i === this.club}" aria-label="${n}, ${ok ? M.max(c.id) : MODES.full.max(c.id)} yards"><b>${b === 'D' ? 'Dr' : b}</b><span>${ok ? M.max(c.id) : MODES.full.max(c.id)} yds</span></button>`; }).join('')}</div><div class="seg view-seg" role="group" aria-label="Swing camera"><span>View</span>${(['behind', 'front'] as const).map(v => `<button type="button" data-view="${v}" aria-pressed="${v === this.view}">${v === 'behind' ? 'Behind' : 'Face-on'}</button>`).join('')}</div>`;
   }
   private modeList() {
     const id = CLUB_SPECS[this.club].id;
@@ -534,6 +537,8 @@ export class Hud {
       if (!MODES[this.mode].ok(CLUB_SPECS[this.club].id)) { this.mode = 'full'; this.render(); this.onMode(this.mode); }
       this.render(); this.onClub(this.club); return;
     }
+    const vb = t.closest('[data-view]') as HTMLButtonElement | null;
+    if (vb) { this.view = vb.dataset.view as 'behind' | 'front'; cp.innerHTML = this.clubList(); this.onView(this.view); return; }
     if (mb && !mb.disabled) { this.mode = mb.dataset.mode as ShotMode; this.render(); cp.innerHTML = this.clubList(); this.onMode(this.mode); return; }
     if (!a) { if (!t.closest('.pop')) this.closePops(); return; }
     const act = a.dataset.act;

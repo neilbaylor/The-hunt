@@ -1440,7 +1440,7 @@ if DBG:   # the clean-up's masks painted on the texture (red: outliers, green: s
 # the inner-lip strips: wet lip colour at the lip edge, darker and redder going back into the mouth
 if STRIP_F0 is not None:
     _st = tt >= STRIP_F0
-    _lw = (LIPIN[vmap][UF[tt]] * tw[..., None]).sum(1)
+    _lw = (LIPIN[vmap][UF[tt]] * tw).sum(1)
     _lipc = np.median(tex[ty, tx][(np.linalg.norm(cp - lm_f[14], axis=1) < 0.003) | (np.linalg.norm(cp - lm_f[13], axis=1) < 0.003)].astype(np.float32), 0)
     _inn = np.clip(_lipc[None] * np.array([1.0, 0.86, 0.86]) * (0.92 - 0.55 * _lw[_st])[:, None], 0, 255)
     _tf = tex.astype(np.float32); _tf[ty[_st], tx[_st]] = _inn

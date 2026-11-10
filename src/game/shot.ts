@@ -6,21 +6,21 @@ import { speedForCarry, simulateShape, type Launch } from './ball';
 export const YD = 0.9144;
 const D = Math.PI / 180;
 
-/** full-swing carry (yds), launch (deg), spin (rpm) for a good amateur, per club */
+/** full-swing carry (yds), launch (deg), spin (rpm) per club; spin runs smoothly from ~2300 (driver) to ~10000 (60°) */
 export const CLUB_DATA: Record<string, { full: number; launch: number; spin: number; curve: number; pitch?: number; flop?: number }> = {
-  '1W': { full: 265, launch: 12.5, spin: 2500, curve: 1.3 },
-  '3W': { full: 235, launch: 11.5, spin: 3400, curve: 1.2 },
-  '5W': { full: 218, launch: 12.5, spin: 4100, curve: 1.1 },
-  '4H': { full: 204, launch: 13.5, spin: 4500, curve: 1.0 },
+  '1W': { full: 265, launch: 12.5, spin: 2300, curve: 1.3 },
+  '3W': { full: 235, launch: 11.5, spin: 3200, curve: 1.2 },
+  '5W': { full: 218, launch: 12.5, spin: 3900, curve: 1.1 },
+  '4H': { full: 204, launch: 13.5, spin: 4400, curve: 1.0 },
   '5i': { full: 190, launch: 14, spin: 5000, curve: 1.0 },
-  '6i': { full: 178, launch: 16, spin: 5600, curve: 0.95 },
-  '7i': { full: 165, launch: 18, spin: 6200, curve: 0.9 },
-  '8i': { full: 152, launch: 20, spin: 7000, curve: 0.85 },
-  '9i': { full: 140, launch: 24, spin: 9200, curve: 0.8 },
-  'PW': { full: 128, launch: 26, spin: 9100, curve: 0.75, pitch: 1 },
-  '50°': { full: 113, launch: 29, spin: 9500, curve: 0.7, pitch: 0.9 },
-  '56°': { full: 96, launch: 32, spin: 9900, curve: 0.65, pitch: 0.8, flop: 1 },
-  '60°': { full: 80, launch: 35, spin: 10200, curve: 0.6, pitch: 0.72, flop: 0.87 },
+  '6i': { full: 178, launch: 16, spin: 5800, curve: 0.95 },
+  '7i': { full: 165, launch: 18, spin: 6600, curve: 0.9 },
+  '8i': { full: 152, launch: 20, spin: 7400, curve: 0.85 },
+  '9i': { full: 140, launch: 24, spin: 8200, curve: 0.8 },
+  'PW': { full: 128, launch: 26, spin: 8800, curve: 0.75, pitch: 1 },
+  '50°': { full: 113, launch: 29, spin: 9300, curve: 0.7, pitch: 0.9 },
+  '56°': { full: 96, launch: 32, spin: 9700, curve: 0.65, pitch: 0.8, flop: 1 },
+  '60°': { full: 80, launch: 35, spin: 10000, curve: 0.6, pitch: 0.72, flop: 0.87 },
 };
 
 export const MODES: Record<ShotMode, { label: string; rule: string; ok: (id: string) => boolean; max: (id: string) => number }> = {
@@ -96,7 +96,9 @@ export function planShot(r: SwingResult, clubIndex: number, mode: ShotMode, lie:
   if (mode === 'pitch') { la = C.launch + 6; spin = 6500 + 1200 * (C.pitch ?? 0.8); }
   if (mode === 'flop') { la = 50 + 4 * (1 - (C.flop ?? 1)); spin = 4800; }
   if (mode === 'full' && r.power < 0.8) { la *= 0.92 + 0.08 * r.power; spin *= 0.75 + 0.25 * r.power; }
-  if (lie.name === 'Rough') spin *= (C.pitch || ['8i', '9i', '7i', '6i', '5i'].includes(id)) ? 0.6 : 0.85; // flyers: irons lose spin from the rough, woods much less
+  // rough: grass between the face and the ball — it comes out lower and with less spin (a flyer), more so with irons
+  if (lie.name === 'Rough') { spin *= (C.pitch || ['8i', '9i', '7i', '6i', '5i'].includes(id)) ? 0.6 : 0.8; la *= 0.85; }
+  if (lie.name === 'First cut') { spin *= 0.9; la *= 0.96; }
   if (lie.name === 'Fairway bunker') spin *= 0.85;
   la += rnd() * 3.2 * e;                               // tempo: a bit high or low
   // strike point: under the ball launches higher with more backspin, over it lower with less; off-centre loses a little

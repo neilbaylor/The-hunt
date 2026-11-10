@@ -148,13 +148,13 @@ const CSS = `
 .aim-rail button { position: absolute; pointer-events: auto; -webkit-tap-highlight-color: transparent; border: 0; cursor: pointer; color: #14284b; background: linear-gradient(#fffaf0, #f3e6c8); border-radius: 999px; box-shadow: 0 3px 0 #c9b385, 0 6px 14px rgba(10,20,40,.28), inset 0 1px 0 #fff; transition: transform .12s cubic-bezier(.3,1.6,.5,1), opacity .25s; }
 .aim-rail button:active { transform: translateY(2px) scale(.96); }
 .aim-rail button:focus-visible { outline: 3px solid #f2c21b; outline-offset: 2px; }
-.aim-rail .aim-x { right: max(12px, env(safe-area-inset-right)); top: calc(max(12px, env(safe-area-inset-top)) + 78px); width: 48px; height: 48px; display: grid; place-items: center; }
+.aim-rail .aim-x { display: none !important; right: max(12px, env(safe-area-inset-right)); top: calc(max(12px, env(safe-area-inset-top)) + 78px); width: 48px; height: 48px; display: grid; place-items: center; }
 .aim-rail .aim-x svg { width: 22px; height: 22px; }
-.aim-rail .aim-back { left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 18px); transform: translateX(-50%); padding: 14px 26px 15px; font: 600 18px/1 'Fredoka', 'Nunito', system-ui, sans-serif; background: linear-gradient(#ffe066, #f2c21b); box-shadow: 0 4px 0 #b48a12, 0 8px 18px rgba(10,20,40,.3), inset 0 1px 0 #fff6c2; }
+.aim-rail .aim-back { left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 64px); transform: translateX(-50%); padding: 14px 26px 15px; font: 600 18px/1 'Fredoka', 'Nunito', system-ui, sans-serif; background: linear-gradient(#ffe066, #f2c21b); box-shadow: 0 4px 0 #b48a12, 0 8px 18px rgba(10,20,40,.3), inset 0 1px 0 #fff6c2; }
 .aim-rail .aim-back:active { transform: translateX(-50%) translateY(2px) scale(.96); }
 body:not(.aiming) .aim-rail button { opacity: 0; pointer-events: none; }
 body.aiming .hud .bc, body.aiming .hud .bl, body.aiming .hud .br { opacity: 0 !important; pointer-events: none !important; transition: opacity .25s; }
-body.aiming .hud .tr { top: calc(max(12px, env(safe-area-inset-top)) + 136px); }   /* lie and wind stay on in aim view, under the close button */
+/* lie and wind stay on in aim view, in their usual top-right spot */
 .aim-label { position: fixed; z-index: 29; left: 0; top: 0; pointer-events: none; transform: translate(-50%, -100%); display: flex; align-items: baseline; gap: 6px; font: 600 13px/1 'Fredoka', 'Nunito', system-ui, sans-serif; color: #fff6e2; background: rgba(20,40,75,.9); border-radius: 999px; padding: 6px 12px 7px; box-shadow: 0 0 0 2px #ffd23f, 0 4px 12px rgba(10,20,40,.35); white-space: nowrap; transition: opacity .2s; }
 .aim-label .n { font: 400 24px/0.9 'Anton', 'Barlow Condensed', sans-serif; color: #ffd23f; letter-spacing: .01em; }
 .aim-label .u { font: 600 9.5px/1 'Barlow', sans-serif; letter-spacing: .2em; color: #ffd23f; margin-left: -3px; }
@@ -210,7 +210,7 @@ export class AimController {
     this.rail = document.createElement('div'); this.rail.className = 'aim-rail off';
     this.rail.innerHTML = `
       <button type="button" class="aim-x" aria-label="Close aim, back to the swing"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="#14284b" stroke-width="3" stroke-linecap="round"/></svg></button>
-      <button type="button" class="aim-back">Back to swing</button>`;
+      <button type="button" class="aim-back">Back to Swing</button>`;
     document.body.appendChild(this.rail);
     aim.loft = 0;
     this.label = document.createElement('div'); this.label.className = 'aim-label off'; document.body.appendChild(this.label);

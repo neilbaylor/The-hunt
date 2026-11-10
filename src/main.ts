@@ -299,8 +299,17 @@ const side = golfer.lefty ? 1 : -1;
 const portrait = () => { const v = viewport(); return v.h > v.w * 1.05; };
 /** portrait lens shift: lift the golfer above the swing stick; the stick takes a bigger share of short screens */
 const addressShift = () => { const { w, h } = viewport(); const sc = clamp(Math.min(w / 430, h / 800), 0.62, 1.15); const f = (14 + 272 * sc) / h; return clamp(0.06 + 0.45 * f, 0.12, 0.27); };
+// the swing camera: 'behind' (down the line, the default) or 'front' (Tiger Woods PGA Tour 10 style: low, across the
+// ball from him and a little toward the target, looking back up at his face and chest; the target line runs off to
+// the screen side). ?cam=front|behind, or the View switch in the club picker (remembered on this device).
+let swingView: 'behind' | 'front' = (() => { const q = QS.get('cam'); if (q === 'front' || q === 'behind') return q; try { return localStorage.getItem('hunt.cam') === 'front' ? 'front' : 'behind'; } catch { return 'behind'; } })();
 function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
-  if (portrait()) {
+  if (swingView === 'front') {
+    // across the ball (the golfer's toe line) and ahead toward the target, low; aimed at his chest so the face, the
+    // arms at the top and the finish all fit. Mirrors itself for a lefty through side.
+    if (portrait()) { out.set(-2.7 * side, 0.95, -1.55); look.set(0.35 * side, 1.12, 0.35); }
+    else { out.set(-3.1 * side, 1.0, -2.2); look.set(0.2 * side, 1.0, 0.1); }
+  } else if (portrait()) {
     // phone held upright: from behind, down the line, with the golfer near the centre of the frame (camera between
     // the ball and his hips, looking straight down the target line) and pulled back so the club at the top and the
     // finish fit. side: +1 for a left-hander (he stands on +x of the ball), -1 for a right-hander
@@ -313,6 +322,12 @@ function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
   // turn the swing cam with the aim line (round the ball)
   if (aim.dir !== 0) { const b = golfer.ballWorld(new THREE.Vector3()), Y = new THREE.Vector3(0, 1, 0); out.sub(b).applyAxisAngle(Y, -aim.dir).add(b); look.sub(b).applyAxisAngle(Y, -aim.dir).add(b); }
 }
+hud.view = swingView;
+hud.onView = v => {
+  sound.ui(); swingView = v; try { localStorage.setItem('hunt.cam', v); } catch { /* private mode */ }
+  // a timed flight from wherever the camera is to the new swing cam (not a cut)
+  camFly.t0 = last; camFly.pos.copy(camPos); camFly.look.copy(camLook); camFly.shift = lensShift; camFly.done = false; camFly.view = true;
+};
 let lensShift = 0;
 function fitCamera() {
   const { w: vw, h: vh } = viewport();
@@ -417,7 +432,7 @@ function updateWind(now: number) {
 
 // swing view ⇄ aim view camera flight
 const CAM_FLY_S = 0.75;
-const camFly = { aim: false, t0: -1e9, pos: new THREE.Vector3(), look: new THREE.Vector3(), shift: 0, done: true };
+const camFly = { aim: false, t0: -1e9, pos: new THREE.Vector3(), look: new THREE.Vector3(), shift: 0, done: true, view: false };   // view: a swing-cam change (the tracer stays up)
 let camFlying = false;
 /** wall-clock seconds since the last camera update (not the 50 ms-clamped frame dt): the swing/aim camera settles in
  *  real time even when the frame rate drops to a few fps, instead of creeping a fixed fraction per frame */
@@ -475,7 +490,7 @@ function updateCamera(dt: number, now: number) {
     // swing view ⇄ aim view: a timed camera flight through the world (ease in-out), not an exponential snap
     // Time-based end to end: the flight's progress is wall-clock, the last frame of it lands exactly on the target
     // (however few frames there were), and after it the camera follows its target with a real-time ease.
-    if (aimCtl.active !== camFly.aim) { camFly.aim = aimCtl.active; camFly.t0 = now; camFly.pos.copy(camPos); camFly.look.copy(camLook); camFly.shift = lensShift; camFly.done = false; }
+    if (aimCtl.active !== camFly.aim) { camFly.aim = aimCtl.active; camFly.view = false; camFly.t0 = now; camFly.pos.copy(camPos); camFly.look.copy(camLook); camFly.shift = lensShift; camFly.done = false; }
     const fk = (now - camFly.t0) / 1000 / CAM_FLY_S;
     if (fk < 1) { const e = fk * fk * (3 - 2 * fk); want.lerpVectors(camFly.pos, want, e); wantLook.lerpVectors(camFly.look, wantLook, e); camFlying = lensFly = true; }
     else if (!camFly.done) { camFly.done = true; camFlying = lensFly = true; }   // the flight's last frame: snap onto the target
@@ -712,7 +727,7 @@ function frame(now: number) {
   if (state === 'ready' && !SW.active) updatePreview();
   // one tracer for both views: it lies down onto the ground as the camera flies up to the aim view (and lifts back)
   const aimFk = clamp((now - camFly.t0) / 1000 / CAM_FLY_S, 0, 1), aimE = aimFk * aimFk * (3 - 2 * aimFk);
-  preview.update(dt, camera, renderer.domElement, state === 'ready' && !SW.active && camMode === 'address', camFly.aim ? aimE : 1 - aimE);
+  preview.update(dt, camera, renderer.domElement, state === 'ready' && !SW.active && camMode === 'address', camFly.aim ? aimE : camFly.view ? 0 : 1 - aimE);
   focus.copy(state === 'flight' || state === 'result' ? ball.pos : golfer.ballWorld(tmp));
   updateWind(now);
   range?.setWind(WIND); // the flags stream with the ball's wind (a light breeze when there is none)
