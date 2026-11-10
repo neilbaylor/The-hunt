@@ -522,7 +522,10 @@ if A.neck == 'loft':
     top = LV[loop]
     ta = np.arctan2(top[:, 0] - axis_c[0], top[:, 2] - axis_c[1])
     OVER = 0.012   # the neck runs on past the seam, down inside the collar, over the body's neck
-    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) - 0.003), 0, axis_c[1] + math.cos(a) * (neck_r(a) - 0.003)] for a in ta])   # 3 mm INSIDE the body's neck: below the seam the body skin and the collar cover it, it never shows as a bib in front of the shirt; bot[:, 1] = np.minimum(y_seam_at(bot[:, 2]) - OVER, top[:, 1] - 0.025)   # at the back the collar rides high: the neck still runs down
+    bot = np.array([[axis_c[0] + math.sin(a) * (neck_r(a) - 0.003), 0, axis_c[1] + math.cos(a) * (neck_r(a) - 0.003)] for a in ta])
+    # (3 mm INSIDE the body's neck: below the seam the body skin and the collar cover it, never a bib in front of the shirt)
+    bot[:, 1] = np.minimum(y_seam_at(bot[:, 2]) - OVER, top[:, 1] - 0.025)   # at the back the collar rides high: the neck still runs down
+    assert np.all(bot[:, 1] > top[:, 1].min() - 0.12), 'neck loft runs away below the collar'
     # smooth the bottom ring a little round the neck
     for _ in range(3): bot = 0.5 * bot + 0.25 * (np.roll(bot, 1, 0) + np.roll(bot, -1, 0))
     ROWS = 7
@@ -757,9 +760,10 @@ if A.lids:
         near = (np.linalg.norm(d, axis=1) < 0.024) & (dz > -0.002) & (wx > 0)
         s_up = (1 - sstep(p_up, p_up + 0.6, phi)) * (phi >= p_up - 0.015)
         s_lo = (1 - sstep(p_lo, p_lo - 0.45, phi)) * (phi <= p_lo + 0.015)
-        dphi = ((p_meet - p_up) * s_up + (p_meet - p_lo) * s_lo) * wx * near
+        # the margins overlap a little when closed (the upper over the lower), so no sliver of eye shows between them
+        dphi = ((p_meet - 0.05 - p_up) * s_up + (p_meet + 0.03 - p_lo) * s_lo) * wx * near
         inside = (phi < p_up - 0.015) & (phi > p_lo + 0.015) & near
-        phi2 = phi + dphi; rho2 = rho * (1 + 0.03 * np.clip(s_up + s_lo, 0, 1) * wx * near) - 0.0012 * inside * wx
+        phi2 = phi + dphi; rho2 = rho * (1 + (0.045 * s_up + 0.02 * s_lo) * wx * near) - 0.002 * inside * wx
         nd = np.outer(dx, X) + (rho2 * np.sin(phi2))[:, None] * Y + (rho2 * np.cos(phi2))[:, None] * Z
         lid += np.where((near & ((dphi != 0) | inside))[:, None], nd - d, 0)
         print(f'  eyelids: {int((np.abs(dphi) > 1e-4).sum())} lid verts rotate (upper {np.degrees((p_meet - p_up).mean()):.0f}°, lower {np.degrees((p_meet - p_lo).mean()):+.0f}°), {int(inside.sum())} eye-surface verts sink')
@@ -1576,6 +1580,25 @@ if _Uiris is not None:
 # (the body's skin colour: skin_xform above; a flat tint is kept for older loaders)
 tint = np.ones(3)   # (superseded by skinXform; kept so older loaders still read a tint)
 
+# ── sanity: every vertex weighted (summing to 1) to the head and neck chain only, nothing far below the jaw ──
+_wsum = np.array([sum(v for _, v in w) for w in wts]); assert np.allclose(_wsum, 1, atol=1e-3), 'skin weights must sum to 1'
+_ok_b = {B.index(n_) for n_ in ('head', 'neck_01', 'spine_02', 'spine_03', 'clavicle_l', 'clavicle_r') if n_ in B}
+_bad_w = [i for i, w in enumerate(wts) if any(v > 0.05 and b_ not in _ok_b for b_, v in w)]
+if _bad_w: print(f'  (re-weighting {len(_bad_w)} verts that leaned on arm bones to their head/neck share)')
+for i in _bad_w:
+    w = [(b_, v) for b_, v in wts[i] if b_ in _ok_b and v > 0] or [(hb, 1.0)]; t_ = sum(v for _, v in w)
+    wts[i] = [(b_, v / t_) for b_, v in w] + [(0, 0.0)] * (4 - len(w))
+assert LV[:, 1].min() > lm_f[152, 1] - 0.2, f'a vertex {lm_f[152, 1] - LV[:, 1].min():.2f} m below the chin'
+# a stray piece (not connected to the head) is dropped
+_cc = trimesh.Trimesh(LV, LF, process=False).face_adjacency
+import scipy.sparse as _sp, scipy.sparse.csgraph as _cg
+_ncomp, _lab = _cg.connected_components(_sp.coo_matrix((np.ones(len(_cc)), (_cc[:, 0], _cc[:, 1])), shape=(len(LF), len(LF))), directed=False)
+if _ncomp > 1:
+    _sizes = np.bincount(_lab); _main = _sizes.argmax(); _small = _sizes < 0.02 * len(LF)
+    _drop = _small[_lab]
+    if _drop.any():
+        print(f'  dropping {int(_drop.sum())} faces in {int(_small.sum())} stray pieces')
+        UF = UF[~_drop]                                                # (UF is LF's faces, in order)
 # ───────────────────────── write head.bin ─────────────────────────
 # the rest face: ease the portrait's open grin toward a relaxed smile (after the bake, so the texture rides along)
 PV = mir(VV).astype(np.float32)
