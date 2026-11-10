@@ -71,6 +71,16 @@
   .intro .il-medal .face-name, .intro .il-medal .face-word, .intro .il-medal .face-bubble { display: none !important; }
   .intro[data-layout="c"] h1 { font-size: clamp(110px, 34vw, 190px); margin-top: 8px; }
   .intro[data-layout="c"] .tap { margin-bottom: 26px; }
+  /* a, polished: a tighter lockup — the crest wordmark, the name, a short gold rule and a quiet cue, left-aligned on one edge */
+  .intro[data-layout="a"] { background: linear-gradient(180deg, rgba(20,12,4,.28) 0%, rgba(20,12,4,0) 20%, rgba(20,12,4,0) 56%, rgba(14,10,6,.55) 78%, rgba(10,8,6,.86) 100%); }
+  .intro[data-layout="a"] .il-lock { gap: 8px; padding: 0 8px 22px; }
+  .intro[data-layout="a"] .il-eyebrow { font-size: 11.5px; letter-spacing: .34em; gap: 8px; color: #ffe6a8; }
+  .intro[data-layout="a"] .il-eyebrow .crest { width: 26px; height: 26px; }
+  .intro[data-layout="a"][data-case="proper"] h1 { text-transform: none; font-size: clamp(118px, 36vw, 210px); line-height: .84; letter-spacing: -.005em; margin: 0 0 2px -3px; }
+  .intro[data-layout="a"][data-case="caps"] h1 { font-size: clamp(118px, 36vw, 210px); line-height: .84; letter-spacing: .01em; margin: 0 0 2px -3px; }
+  .intro[data-layout="a"] h1 { text-shadow: 0 2px 0 rgba(0,0,0,.18), 0 10px 40px rgba(0,0,0,.45); }
+  .intro[data-layout="a"] .il-rule { width: 40px; height: 4px; margin: 2px 0 6px; }
+  .intro[data-layout="a"] .tap { font-size: 11.5px; letter-spacing: .28em; }
   .intro.gone .il-lock, .intro.gone .il-top, .intro.gone .il-stack { transform: translateY(40px); opacity: 0; transition: transform .6s cubic-bezier(.5,0,.7,.4), opacity .5s; animation: none; }
   @media (prefers-reduced-motion: reduce) { .intro .il-lock, .intro .il-top, .intro .il-stack, .intro[data-layout] .tap { animation: none; } }
   @media (orientation: landscape) { .intro { justify-items: start; background: linear-gradient(90deg, rgba(11,26,51,.78) 0%, rgba(11,26,51,.3) 42%, rgba(11,26,51,0) 65%); align-items: end; } .intro-card { justify-items: start; text-align: left; } }

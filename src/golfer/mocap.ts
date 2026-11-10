@@ -87,33 +87,52 @@ export function clipChest(row: Float32Array, out: THREE.Quaternion) {
 
 export const CLUB_SUB = 6;
 /**
- * The club's orientation along the clip for one club: the shaft follows the clip's shaft direction; its roll about the
- * shaft (which the video can't show) is whatever lets the lead hand continue the lead forearm and puts the trail
- * wrist where the clip has it. Carried from sample to sample without twisting, then nudged, so it never flips.
- * All inputs are in the club's own space. Returns quaternions (xyzw) at CLUB_SUB samples per clip frame.
+ * The club's orientation along the clip. The shaft follows the clip's shaft direction. Its roll about the shaft (which
+ * the video can't show) follows the plane: the clubface stays square to the lead forearm, i.e. its normal is
+ * shaft × lead forearm. That one rule gives toe up at mid-backswing and mid-follow-through, and at the top the face
+ * parallel to the lead forearm with the toe hanging down and the leading edge at about 45°. Where the shaft and forearm
+ * line up (address, impact) the rule says nothing and the club is carried from the keyed address orientation without
+ * twisting (and mocapPrepare/updateMocap pin it to the keyed address and impact there).
+ * headDir/faceDir are in the club's own space (grip → head, and the way the face looks); qAddr is the keyed address
+ * orientation (character space). Returns quaternions (xyzw) at CLUB_SUB samples per clip frame.
  */
-export function buildClubTrack(headDir: THREE.Vector3, leadHandDir: THREE.Vector3, wristLead: THREE.Vector3, wristTrail: THREE.Vector3) {
+export function buildClubTrack(headDir: THREE.Vector3, faceDir: THREE.Vector3, qAddr: THREE.Quaternion) {
   const M = (N - 1) * CLUB_SUB + 1, out = new Float32Array(M * 4);
-  const row = new Float32Array(S), d = new THREE.Vector3(), prevD = new THREE.Vector3(), q = new THREE.Quaternion(), qt = new THREE.Quaternion(), qr = new THREE.Quaternion();
-  const fore = new THREE.Vector3(), line = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), v = new THREE.Vector3();
-  const handLine = wristTrail.clone().sub(wristLead).normalize();
-  const score = (qq: THREE.Quaternion) => v.copy(leadHandDir).applyQuaternion(qq).dot(fore) + 0.4 * v.copy(handLine).applyQuaternion(qq).dot(line);
+  const row = new Float32Array(S), d = new THREE.Vector3(), prevD = new THREE.Vector3(), q = new THREE.Quaternion(), qt = new THREE.Quaternion();
+  const fore = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), n = new THREE.Vector3(), f = new THREE.Vector3(), c = new THREE.Vector3();
   for (let i = 0; i < M; i++) {
     rowAt(i / CLUB_SUB, row);
     vec(row, 'shaft', d);
-    // lead forearm (elbow → wrist) and the line between the wrists, from the clip's arm directions
-    vec(row, 'leadDir', a).multiplyScalar(num(row, 'leadExt')); vec(row, 'leadElbow', b).multiplyScalar(0.52);
-    fore.copy(a).sub(b).normalize(); vec(row, 'wristLine', line);
-    let span: number, step: number;
-    if (i === 0) { q.setFromUnitVectors(headDir, d); span = Math.PI; step = Math.PI / 36; }
-    else { q.premultiply(qt.setFromUnitVectors(prevD, d)); span = 0.35; step = 0.05; }
-    let best = -Infinity, bestA = 0;
-    for (let th = -span; th <= span + 1e-6; th += step) { const sc = score(qt.copy(q).premultiply(qr.setFromAxisAngle(d, th))); if (sc > best) { best = sc; bestA = th; } }
-    q.premultiply(qr.setFromAxisAngle(d, i === 0 ? bestA : bestA * 0.5)).normalize();
-    prevD.copy(d);
+    // lead forearm (elbow → wrist) from the clip's arm: wrist at leadDir·ext, elbow half an arm out along leadElbow
+    vec(row, 'leadDir', a).multiplyScalar(num(row, 'leadExt')); vec(row, 'leadElbow', b).multiplyScalar(0.5);
+    fore.copy(a).sub(b).normalize();
+    if (i === 0) q.copy(qAddr).premultiply(qt.setFromUnitVectors(f.copy(headDir).applyQuaternion(qAddr).normalize(), d));
+    else q.premultiply(qt.setFromUnitVectors(prevD, d));
+    n.crossVectors(d, fore); let w = smooth(0.2, 0.45, n.length());
+    if (w > 1e-3) n.normalize();
+    // mid-follow-through: toe straight up (the forearms keep rotating after the release, so the forearm rule would
+    // leave the face rolled over); feathered in after impact and out before the lead arm is horizontal
+    const tt = i / CLUB_SUB, wUp = smooth(EV.BI + 0.3 * (EV.MF - EV.BI), EV.MF, tt) * (1 - smooth(EV.MF, EV.MF + 0.8 * (EV.LF - EV.MF), tt));
+    if (wUp > 1e-3) {
+      c.set(0, 1, 0).addScaledVector(d, -d.y);                       // toe target: up, square to the shaft
+      if (c.lengthSq() > 1e-4) {
+        c.normalize(); a.copy(d).negate().cross(c).normalize();      // face = butt × toe
+        n.multiplyScalar(w).addScaledVector(a, wUp).normalize(); w = Math.max(w, wUp);
+      }
+    }
+    if (w > 1e-3) {
+      f.copy(faceDir).applyQuaternion(q); f.addScaledVector(d, -f.dot(d)).normalize();
+      const ang = Math.atan2(c.crossVectors(f, n).dot(d), f.dot(n));
+      q.premultiply(qt.setFromAxisAngle(d, ang * w));
+    }
+    q.normalize(); prevD.copy(d);
     out[i * 4] = q.x; out[i * 4 + 1] = q.y; out[i * 4 + 2] = q.z; out[i * 4 + 3] = q.w;
   }
   return out;
+}
+/** weight of the hand-keyed swing around mid-backswing (the owner prefers its MB): 1 at MB, feathered in and out */
+export function keyedMBWeight(t: number) {
+  return smooth(EV.BA + 0.2 * (EV.MB - EV.BA), EV.MB, t) * (1 - smooth(EV.MB, EV.MB + 0.75 * (EV.LBA - EV.MB), t));
 }
 const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
 export function clubAt(track: Float32Array, t: number, out: THREE.Quaternion) {

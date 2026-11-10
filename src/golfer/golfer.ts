@@ -7,7 +7,7 @@ import { Rig, type BodyPose } from './rig';
 import { buildClub, buildHands, CLUB_SPECS, clubLengthT, attackAngleDeg, type ClubModel } from './club';
 import type { GolferProfile } from './profile';
 import { buildHumanBody, type HumanData, type HumanExtras } from './human';
-import { sampleSwing, pinWeights, clipChest, buildClubTrack, clubAt, rowAt, num, vec, EV } from './mocap';
+import { sampleSwing, pinWeights, clipChest, buildClubTrack, clubAt, keyedMBWeight, rowAt, num, vec, EV } from './mocap';
 
 export type ShotMode = 'full' | 'punch' | 'pitch' | 'flop';
 export type SwingPhase = 'address' | 'back' | 'down' | 'follow';
@@ -102,6 +102,8 @@ const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search
 // added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
 const ARM_SCALE = +(_fq?.get('arm') ?? 1.08);
 const LEAN_K = _fv('lk', [0.35, 1.3]);
+// short clubs: weight a little on the lead side, the chest over the ball (pelvis this far toward the target with a wedge)
+const PEL_FWD = +(_fq?.get('pf') ?? 0.04);
 const SIDE_ADJ = _fv('sa', [-0.16, 0.1]);
 const FIN = { g: _fv('fg', [0.15, 0.22, -0.17]), s: _fv('fs', [0.8, 0.6]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
@@ -214,7 +216,13 @@ export class Golfer {
     // less from the hips until the lead arm is ~98% extended.
     const pos = this.pose;
     const armLen = this.rig.len.upper + this.rig.len.fore;
-    const wristAddr = this.extras ? this.clubAt.clone().add(this.gripFrame('L', this.club.gripLead).wrist) : this.gripAddr.clone();
+    // the wrists where the address pose will put them: on the grip (hands 3 cm down it), with this club's shaft lean
+    const sdn = this.club.shaftDir.clone().normalize().multiplyScalar(-GRIP_DOWN[0]);
+    const axis0 = new THREE.Vector3().crossVectors(this.club.shaftDir.clone().negate(), new THREE.Vector3(-1, 0, 0).addScaledVector(this.club.shaftDir, this.club.shaftDir.x).normalize()).normalize();
+    const sign0 = this.club.gripLead.clone().applyAxisAngle(axis0, 0.1).x > this.club.gripLead.x ? 1 : -1;
+    const qLean = new THREE.Quaternion().setFromAxisAngle(axis0, LEAN * (LEAN_K[0] - LEAN_K[1] * lt * lt) * sign0);
+    const wristAddr = this.extras ? this.clubAt.clone().add(this.gripFrame('L', this.club.gripLead.clone().add(sdn)).wrist.applyQuaternion(qLean)) : this.gripAddr.clone();
+    const wristAddrR = this.extras ? this.clubAt.clone().add(this.gripFrame('R', this.club.gripLead.clone().lerp(this.club.gripTrail, GRIP_DOWN[1]).add(sdn)).wrist.applyQuaternion(qLean)) : null;
     // how far the hands hang ahead of the shoulder: more with the longer clubs (toes ~49 cm from the ball with a wedge,
     // ~53 with a 7 iron, ~68 with the driver)
     const handsAhead = (0.03 + 0.09 * lt ** 0.8) * k;
@@ -222,7 +230,7 @@ export class Golfer {
       let lo = -1.2, hi = -0.1;
       for (let it = 0; it < 20; it++) {
         const z = (lo + hi) / 2;
-        this.pelvisBase.set(this.stanceX, this.body.skel.joint[BONE.pelvis].y - kneeDrop * k - st.stance * 0.01, z);
+        this.pelvisBase.set(this.stanceX + PEL_FWD * (1 - lt) * k, this.body.skel.joint[BONE.pelvis].y - kneeDrop * k - st.stance * 0.01, z);
         this.addressKeys(pos); this.rig.apply(pos);
         const sh = this.rig.P[BONE.upperL];
         // shoulder a touch outside the hands (toward the ball) — a plumb line from it hangs just inside the toes
@@ -245,6 +253,15 @@ export class Golfer {
       if (this.tiltAdj > -0.2) break;
     }
     solveZ();
+    // the trail hand has to reach too (it's lower on the grip): if the trail arm comes up more than 2 cm short, the trail
+    // shoulder drops (more spine tilt away from the target) and the bend is re-found
+    for (let it = 0; it < 6 && wristAddrR; it++) {
+      if (this.rig.P[BONE.upperR].distanceTo(wristAddrR) - armLen <= 0.02) break;
+      this.sideAdj += 0.03;
+      let tlo = -0.25, thi = 0.35;
+      for (let j = 0; j < 12; j++) { this.tiltAdj = (tlo + thi) / 2; if (solveZ() > armLen * 0.999) tlo = this.tiltAdj; else thi = this.tiltAdj; }
+      this.tiltAdj = (tlo + thi) / 2; solveZ();
+    }
     // swing circle: plane through the shaft line and the target line
     this.e1.copy(this.club.shaftDir);
     this.e2.set(-1, 0, 0).addScaledVector(this.e1, this.e1.x).normalize();
@@ -391,7 +408,7 @@ export class Golfer {
 
   /** Pose the golfer for a swing state. Returns the club-head position (world). */
   update(s: SwingState) {
-    if (this.swingSource === 'mocap' && s.phase !== 'address' && !this.mocapBusy && this.extras) return this.updateMocap(s);   // ?swing=mocap: the captured swing (mocap.ts)
+    if (this.swingSource === 'mocap' && s.phase !== 'address' && !this.mocapBusy && this.extras) return this.updateMocap(s);   // the captured swing (mocap.ts); ?swing=keyed for the hand-keyed one
     const st = SHOT_STYLE[this.mode], p = this.pose, k = this.k;
     const key: Keys = { ...A };
     let phi = s.phi, finW = 0;
@@ -668,8 +685,8 @@ export class Golfer {
     return this.club.group.localToWorld(this.clubHeadWorld.set(0, 0, 0));
   }
 
-  // ---- captured swing (A/B against the hand-keyed one): ?swing=mocap on the URL, or set swingSource ----
-  swingSource: 'keyed' | 'mocap' = globalThis.location && new URLSearchParams(globalThis.location.search).get('swing') === 'mocap' ? 'mocap' : 'keyed';
+  // ---- captured swing: the default; ?swing=keyed on the URL (or swingSource = 'keyed') gives the hand-keyed one ----
+  swingSource: 'keyed' | 'mocap' = globalThis.location && new URLSearchParams(globalThis.location.search).get('swing') === 'keyed' ? 'keyed' : 'mocap';
   private mocapBusy = false;
   private mocapRef: { key: string; track: Float32Array; addr: { pos: THREE.Vector3; quat: THREE.Quaternion; poleL: THREE.Vector3; poleR: THREE.Vector3 }; imp: { pos: THREE.Vector3; quat: THREE.Quaternion; poleL: THREE.Vector3; poleR: THREE.Vector3 }; look: THREE.Quaternion } | null = null;
   private mocapRow = new Float32Array(64); private mocapRow0 = rowAt(EV.BA);
@@ -683,8 +700,7 @@ export class Golfer {
     this.update({ phase: 'down', phi: 0, topPhi: PHI_TOP, idleT: 0 }); const imp = grab();
     this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 }); const addr = grab();
     this.mocapBusy = false;
-    const F = this.handFrame!;
-    const track = buildClubTrack(this.club.shaftDir.clone().negate().normalize(), F.L.dir, this.hands.wristLead, this.hands.wristTrail);
+    const track = buildClubTrack(this.club.shaftDir.clone().negate().normalize(), new THREE.Vector3(1, 0, 0), addr.quat);
     // the eyes: the clip's head direction, turned so that at address it looks at the ball
     const qRigChest = this.rig.Q[BONE.chest].clone(), qClip = clipChest(this.mocapRow0, new THREE.Quaternion());
     const head0 = vec(this.mocapRow0, 'head', new THREE.Vector3()).applyQuaternion(qClip.invert()).applyQuaternion(qRigChest);
@@ -695,6 +711,14 @@ export class Golfer {
     const ref = this.mocapPrepare(), st = SHOT_STYLE[this.mode], p = this.pose, g = this.club.group, rig = this.rig;
     const phase = s.phase as 'back' | 'down' | 'follow';
     const { row, t } = sampleSwing(phase, s.phi, s.topPhi, st.finish, this.mocapRow), r0 = this.mocapRow0;
+    // around mid-backswing, blend toward the hand-keyed swing at the same hands angle (body, arms and club)
+    const wK = phase === 'back' ? keyedMBWeight(t) : 0;
+    let kp: { pose: BodyPose; pos: THREE.Vector3; quat: THREE.Quaternion } | null = null;
+    if (wK > 1e-3) {
+      this.mocapBusy = true; this.update(s); this.mocapBusy = false;
+      const c: any = {}; for (const [k, v] of Object.entries(p)) c[k] = v instanceof THREE.Vector3 ? v.clone() : v;
+      kp = { pose: c as BodyPose, pos: g.position.clone(), quat: g.quaternion.clone() };
+    }
     const d = (n: string) => num(row, n) - num(r0, n);
     const f = phase === 'follow' ? Math.min(1, -s.phi / Math.abs(PHI_FINISH)) : 0;
     // body: the clip's change from its own address, added to this golfer's address for the club in hand
@@ -736,6 +760,15 @@ export class Golfer {
         const qf = new THREE.Quaternion().setFromAxisAngle(ax.normalize(), ang);
         qc.premultiply(qf); g.position.copy(grip).add(armV.applyQuaternion(qf));
       }
+    }
+    if (kp) {
+      const P = p as any, K = kp.pose as any;
+      for (const k of Object.keys(K)) {
+        if (k === 'wristL' || k === 'wristR' || k === 'look') continue;
+        if (typeof K[k] === 'number') P[k] += (K[k] - P[k]) * wK;
+        else if (K[k] instanceof THREE.Vector3 && P[k]) P[k].lerp(K[k], wK);
+      }
+      g.position.lerp(kp.pos, wK); qc.slerp(kp.quat, wK);
     }
     g.quaternion.copy(qc);
     p.wristL.copy(this.hands.wristLead).applyQuaternion(qc).add(g.position);

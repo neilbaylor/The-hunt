@@ -20,6 +20,7 @@ import { tourBallMaterial } from './ui/ballmat';
 import { FaceBadge, AVATAR_LAYER, type Outcome } from './ui/facebadge';
 import { AimController, aim } from './game/aim';
 import { MODES as SHOT_MODES, FULL_MIN } from './game/shot';
+import { voice, speak } from './game/voice';
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const smooth = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -173,7 +174,7 @@ const dbg = new URLSearchParams(location.search).has('debug') ? document.body.ap
 let dbgRaw = 0;
 
 hud.pad.addEventListener('pointerdown', e => {
-  sound.unlock();
+  sound.unlock(); voice.unlock();
   if (state === 'intro') { startPlay(); return; }
   if (state === 'result') { nextBall(); return; }
   if (state !== 'ready' || SW.active || fading) return;
@@ -307,7 +308,7 @@ function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
   if (swingView === 'front') {
     // across the ball (the golfer's toe line) and ahead toward the target, low; aimed at his chest so the face, the
     // arms at the top and the finish all fit. Mirrors itself for a lefty through side.
-    if (portrait()) { out.set(-2.7 * side, 0.95, -1.55); look.set(0.35 * side, 1.12, 0.35); }
+    if (portrait()) { out.set(-3.6 * side, 0.9, -1.15); look.set(0.25 * side, 1.02, 0.2); }
     else { out.set(-3.1 * side, 1.0, -2.2); look.set(0.2 * side, 1.0, 0.1); }
   } else if (portrait()) {
     // phone held upright: from behind, down the line, with the golfer near the centre of the frame (camera between
@@ -557,6 +558,7 @@ intro.className = 'intro';
 //  c: the live 3D face in a big medallion, name and title stacked under it, the course behind
 const INTRO = ((q: string | null) => (q === 'b' || q === 'c' ? q : 'a'))(QS.get('intro'));
 intro.dataset.layout = INTRO;
+intro.dataset.case = QS.get('name') === 'caps' ? 'caps' : 'proper';   // intro A's name: proper case (default) or ?name=caps
 intro.innerHTML = INTRO === 'b'
   ? `<div class="il-top"><span class="il-eyebrow"><i class="crest" aria-hidden="true"></i>The Hunt</span><h1>${profile.name}</h1><i class="il-rule" aria-hidden="true"></i></div><span class="tap">Tap anywhere to start</span>`
   : INTRO === 'c'
@@ -565,20 +567,40 @@ intro.innerHTML = INTRO === 'b'
 intro.setAttribute('role', 'button'); intro.tabIndex = 0; intro.setAttribute('aria-label', `Start playing as ${profile.name}`);
 document.body.appendChild(intro);
 // a tap anywhere starts (no button)
-intro.addEventListener('click', () => { sound.unlock(); startPlay(); });
-intro.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sound.unlock(); startPlay(); } });
+intro.addEventListener('click', () => { sound.unlock(); voice.unlock(); startPlay(); });
+intro.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sound.unlock(); voice.unlock(); startPlay(); } });
 // intro: a front ¾ view of Neil framed between the title and his name; a tap flies the camera round to the swing cam
 const INTRO_FLY_S = 1.9;
 const introFly = { t0: 0, pos: new THREE.Vector3(), look: new THREE.Vector3() };
+/** intro A's camera azimuth round his head: in front of him (within ±0.8 rad of straight on, toward his lead side
+ *  preferred), with the sun about 50° off the line of sight behind him for a rim light. Worked out once. */
+let introTh: number | null = null, introExp0 = -1;
+function introAngle() {
+  if (introTh !== null) return introTh;
+  const base = (golfer.lefty ? Math.PI : 0) + 0.42 * side;
+  const sd = range?.sunDirection; if (!sd) return (introTh = base);
+  const sun = Math.atan2(sd.z, sd.x);
+  let best = base, score = 1e9;
+  for (let d = -0.8; d <= 0.8001; d += 0.02) {
+    const th = base + d;
+    let off = th - (sun + Math.PI); off = Math.abs(Math.atan2(Math.sin(off), Math.cos(off)));   // 0 = the sun right behind his head
+    const sc = Math.abs(off - 0.9) * 2 + Math.abs(d) * 0.6;
+    if (sc < score) { score = sc; best = th; }
+  }
+  return (introTh = best);
+}
 function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
   const head = new THREE.Vector3(); golfer.body.bones[5].getWorldPosition(head);
   const piv = golfer.ballWorld(new THREE.Vector3()).add(new THREE.Vector3(0.5 * side, 0, 0));
   if (INTRO === 'a' || INTRO === 'b') {
-    // a: a slow push on a head-and-shoulders close-up (a touch low, ¾ to his lead side); b: a wide, high golden-hour shot
-    const T = now / 1000, th = (golfer.lefty ? Math.PI : 0) + (INTRO === 'a' ? 0.42 : 0.75) * side + 0.04 * Math.sin(T * 0.25);
-    const R = INTRO === 'a' ? 1.75 - 0.06 * Math.sin(T * 0.2) : 8.5;
+    // a: a ¾ head-and-shoulders close-up, a touch low, placed so the low sun sits off his shoulder behind him (a warm rim
+    //    light on the hair and cheek) and never straight behind the head (that blows the visor out in bloom); a slow drift
+    // b: a wide, high golden-hour shot
+    const T = now / 1000;
+    const th = INTRO === 'a' ? introAngle() + 0.05 * Math.sin(T * 0.21) : (golfer.lefty ? Math.PI : 0) + 0.75 * side + 0.04 * Math.sin(T * 0.25);
+    const R = INTRO === 'a' ? 1.85 - 0.08 * Math.sin(T * 0.16) : 8.5;
     pos.set(head.x + Math.cos(th) * R, 0, head.z + Math.sin(th) * R);
-    pos.y = INTRO === 'a' ? head.y - 0.06 : 2.6;
+    pos.y = INTRO === 'a' ? head.y - 0.1 + 0.025 * Math.sin(T * 0.27) : 2.6;
     pos.y = Math.max(pos.y, (range?.heightAt(pos.x, pos.z) ?? 0) + 1.0);
     if (INTRO === 'a') look.set(head.x, head.y - 0.2, head.z);   // face in the upper half, the lockup under the chin
     else look.copy(piv).add(new THREE.Vector3(-1.6 * side, 1.9, -0.6));   // him small, low right; the sky and the course take the frame
@@ -590,6 +612,7 @@ function introCam(pos: THREE.Vector3, look: THREE.Vector3, now: number) {
   look.set(piv.x * 0.9 + head.x * 0.1, 0.62, piv.z);   // pulled back a little, aimed low: head under the title, feet above the name card
 }
 function startPlay() {
+  speak('intro');
   if (state !== 'intro' || camMode !== 'intro') return;
   if (INTRO === 'c') document.getElementById('who')!.appendChild(faceBadge.el);   // the live face goes home to the HUD
   intro.classList.add('gone');
@@ -644,7 +667,7 @@ function frame(now: number) {
   // face: smile on the intro, and after a good shot
   const good = state === 'result' && !!plan && plan.tempoWord === 'Perfect' && Math.abs(ball.offline() / YD) < 10;
   faceBadge.update(dt);
-  golfer.smileToward(Math.max(state === 'intro' || good ? 1 : 0, faceBadge.smile), dt);
+  golfer.smileToward(Math.max(state === 'intro' ? (INTRO === 'a' ? 0.55 : 1) : good ? 1 : 0, faceBadge.smile), dt);   // intro A: a small, easy smile
 
   hud.setState(state === 'ready', state === 'flight', !card);
   hud.el.classList.toggle('in-shot', state === 'flight' || state === 'result');   // the top controls step away for the shot
@@ -722,7 +745,11 @@ function frame(now: number) {
   hud.tickSpin(dt, state === 'flight' && ball.phase === 'flight');
 
   updateCamera(simDt, now);
-  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 1.2 : 2.4) : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
+  { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 0.8 : 2.4) : swingView === 'front' && camMode === 'address' ? 0.25 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
+  // the sunlit side of him (intro A, the face-on swing cam) sits a touch lower in exposure so the cream visor and skin keep detail
+  const expK = state === 'intro' && INTRO === 'a' ? 0.84 : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.8 : 1;
+  if (expK < 1) { if (introExp0 < 0) introExp0 = renderer.toneMappingExposure; renderer.toneMappingExposure = introExp0 * expK; }
+  else if (introExp0 > 0) { renderer.toneMappingExposure = introExp0; introExp0 = -1; }
   tracer.update(camera, state === 'ready' ? 0.6 : 1);
   if (state === 'ready' && !SW.active) updatePreview();
   // one tracer for both views: it lies down onto the ground as the camera flies up to the aim view (and lifts back)
@@ -751,7 +778,7 @@ window.visualViewport?.addEventListener('resize', onViewport);
 addEventListener('orientationchange', () => setTimeout(onViewport, 250));
 // a tap anywhere during the result skips ahead; holding the view during a shot fast-forwards it
 renderer.domElement.addEventListener('pointerdown', e => {
-  sound.unlock();
+  sound.unlock(); voice.unlock();
   if (state === 'result') { nextBall(); return; }
   if (state === 'flight') { ff.held = true; pressT = performance.now(); try { renderer.domElement.setPointerCapture(e.pointerId); } catch { /* not supported */ } }
 });

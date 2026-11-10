@@ -59,6 +59,9 @@ export interface FaceController {
   setGaze(x: number | null, y?: number): void;
   /** talk: drives the mouth through visemes from the text (letter timing), with jaw motion; durationMs spreads it */
   say(text: string, durationMs?: number): void;
+  /** talk from timed visemes (a voice clip's lip-sync: [[tSec, 'A'|'E'|'I'|'O'|'U'|'M'|'F'|'C'|'_'], ...]); jaw: optional
+   *  loudness curve 0..1 at fps, which scales the jaw so the mouth opens with the audio */
+  sayTimed(vis: [number, string][], durationSec: number, jaw?: number[], fps?: number): void;
   /** true while say() is speaking */
   talking(): boolean;
   /** a small nod (radians, + = chin down) the caller may add to the head while talking */
@@ -301,6 +304,7 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
   const vOf = (ch: string) => 'a'.includes(ch) ? 'A' : 'e'.includes(ch) ? 'E' : 'iy'.includes(ch) ? 'I' : 'o'.includes(ch) ? 'O' : 'uwq'.includes(ch) ? 'U'
     : 'mbp'.includes(ch) ? 'M' : 'fv'.includes(ch) ? 'F' : /[a-z]/.test(ch) ? 'C' : '_';
   let speech: { t: number; v: string }[] = [], speechT0 = 0, speechEnd = 0;
+  let jawCurve: number[] | null = null, jawFps = 30;
   const vis: Record<MK, number> = Object.fromEntries(MORPHS.map(k => [k, 0])) as Record<MK, number>;
   let nodV = 0, lastGx = 0, blinkTwice = false, talkK = 1;
   // head motion: critically damped springs toward targets made of layered slow noise + speech events
@@ -346,7 +350,9 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
     if (speech.length && now < speechEnd && now >= speechT0) {
       const st = now - speechT0; let k = 0; while (k < speech.length - 1 && speech[k + 1].t <= st) k++;
       // the lips part along a smooth cut (head.py): the jaw drops for real while talking (jawOpen 1 ≈ 14 mm at the lower lip)
-      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.55, w_ * talkK * 0.5) : Math.min(1.2, w_ * talkK);
+      // a voice clip's loudness (when given) scales the jaw: loud syllables open wider, quiet ones barely part the lips
+      const loud = jawCurve ? 0.35 + 1.0 * (jawCurve[Math.min(jawCurve.length - 1, Math.floor(st * jawFps))] ?? 0) : 1;
+      for (const [m_, w_] of Object.entries(VIS[speech[k].v] ?? {})) tgt[m_ as MK] = m_ === 'jawOpen' ? Math.min(0.55, w_ * talkK * 0.5 * loud) : Math.min(1.2, w_ * talkK);
       nodV += ((speech[k].v === 'A' || speech[k].v === 'O' ? 0.035 : 0) - nodV) * (1 - Math.exp(-dt * 6));
     } else nodV += (0 - nodV) * (1 - Math.exp(-dt * 4));
     {
@@ -389,8 +395,15 @@ export function buildGenHead(gh: GenHeadData, boneNames: string[], skeleton: THR
       speech = []; let t = 0;
       for (const ch of chars) { const v = vOf(ch); speech.push({ t, v }); t += v === '_' ? (/[,.!?;:]/.test(ch) ? per * 3.5 : per * 1.4) : per; }
       speech.push({ t, v: '_' });
-      speechT0 = faceNow(); speechEnd = speechT0 + t;
+      speechT0 = faceNow(); speechEnd = speechT0 + t; jawCurve = null;
       emph = 1; lean = /[?!]/.test(text) ? 1 : 0.3;                  // an emphasis bob at the start, a lean in on ?/!
+    },
+    sayTimed(v, durationSec, jaw, fps = 30) {
+      speech = v.filter(e => e && typeof e[0] === 'number').map(([t, x]) => ({ t, v: VIS[x] ? x : 'C' })).sort((a, b) => a.t - b.t);
+      if (!speech.length || speech[0].t > 0) speech.unshift({ t: 0, v: '_' });
+      speech.push({ t: durationSec, v: '_' });
+      speechT0 = faceNow(); speechEnd = speechT0 + durationSec; jawCurve = jaw?.length ? jaw : null; jawFps = fps;
+      emph = 1; lean = 0.3;
     },
     talking() { return faceNow() < speechEnd; },
     nod() { return nodV; },
