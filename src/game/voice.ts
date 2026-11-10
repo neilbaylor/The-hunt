@@ -17,7 +17,7 @@ export interface VoiceLine {
 
 const URLS = import.meta.glob('../assets/voice/*.mp3', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 const urlOf = (id: string) => URLS[`../assets/voice/${id}.mp3`];
-const CLIPS = (manifest as { clips: VoiceLine[] }).clips.filter(c => urlOf(c.id));
+const CLIPS = (manifest as unknown as { clips: VoiceLine[] }).clips.filter(c => urlOf(c.id));
 
 let cleanOnly = false, volume = 0.9, muted = false;
 const audios = new Map<string, HTMLAudioElement>();
