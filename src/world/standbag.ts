@@ -33,11 +33,12 @@ function surface(nu: number, nv: number, f: (u: number, v: number, out: THREE.Ve
   return g;
 }
 
-const H = 0.86, SPLIT = 0.46;
+const H = 0.78, SPLIT = 0.42;
 /** the bag's section at height y: an oval, a little narrower at the base, with soft fabric bulges and creases */
 function section(y: number) {
   const t = y / H;
-  const rx = 0.118 + 0.022 * Math.sin(Math.PI * Math.min(1, t * 1.15)) + 0.012 * t, rz = rx * 0.86;
+  // chunky: ~30% wider than a plain tube, fullest just above the pocket
+  const rx = 0.152 + 0.03 * Math.sin(Math.PI * Math.min(1, t * 1.15)) + 0.012 * t, rz = rx * 0.82;
   return { rx, rz };
 }
 function bodyPoint(a: number, y: number, out: THREE.Vector3, puff = 0) {
@@ -58,7 +59,7 @@ export function createStandBag(): THREE.Mesh {
   parts.push(colored(surface(2, 10, (u, v, o) => { bodyPoint(0.42 + (u - 0.5) * 0.02, SPLIT + v * (H - SPLIT - 0.06), o, 0.006); }), C.blue));
   // ── the big blue front pocket: a pillow wrapping the front of the curve ──
   const PA = 1.25, PY0 = 0.07, PY1 = SPLIT + 0.06;
-  const pocket = (u: number, v: number, o: THREE.Vector3, extra = 0) => bodyPoint((u - 0.5) * PA * 2, PY0 + v * (PY1 - PY0), o, 0.14 * Math.pow(Math.sin(Math.PI * u), 0.6) * Math.pow(Math.sin(Math.PI * v), 0.5) + extra);
+  const pocket = (u: number, v: number, o: THREE.Vector3, extra = 0) => bodyPoint((u - 0.5) * PA * 2, PY0 + v * (PY1 - PY0), o, 0.24 * Math.pow(Math.sin(Math.PI * u), 0.55) * Math.pow(Math.sin(Math.PI * v), 0.45) + extra);
   parts.push(colored(surface(24, 18, (u, v, o) => { pocket(u, v, o); }), C.blue));
   // black piping round the pocket, the long zip, the orange pull tab and the diamond badge
   const along = (f: (t: number, o: THREE.Vector3) => void, n: number, r: number, c: THREE.Color) => {
@@ -82,13 +83,16 @@ export function createStandBag(): THREE.Mesh {
   for (const [w, d, x, z] of [[0.22, 0.008, 0, 0.0], [0.008, 0.18, 0.0, 0.0], [0.008, 0.18, -0.06, 0.0]] as const) { const b = new THREE.BoxGeometry(w, 0.03, d); b.translate(x, H + 0.01, z); parts.push(colored(b, C.black)); }
   // the black side handle
   { const o = new THREE.Vector3(); bodyPoint(Math.PI / 2, 0.6, o, 0.02); const h = new THREE.CapsuleGeometry(0.014, 0.1, 3, 6); h.translate(o.x, o.y, o.z); parts.push(colored(h, C.black)); }
-  // ── the white padded double strap arcing over the back, black padding underneath ──
-  for (const sx of [-1, 1]) {
-    const pts = [new THREE.Vector3(sx * 0.05, 0.8, 0.11), new THREE.Vector3(sx * 0.1, 0.72, 0.24), new THREE.Vector3(sx * 0.12, 0.56, 0.27), new THREE.Vector3(sx * 0.09, 0.4, 0.2), new THREE.Vector3(sx * 0.06, 0.32, 0.11)];
+  // ── the white padded double strap: two thick pads arcing out from under the cuff down to the pocket top,
+  // on the side away from the legs, black padding underneath ──
+  for (const k of [0, 1]) {
+    const side = -1, off = k * 0.06 - 0.03;
+    const pts = [new THREE.Vector3(side * 0.12, H - 0.04, -0.06 + off), new THREE.Vector3(side * 0.24, H - 0.14, -0.08 + off), new THREE.Vector3(side * 0.28, H - 0.3, -0.06 + off), new THREE.Vector3(side * 0.24, SPLIT + 0.02, -0.03 + off), new THREE.Vector3(side * 0.15, SPLIT - 0.06, -0.02 + off)];
     const curve = new THREE.CatmullRomCurve3(pts);
-    parts.push(colored(new THREE.TubeGeometry(curve, 18, 0.02, 7, false), C.white));
-    const under = new THREE.CatmullRomCurve3(curve.getPoints(18).slice(3, 15).map(p => p.clone().add(new THREE.Vector3(0, 0, -0.012))));
-    parts.push(colored(new THREE.TubeGeometry(under, 12, 0.016, 6, false), C.black));
+    const pad = new THREE.TubeGeometry(curve, 20, 0.026, 8, false);
+    parts.push(colored(pad, C.white));
+    const under = new THREE.CatmullRomCurve3(curve.getPoints(20).slice(3, 17).map(p => p.clone().add(new THREE.Vector3(-side * 0.018, 0, 0))));
+    parts.push(colored(new THREE.TubeGeometry(under, 14, 0.02, 6, false), C.black));
   }
   // ── clubs: a white driver headcover with a navy band, two fairway covers (navy, grey), iron grips ──
   const cover = (x: number, z: number, lean: number, w: number, c: THREE.Color, band?: THREE.Color) => {
@@ -98,11 +102,11 @@ export function createStandBag(): THREE.Mesh {
     if (band) { const b = new THREE.CylinderGeometry(w * 0.64, w * 0.64, 0.022, 12); b.translate(0, 0.08, 0); geos.push(colored(b, band)); }
     for (const g of geos) { g.rotateX(lean); g.rotateZ(-lean * 0.4); g.translate(x, H - 0.02, z); parts.push(g); }
   };
-  cover(0.045, 0.03, -0.25, 0.062, C.white, C.navy);
-  cover(-0.04, 0.05, -0.12, 0.05, C.navy);
-  cover(0.0, 0.08, -0.32, 0.048, C.grey, C.black);
+  cover(0.06, -0.02, -0.28, 0.085, C.white, C.navy);   // driver
+  cover(-0.06, 0.02, -0.14, 0.074, C.navy);            // 3 wood
+  cover(0.0, 0.07, -0.36, 0.07, C.white, C.navy);      // 5 wood
   for (let i = 0; i < 8; i++) {
-    const a = -1.2 + (i / 7) * 2.4, r = 0.07, x = Math.sin(a) * r, z = -Math.cos(a) * r * 0.7;
+    const a = -1.2 + (i / 7) * 2.4, r = 0.09, x = Math.sin(a) * r, z = -Math.cos(a) * r * 0.7;
     const g = new THREE.CylinderGeometry(0.0105, 0.0095, 0.16, 7); g.translate(0, 0.08, 0);
     g.rotateX(-0.18 - 0.1 * Math.cos(i * 1.7)); g.rotateZ(0.12 * Math.sin(i * 2.3)); g.translate(x, H - 0.01 + 0.012 * (i % 3), z);
     parts.push(colored(g, C.grip));
@@ -115,7 +119,7 @@ export function createStandBag(): THREE.Mesh {
   // ── the stand: two thin black legs hinged high at the back, splayed in a V to the ground ──
   const hinge = new THREE.Vector3(0, 0.7, section(0.7).rz + 0.01).applyMatrix4(tilt).add(new THREE.Vector3(0, -minY, 0));
   for (const sx of [-1, 1]) {
-    const from = hinge.clone().add(new THREE.Vector3(sx * 0.03, 0, 0)), to = new THREE.Vector3(sx * 0.24, 0.0, hinge.z + 0.4);
+    const from = hinge.clone().add(new THREE.Vector3(sx * 0.03, 0, 0)), to = new THREE.Vector3(sx * 0.28, 0.0, hinge.z + 0.36);
     const len = from.distanceTo(to), g = new THREE.CylinderGeometry(0.0065, 0.0065, len, 6);
     g.translate(0, len / 2, 0);
     g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize()));
@@ -130,5 +134,14 @@ export function createStandBag(): THREE.Mesh {
   const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, sheen: 0.6, sheenRoughness: 0.7, sheenColor: new THREE.Color('#ffffff') });
   const m = new THREE.Mesh(merged, mat);
   m.castShadow = true; m.receiveShadow = true; m.name = 'stand-bag';
+  // a soft contact shadow under the base and the two feet (the sun's shadow map may not reach this far)
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+  const g = cv.getContext('2d')!, gr = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(0,0,0,0.7)'); gr.addColorStop(0.6, 'rgba(0,0,0,0.3)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), color: '#0b1606', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  merged.computeBoundingBox(); const bb = merged.boundingBox!;
+  blob.scale.set((bb.max.x - bb.min.x) * 1.5, 1, (bb.max.z - bb.min.z) * 1.25); blob.position.set((bb.max.x + bb.min.x) / 2, 0.004, (bb.max.z + bb.min.z) / 2); blob.renderOrder = 2;
+  m.add(blob);
   return m;
 }
