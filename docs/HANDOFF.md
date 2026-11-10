@@ -184,3 +184,9 @@ The container restarted and stopped all agents mid-round; their committed work i
   - It has its own expression and animation state: idle blinks, glances at the player, reactions (grin, grimace, brows), and talking (visemes and `say()`) synced to the speech bubble. The golfer in the world doesn't need to do any of that.
   - Share geometry and textures with the main head; only the morph and expression state differs.
   - Keep it cheap: render about every other frame into a 192 px target, and pause when idle and static.
+
+## Backlog (owner asked; don't start until the current golfer is solid)
+**More characters:** package the pipeline as a `new-character` skill/script:
+- **Inputs:** photos, height and weight, handedness, outfit choices.
+- **What it does:** writes the profile JSON, runs build.py and head.py (Hugging Face shape generation needs a token for volume, with a MakeHuman-fit fallback), fits the headwear, and renders a check sheet.
+- **Also:** a gear and clothing library with swappable colours and logos; per-player swing personality (tempo, backswing length, finish, waggle, optionally traced from a friend's video); a player picker on the intro screen; a per-player badge face and voice lines.
