@@ -95,6 +95,8 @@ export const SHOT_STYLE: Record<ShotMode, { back: number; finish: number; stance
 export const PHI_TOP = 2.6;     // hands angle at the top of a full swing
 export const PHI_FINISH = -3.2; // hands angle at a full finish
 const ROLL_TOP = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('roll') ?? 1.2 : 1.2); const ROLL_SIGN = -1; // forearm rotation (radians of club roll at the top)
+const ADDRESS_TOE_UP = { driver: +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('toeup') ?? 10 : 10), wood: 6, hybrid: 3 };
+const HA_DRV = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('ha') ?? 0.06 : 0.06);
 const LEAN = 0.075;             // shaft lean at impact, radians (hands ~6 cm ahead of the ball)
 
 export class Golfer {
@@ -160,7 +162,11 @@ export class Golfer {
     const spec = CLUB_SPECS[index];
     if (this.club) { this.char.remove(this.club.group); this.club.group.traverse(o => (o as THREE.Mesh).geometry?.dispose?.()); }
     const extra = Math.max(0, Math.round((this.profile.heightM - 1.8) / 0.1)) * 0.5 * IN; // fitted: +0.5" per 10 cm over 1.80 m (+0.5" at 6'3")
-    this.club = buildClub(spec, extra, this.body.materials.glove, this.body.materials.skin);
+    // the long clubs sit a little toe-up at address (the hands hang lower than the spec lie, as a tour player's do with
+    // a driver; DTL shaft angle ~47°): flatter by 10° for the driver, 6° for the woods, 3° for the hybrids. Our rig's arms
+    // are short for his height, so without it the driver's hands sit too high for a straight lead arm
+    const toeUp = (ADDRESS_TOE_UP as Record<string, number>)[spec.kind] ?? 0;
+    this.club = buildClub(toeUp ? { ...spec, lie: spec.lie - toeUp } : spec, extra, this.body.materials.glove, this.body.materials.skin);
     this.char.add(this.club.group);
     this.setupAddress();
   }
@@ -182,7 +188,7 @@ export class Golfer {
     const L = this.club.length;
     const ahead = spec.kind === 'driver' ? 0.215 : spec.kind === 'wood' ? 0.13 : Math.max(0, Math.min(0.07, (L - 0.9) * 0.6));
     this.stanceX = -ahead * k;
-    this.sideAdj = spec.kind === 'driver' ? 0.05 : spec.kind === 'wood' ? 0.03 : 0;
+    this.sideAdj = spec.kind === 'driver' ? 0.1 : spec.kind === 'wood' ? 0.06 : 0;
     // set-up like a tour player: arms hang (shoulder sockets roughly above the hands), relaxed and nearly
     // straight. Find the distance from the ball that puts the lead shoulder over the hands, then bend more or
     // less from the hips until the lead arm is ~98% extended.
@@ -191,7 +197,7 @@ export class Golfer {
     const wristAddr = this.extras ? this.clubAt.clone().add(this.gripFrame('L', this.club.gripLead).wrist) : this.gripAddr.clone();
     // how far the hands hang ahead of the shoulder: more with the longer clubs (toes ~49 cm from the ball with a wedge,
     // ~53 with a 7 iron, ~68 with the driver)
-    const handsAhead = (0.03 + 0.03 * Math.min(1, Math.max(0, (this.club.length - 0.9) / 0.1))) * k;
+    const handsAhead = (0.03 + 0.03 * Math.min(1, Math.max(0, (this.club.length - 0.9) / 0.1)) + (spec.kind === 'driver' ? HA_DRV : spec.kind === 'wood' ? HA_DRV * 0.6 : 0)) * k;
     const solveZ = () => {
       let lo = -1.2, hi = -0.1;
       for (let it = 0; it < 20; it++) {
@@ -251,9 +257,10 @@ export class Golfer {
       this.hands = buildHands(this.club, towardL, towardR, this.body.materials.glove, this.body.materials.skin);
     }
     this.club.group.add(this.hands.group);
-    this.headAnchor = null;
+    this.headAnchor = null; this.legAddr = { L: 9, R: 9 };
     this.update({ phase: 'address', phi: 0, topPhi: PHI_TOP, idleT: 0 });
     this.headAnchor = this.headCentre();
+    { const m = this.legMiss(this.pose); this.legAddr = { L: m.L + 1e-3, R: m.R + 1e-3 }; }
   }
 
   /** one hand's frame on the grip, in club space: its long axis, palm normal and wrist position */
@@ -288,11 +295,13 @@ export class Golfer {
     void k;
   }
 
+  /** half the stance width (ankle joints) for this club and shot */
+  private halfStance() { return 0.5 * (0.36 + 0.667 * Math.max(0, this.club.length - 0.9)) * this.k * SHOT_STYLE[this.mode].stance; }
   private feet(p: BodyPose, heel: number, shift: number, hipTurn = 0) {
     p.footUpL = undefined;
     const k = this.k, st = SHOT_STYLE[this.mode];
     // stance (ankle joints): ~36 cm with a wedge, ~42 cm with a 7 iron, ~54 cm with the driver
-    const half = 0.5 * (0.36 + 0.667 * Math.max(0, this.club.length - 0.9)) * k * st.stance;
+    const half = this.halfStance();
     // ankles just ahead of the hip joints (tour set-up from behind: knees over the balls of the feet, not a squat)
     const fz = this.pelvisBase.z + 0.04 * k;
     // lead foot flared ~29° toward the target for balance (and kept), trail foot square
@@ -379,7 +388,9 @@ export class Golfer {
 
     p.hipTurn = key.hipTurn + st.open; p.hipTilt = key.hipTilt; p.hipSide = key.hipSide;
     p.chestTurn = key.chestTurn + st.open * 0.5; p.chestTilt = key.chestTilt + breathe + this.tiltAdj * (s.phase === 'follow' ? 1 - smooth(0.25, 0.9, -phi / Math.abs(PHI_FINISH)) : 1); p.chestSide = key.chestSide + this.sideAdj * (s.phase === 'follow' ? 1 - smooth(0.1, 0.6, -phi / Math.abs(PHI_FINISH)) : 1);
-    p.pelvis.copy(this.pelvisBase); p.pelvis.x += key.shift * k; p.pelvis.y -= key.drop * k;
+    p.pelvis.copy(this.pelvisBase); p.pelvis.x += key.shift * k;
+    // a wider stance (driver) needs a longer slide to get the hips, and the head, over the lead foot by the finish
+    p.pelvis.x += Math.max(0, key.shift) / HOLD.shift * (this.halfStance() - 0.197 * k); p.pelvis.y -= key.drop * k;
     // clavicles: within anatomical limits (±0.11 rad keeps the shoulder joint within 2 cm of its rest place)
     const clav = (v: number) => Math.max(-0.1, Math.min(0.1, v));
     p.shrugL = clav(key.shrug); p.shrugR = clav(-key.shrug * 0.5 + key.pro);
@@ -388,6 +399,7 @@ export class Golfer {
     // takes up the hips' turn and slide with a little more or less side bend and forward bend. Faded out after
     // impact so the head rises into the finish.
     const headW = s.phase === 'back' || s.phase === 'down' ? 1 : s.phase === 'follow' ? 1 - smooth(0.04, 0.3, -phi / Math.abs(PHI_FINISH)) : 0;
+    this.legReach(p);
     if (headW > 0.001 && this.headAnchor) {
       // a pro's head isn't frozen: it settles ~1.5 cm back and ~2 cm down into the delivery (still inside the
       // owner's 4 cm / 2.5 cm), then back up to impact
@@ -449,7 +461,7 @@ export class Golfer {
       const shR = this.rig.P[BONE.upperR];
       p.poleR.lerp(shR.clone().add(new THREE.Vector3(-0.12, -0.5, -0.35)), smooth(0.15, 0.85, u));
     }
-    if (s.phase === 'down') p.poleR.lerp(this.pelvisBase.clone().add(new THREE.Vector3(0.0, -1.2, 0.15)), smooth(0.2, 0.6, 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi)));
+    if (s.phase === 'down') p.poleR.lerp(this.pelvisBase.clone().add(new THREE.Vector3(0.0, -1.4, 0.05)), smooth(0.2, 0.6, 1 - Math.max(0, phi) / Math.max(0.01, s.topPhi)));
     // elbows that let the wrists stay natural: aim each elbow at the point the forearm would come from if it
     // continued the hand's line on the grip (the hand's direction is fixed by the grip), so the wrist bends only a
     // little. Mostly for the trail arm, half for the lead; the follow-through sets its own elbows below.
@@ -473,7 +485,7 @@ export class Golfer {
       // the triangle: the lead arm stays straight through the backswing and downswing; hold the lead wrist at full
       // arm's length from the lead shoulder (in the direction the swing put it) and carry the club with it. Fades out at
       // address and impact, where the set-up already has the arm straight and the club must stay on the ball.
-      const wF = s.phase === 'back' ? smooth(0, 0.12, phi / PHI_TOP) : smooth(0, 0.25, Math.max(0, phi) / Math.max(0.01, s.topPhi));
+      const wF = s.phase === 'back' ? smooth(0, 0.04, phi / PHI_TOP) : smooth(0, 0.25, Math.max(0, phi) / Math.max(0.01, s.topPhi));
       if (wF > 0.001) {
         const sh = this.rig.P[BONE.upperL], len = (this.rig.len.upper + this.rig.len.fore) * 0.995;
         // the lead arm raised toward vertical by the keyed lift (the hands above the trail shoulder at the top, traced)
@@ -591,6 +603,19 @@ export class Golfer {
    *  depend on where the eyes look */
   headCentre(out = new THREE.Vector3()) { return out.set(0, 0.18, 0).applyQuaternion(this.rig.Q[BONE.chest]).add(this.rig.P[BONE.neck]); }
   private headAnchor: THREE.Vector3 | null = null;
+  /** both feet stay on the ground: if a leg can't reach its ankle target (wide driver stance, hips slid and turned in
+   *  the finish), lower the pelvis until it can, so the trail foot pivots on the ball of the foot instead of lifting */
+  private legAddr = { L: 0, R: 0 };
+  /** how far each foot joint ends up from its target after rig.apply (the leg IK clamps when a leg can't reach) */
+  private legMiss(p: BodyPose) { return { L: this.rig.P[BONE.footL].distanceTo(p.ankleL), R: this.rig.P[BONE.footR].distanceTo(p.ankleR) }; }
+  private legReach(p: BodyPose) {
+    for (let it = 0; it < 4; it++) {
+      this.rig.apply(p);
+      const m = this.legMiss(p), need = Math.max(m.L - this.legAddr.L, m.R - this.legAddr.R);
+      if (need < 5e-4) break;
+      p.pelvis.y -= need * 1.1;
+    }
+  }
   /** two Newton steps on (chest side bend, chest forward bend) that put the head centre back over its address spot */
   private steadyHead(p: BodyPose, w: number, offX = 0, offY = 0) {
     const H = new THREE.Vector3(), at = () => { this.rig.apply(p); return this.headCentre(H).clone(); };
