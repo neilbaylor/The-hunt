@@ -400,12 +400,23 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const sp = sm.geometry.getAttribute('position') as THREE.BufferAttribute, sn = sm.geometry.getAttribute('normal') as THREE.BufferAttribute;
     const cand: number[] = [];
     for (let i = 0; i < sp.count; i++) if (keep(sp.getX(i), sp.getY(i), sp.getZ(i))) cand.push(i);
+    // a 2 cm grid over the candidates, so the many lookups (laying the collar on the shirt) stay cheap
+    const H = 0.02, cell = new Map<number, number[]>(), ck = (x: number, y: number, z: number) => ((x + 512) * 1024 + y + 512) * 1024 + z + 512;
+    for (const i of cand) { const k = ck(Math.floor(sp.getX(i) / H), Math.floor(sp.getY(i) / H), Math.floor(sp.getZ(i) / H)); const l = cell.get(k); if (l) l.push(i); else cell.set(k, [i]); }
     const nearest6 = (p: THREE.Vector3) => {
       const best: [number, number][] = [];
-      for (const i of cand) {
+      const consider = (i: number) => {
         const d = (sp.getX(i) - p.x) ** 2 + (sp.getY(i) - p.y) ** 2 + (sp.getZ(i) - p.z) ** 2;
         if (best.length < 6 || d < best[5][0]) { best.push([d, i]); best.sort((x, y) => x[0] - y[0]); if (best.length > 6) best.pop(); }
+      };
+      const cx = Math.floor(p.x / H), cy = Math.floor(p.y / H), cz = Math.floor(p.z / H);
+      // grow the search box until it holds six points that are certainly the nearest (closer than the box's walls)
+      for (let r = 1; r <= 4; r++) {
+        best.length = 0;
+        for (let x = cx - r; x <= cx + r; x++) for (let y = cy - r; y <= cy + r; y++) for (let z = cz - r; z <= cz + r; z++) { const l = cell.get(ck(x, y, z)); if (l) for (const i of l) consider(i); }
+        if (best.length === 6 && best[5][0] <= (r * H) ** 2) return best;
       }
+      best.length = 0; for (const i of cand) consider(i);
       return best;
     };
     const ssi = sm.geometry.getAttribute('skinIndex') as THREE.BufferAttribute, ssw = sm.geometry.getAttribute('skinWeight') as THREE.BufferAttribute;
@@ -538,7 +549,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const gapAt = (i: number, k: number) => { const u = k / NL; return 0.0024 + 0.0012 * u * u * u + 0.0016 * EW[i] * u * u; };   // the edges, and most the points, lift a hair
     for (let pass = 0; pass < 3; pass++) {
       for (let i = 0; i <= COLS; i++) for (let k = 1; k <= NL; k++) {
-        skinLift(L[i][k], k < NL / 2 ? 0.008 : 0.005);
+        if (k < NL / 2) skinLift(L[i][k], 0.008);
         if (k >= 0.3 * NL) shirtLift(L[i][k], gapAt(i, k));
       }
       if (pass === 2) break;
@@ -574,15 +585,19 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const pos: number[] = [], uv: number[] = [], idx: number[] = [];
     for (let i = 0; i <= COLS; i++) for (let r = 0; r < ROWS; r++) { const v = sec[i][r]; pos.push(v.x, v.y, v.z); uv.push(i / COLS, vs[r]); }
     for (let i = 0; i < COLS; i++) for (let r = 0; r < ROWS - 1; r++) { const a = i * ROWS + r, b = a + ROWS; idx.push(a, b, a + 1, a + 1, b, b + 1); }
-    // end caps: close the cross-section at the two front ends (the points' front edges show their thickness)
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    // end caps: close the cross-section at the two front ends (the points' front edges show their thickness);
+    // their own vertices, so their normals don't bend the leaf's
+    const capP: number[] = [], capU: number[] = [], capI: number[] = [];
     for (const i of [0, COLS]) {
       const loop = sec[i], o0 = loop[0], ex = loop[NS + NF - 1 + NL].clone().sub(o0).normalize(), ey = loop[NS - 1].clone().sub(o0);
       ey.addScaledVector(ex, -ey.dot(ex)).normalize();
       const tri = THREE.ShapeUtils.triangulateShape(loop.map(v => new THREE.Vector2(v.clone().sub(o0).dot(ex), v.clone().sub(o0).dot(ey))), []);
-      const base = i * ROWS;
-      for (const [x, y, z] of tri) idx.push(base + x, base + y, base + z);
+      const base = capP.length / 3;
+      loop.forEach((v, r) => { capP.push(v.x, v.y, v.z); capU.push(0.5, vs[r]); });
+      for (const [x, y, z] of tri) capI.push(base + x, base + y, base + z);
     }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    const capG = new THREE.BufferGeometry(); capG.setAttribute('position', new THREE.Float32BufferAttribute(capP, 3)); capG.setAttribute('uv', new THREE.Float32BufferAttribute(capU, 2)); capG.setIndex(capI); capG.computeVertexNormals();
     // the collar's colour down the cross-section, painted (not lit): a dark neck opening at the stand's foot, the
     // inside of the stand in its own shade, the roll and the outer edge a touch lighter, a dark underside
     const shirtC = new THREE.Color(O.shirt);
@@ -597,7 +612,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const collarTex = ramp([[0, 0.22], [0.05, 0.62], [0.16, 0.86], [0.2, 1.0], [0.235, 1.1], [0.27, 1.0], [0.72, 1.0], [0.8, 1.12], [0.835, 0.9], [0.86, 0.5], [1, 0.42]], 512);
     collarTex.wrapS = collarTex.wrapT = THREE.ClampToEdgeWrapping; collarTex.repeat.set(1, 1);
     const collarMat = new THREE.MeshPhysicalMaterial({ map: collarTex, roughness: 0.9, sheen: 0.2, sheenColor: new THREE.Color('#ffffff').lerp(shirtC, 0.6), sheenRoughness: 0.6, side: THREE.DoubleSide });
-    const bits: THREE.Mesh[] = [new THREE.Mesh(g, collarMat)];   // collar, its shadow line, placket and buttons: baked into one mesh below
+    const bits: THREE.Mesh[] = [new THREE.Mesh(g, collarMat), new THREE.Mesh(capG, collarMat)];   // collar, its shadow line, placket and buttons: baked into one mesh below
     // the shadow line: a thin skirt from under every free edge down onto the shirt, dark at the edge fading out
     {
       const sp: number[] = [], su: number[] = [], si: number[] = [];
