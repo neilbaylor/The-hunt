@@ -49,7 +49,10 @@ if __name__ == '__main__':
     for f in range(n):
         if f in obsP and obsP[f][0] == 'H': D.append(unit(obsP[f][1])); how.append('face-on (head seen)')
         elif f in obsP:   # direction only: keep the in-image direction, take the depth share from the interpolation
-            _, v2, R = obsP[f]; g = R.T @ interp(f); z = np.clip(g[2], -0.97, 0.97); c = np.sqrt(1 - z * z)
+            _, v2, R = obsP[f]; g = R.T @ interp(f); z = np.clip(g[2], -0.97, 0.97)
+            hint = AN[prim]['obs'][str(f)][5]
+            if hint: z = float(hint)                     # labelled out-of-image share (camera frame, + = away)
+            c = np.sqrt(1 - z * z)
             D.append(unit(R @ np.array([v2[0] * c, v2[1] * c, z]))); how.append('face-on direction + depth interpolated')
         else: D.append(unit(interp(f))); how.append('interpolated' if f not in src else src[f])
     D = np.array(D)
