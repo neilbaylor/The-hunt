@@ -463,24 +463,30 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     // (and the generated head's own neck, which comes down over it to the shirt)
     const bodyKeep = (x: number, y: number, z: number) => y > loY + 0.08 && y < hiY + 0.04 && Math.hypot(x - c.x, z - c.z) < 0.17, bodyIn = (q: THREE.Vector3) => new V3(c.x, q.y - 0.04, c.z);
     const skinNear = surfaceOf(skin, bodyKeep, bodyIn).near, genNear = gen ? surfaceOf(gen.mesh as THREE.SkinnedMesh, bodyKeep, bodyIn).near : null;
-    // the neckline as a smooth closed curve: a low-order Fourier fit of radius and height against angle round the neck
+    // the neckline as a smooth closed curve: radius and height against angle round the neck
     const sam = ring0.map(q => ({ a: Math.atan2(q.x - c.x, q.z - c.z), r: Math.hypot(q.x - c.x, q.z - c.z), y: q.y })).sort((x, y) => x.a - y.a);
     // the shirt's neckline has a small notch at the centre back (a dip of ~3 cm over 2 cm): the collar's line
-    // ignores it (fitted to the ring without it), only the stand's hidden foot reaches down into it
-    const notch = sam.filter((o, i) => { const nb = [-2, -1, 1, 2].map(d => sam[(i + d + sam.length) % sam.length].y); return o.y < Math.max(...nb) - 0.01; });
-    const fitSam = sam.filter(o => !notch.includes(o));
-    const fit = (key: 'r' | 'y', NH = 3) => {
-      const co: [number, number][] = [];
-      for (let k = 0; k <= NH; k++) {
-        let ca = 0, sa = 0;
-        fitSam.forEach((o, i) => { const a0 = fitSam[(i - 1 + fitSam.length) % fitSam.length].a, a1 = fitSam[(i + 1) % fitSam.length].a; const da = (((a1 - a0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / 2; ca += o[key] * Math.cos(k * o.a) * da; sa += o[key] * Math.sin(k * o.a) * da; });
-        co.push([ca / (k ? Math.PI : 2 * Math.PI), sa / Math.PI]);
+    // ignores it (fitted to the ring without it); the leaf covers it, laid clear of the body there
+    const notch = sam.filter((o, i) => { const nb = [-3, 3].map(d => sam[(i + d + sam.length) % sam.length].y); return o.y < Math.min(...nb) - 0.01; });
+    const fitSam = sam.map((o, i) => {
+      if (!notch.includes(o)) return o;
+      const side = (d: number) => { let j = i; do j = (j + d + sam.length) % sam.length; while (notch.includes(sam[j])); return sam[j]; };
+      return { ...o, y: (side(-1).y + side(1).y) / 2 };
+    });
+    // resampled at even angles round the neck and blurred a few degrees, read back by interpolation
+    const fit = (key: 'r' | 'y') => {
+      const NT = 180, tab = new Float64Array(NT), at = (t: number) => -Math.PI + (t / NT) * 2 * Math.PI;
+      for (let t = 0; t < NT; t++) {
+        const a = at(t); let j = fitSam.findIndex(o => o.a > a); if (j < 0) j = 0;
+        const o1 = fitSam[j], o0 = fitSam[(j - 1 + fitSam.length) % fitSam.length];
+        const span = (((o1.a - o0.a) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) || 1, f = ((((a - o0.a) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) / span;
+        tab[t] = o0[key] + (o1[key] - o0[key]) * Math.min(1, Math.max(0, f));
       }
-      return (a: number) => co.reduce((s, [ca, sa], k) => s + ca * Math.cos(k * a) + (k ? sa * Math.sin(k * a) : 0), 0);
+      for (let pass = 0; pass < 12; pass++) { const t0 = tab.slice(); for (let t = 0; t < NT; t++) tab[t] = 0.5 * t0[t] + 0.25 * (t0[(t + NT - 1) % NT] + t0[(t + 1) % NT]); }
+      return (a: number) => { const x = (((a + Math.PI) / (2 * Math.PI)) % 1 + 1) % 1 * NT, i = Math.floor(x) % NT, f = x - Math.floor(x); return tab[i] + (tab[(i + 1) % NT] - tab[i]) * f; };
     };
     const R = fit('r'), Y = fit('y');
     const neck = (a: number, dr = 0, dy = 0) => new V3(c.x + Math.sin(a) * (R(a) + dr), Y(a) + dy, c.z + Math.cos(a) * (R(a) + dr));
-    const notchDy = (a: number) => notch.reduce((m, o) => { const da = Math.abs((((a - o.a) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI); return Math.min(m, da < 0.12 ? o.y - Y(o.a) - 0.004 : 0); }, 0);
     const radial = (a: number) => new V3(Math.sin(a), 0, Math.cos(a));
     const offSurf = (nr: typeof near) => (v: THREE.Vector3, gap: number) => { const { q, n } = nr(v); const d = v.clone().sub(q).dot(n); if (d < gap) v.addScaledVector(n, gap - d); return v; };
     const shirtLift = offSurf(near), skinOnly = offSurf(skinNear), genLift = genNear ? offSurf(genNear) : null;
@@ -505,7 +511,7 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       // stand: 3 cm at the back, a little lower round the front of the neck, down to ~8 mm where the ends meet
       const sh = 0.03 - 0.005 * fr - 0.017 * Math.pow(endw, 1.4);
       A.push(a); EW.push(endw); SH.push(sh);
-      S.push(neck(a, -0.0015, Math.min(-0.006, notchDy(a))));        // the foot of the stand, tucked into the neckline
+      S.push(neck(a, -0.0015, -0.006));                              // the foot of the stand, tucked into the neckline
       // the top of the stand: hugging the neck 4.5 mm clear of it (the neck narrows above the shirt's opening)
       const G = neck(a, -0.002, sh), { q, n } = skinNear(G), H = q.addScaledVector(n, 0.0045);
       const hug = 1 - endw * endw;
@@ -576,7 +582,6 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
     const gapAt = (i: number, k: number) => { const u = k / NL; return 0.0024 + 0.0012 * u * u * u + 0.0016 * EW[i] * u * u; };   // the edges, and most the points, lift a hair
     for (let pass = 0; pass < 3; pass++) {
       for (let i = 0; i <= COLS; i++) for (let k = 1; k <= NL; k++) {
-        if (k < NL / 2) skinLift(L[i][k], 0.008);
         clearStand(i, L[i][k]);
         if (k >= 0.3 * NL) shirtLift(L[i][k], gapAt(i, k));
       }
@@ -584,6 +589,15 @@ export function buildHumanBody(data: HumanData, p: GolferProfile): Body & { extr
       const l0 = L.map(cl => cl.map(v => v.clone()));
       for (let i = 1; i < COLS; i++) for (let k = 1; k <= NL; k++) L[i][k].copy(l0[i][k]).multiplyScalar(0.5).addScaledVector(l0[i - 1][k], 0.25).addScaledVector(l0[i + 1][k], 0.25);
       for (let i = 0; i <= COLS; i++) for (let k = 2; k < NL; k++) L[i][k].lerp(l0[i][k - 1].clone().add(l0[i][k + 1]).multiplyScalar(0.5), 0.3);
+    }
+    // keep the leaf clear of the neck and the body (round the back the neck's base shows through the shirt's notch)
+    // in a smooth swell (the push each row needs, widened and blurred along the collar), so it doesn't take the body's lumps
+    for (let k = 1; k <= NL; k++) {
+      const up = k < NL / 2, dir = L.map((cl, i) => (up ? OU[i] : near(cl[k]).n));
+      let push = L.map((cl, i) => Math.max(0, skinLift(cl[k].clone(), up ? 0.008 : 0.0045).sub(cl[k]).dot(dir[i])));
+      const W = 6; push = push.map((_, i) => Math.max(...push.slice(Math.max(0, i - W), i + W + 1)));
+      for (let pass = 0; pass < 30; pass++) push = push.map((v, i) => (i && i < COLS ? 0.5 * v + 0.25 * (push[i - 1] + push[i + 1]) : v));
+      L.forEach((cl, i) => cl[k].addScaledVector(dir[i], push[i]));
     }
     // the leaf's normals (out of the body), for its thickness
     const LN = L.map((cl, i) => cl.map((v, k) => {
