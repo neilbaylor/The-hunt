@@ -619,3 +619,18 @@ body.aiming .wind-chip { transform: scale(1.35) translateY(-60%); transform-orig
 @keyframes sheetUp { from { transform: translate(-50%, 24px); opacity: 0; } to { transform: translateX(-50%); opacity: 1; } }
 .hud .tl .row:empty, .hud .tl .row:has(#modeSlot:empty) { display: none; }
 @media (prefers-reduced-motion: reduce) { .hud .club-sheet { animation: none; } }
+
+/* thumb-sized strike ball and club chip, mirrored either side of the stick at its vertical centre (≥ 88 px targets) */
+.hud.skin-f .strike-btn { left: -93px; bottom: 70px; width: 88px; gap: 4px; }
+.hud.skin-f .strike-btn canvas { width: 80px; height: 80px; }
+.hud.skin-f .strike-btn .dot { top: calc(40px + var(--sy, 0) * 30px - 9px); left: calc(44px + var(--sx, 0) * 30px - 9px); width: 18px; height: 18px; border-width: 3px; }
+.hud.skin-f .strike-btn span { font-size: 11px; padding: 3px 9px; }
+.hud .club-dock { right: -93px; bottom: 76px; }
+.hud.skin-f .club-dock .club-btn { width: 88px; height: 88px; border-radius: 28px; row-gap: 5px; }
+.hud.skin-f .club-dock .club-btn .big { width: 54px; height: 54px; font-size: 24px; }
+.hud.skin-f .club-dock .club-btn .big.sm { font-size: 20px; }
+.hud.skin-f .club-dock .club-btn .cap { font-size: 12px; max-width: 84px; }
+.hud.skin-f .club-dock .club-btn .cap em { font-size: 10px; }
+.hud .strike-btn::before, .hud .club-dock .club-btn::before { content: ""; position: absolute; inset: -6px; }
+.hud .club-dock .club-btn { position: relative; }
+.hud.skin-f .strike-btn:active, .hud.skin-f .club-dock .club-btn:active { transform: scale(.9); transition: transform .08s; }

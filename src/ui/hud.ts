@@ -365,6 +365,7 @@ export class Hud {
     this.el.addEventListener('click', e => this.click(e));
     this.el.addEventListener('keydown', e => { const t = e.target as HTMLElement; if ((e.key === 'Enter' || e.key === ' ') && t.matches('.card.simple')) { e.preventDefault(); t.click(); } });
     this.initStrike();
+    this.el.addEventListener('pointerdown', e => { if ((e.target as HTMLElement).closest('.strike-btn, .club-dock .club-btn')) buzz(8); });
     this.spinCv.addEventListener('pointerdown', e => { if (!this.spinOn) return; this.spinCv.setPointerCapture(e.pointerId); this.spinDrag = [e.clientX, e.clientY]; e.preventDefault(); this.q('#spin').classList.add('grab', 'used'); try { navigator.vibrate?.(8); } catch { /* not allowed */ } });
     this.spinCv.addEventListener('pointermove', e => {
       if (!this.spinDrag || !this.spinOn) return;
