@@ -101,7 +101,8 @@ const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search
 // held-finish targets in the chest's frame (URL-tunable on golfer.html: fg = hands from the neck, fs = shaft back/down
 // added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
 const ARM_SCALE = +(_fq?.get('arm') ?? 1.08);
-const SIDE_ADJ = _fv('sa', [-0.16, 0.16]);
+const LEAN_K = _fv('lk', [0.35, 1.3]);
+const SIDE_ADJ = _fv('sa', [-0.16, 0.1]);
 const FIN = { g: _fv('fg', [0.15, 0.22, -0.17]), s: _fv('fs', [0.8, 0.6]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };
 const GRIP_DOWN = _fv('gd', [0.03, 0.85]);
 const TRAIL_W = +(_fq?.get('tw') ?? 0);
@@ -457,11 +458,14 @@ export class Golfer {
     g.position.copy(hands).sub(this.club.gripLead.clone().applyQuaternion(qc));
     // shaft lean: around address and impact the hands sit ahead of the club head (toward the target).
     // Rotate the club about its head (the club's origin), so the head stays put and the grip moves forward.
+    // By club: irons and wedges lean forward (hands ahead of the ball, more at impact); the driver's hands sit behind the
+    // teed ball at address (inside the lead thigh, shaft leaning back a little) and about level with it at impact.
+    const ltc = clubLengthT(this.club.spec), aLean = LEAN_K[0] - LEAN_K[1] * ltc * ltc, iLean = 1 - 0.85 * ltc * ltc;
     let leanW = 0;
-    if (s.phase === 'address') leanW = 0.35;
-    else if (s.phase === 'down') leanW = 1 - smooth(0, 0.45, Math.max(0, phi) / Math.max(0.01, s.topPhi));
-    else if (s.phase === 'follow') leanW = 1 - smooth(0, 0.14, -phi / Math.abs(PHI_FINISH));
-    else if (s.phase === 'back') leanW = 0.35 * (1 - smooth(0, 0.3, phi / PHI_TOP));
+    if (s.phase === 'address') leanW = aLean;
+    else if (s.phase === 'down') leanW = iLean * (1 - smooth(0, 0.45, Math.max(0, phi) / Math.max(0.01, s.topPhi)));
+    else if (s.phase === 'follow') leanW = iLean * (1 - smooth(0, 0.14, -phi / Math.abs(PHI_FINISH)));
+    else if (s.phase === 'back') leanW = aLean * (1 - smooth(0, 0.3, phi / PHI_TOP));
     // forearm rotation: the club (and the hands on it) rolls about its own shaft: open in the takeaway (toe up halfway
     // back, the palms on the swing plane at the top), square again at impact, rolled over through the release
     let roll = 0;
@@ -478,8 +482,7 @@ export class Golfer {
       qc.premultiply(qr);
       g.position.sub(wL0).applyQuaternion(qr).add(wL0);
     }
-    if (this.club.spec.kind === 'driver') leanW *= 0.15; else if (this.club.spec.kind === 'wood') leanW *= 0.5;
-    if (leanW > 0) qc.premultiply(new THREE.Quaternion().setFromAxisAngle(this.axis, LEAN * leanW * this.leanSign));
+    if (leanW) qc.premultiply(new THREE.Quaternion().setFromAxisAngle(this.axis, LEAN * leanW * this.leanSign));
     g.quaternion.copy(qc);
     // arms: lead wrist first; if it can't reach, move the club with the hand
     const wl = this.hands.wristLead.clone().applyQuaternion(qc).add(g.position);
@@ -646,11 +649,11 @@ export class Golfer {
         err(hi);
       }
     }
-    // (the trail shoulder blade reaches first: its joint slides up to 7 cm toward the grip)
+    // (the trail shoulder blade reaches first: its joint slides up to 4.5 cm toward the grip)
     for (let pass = 0; pass < 3; pass++) {
       const need = p.wristR.clone().sub(this.rig.wristPos.R);
       if (need.lengthSq() < 1e-7) break;
-      p.shoulderR!.add(need.multiplyScalar(1.05)).clampLength(0, 0.07);
+      p.shoulderR!.add(need.multiplyScalar(1.05)).clampLength(0, 0.045);
       this.rig.apply(p);
     }
     for (let pass = 0; pass < 4; pass++) {
