@@ -96,7 +96,7 @@ export const SHOT_STYLE: Record<ShotMode, { back: number; finish: number; stance
 export const PHI_TOP = 2.6;     // hands angle at the top of a full swing
 export const PHI_FINISH = -3.2; // hands angle at a full finish
 const ROLL_TOP = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('roll') ?? 1.2 : 1.2); const ROLL_SIGN = -1; // forearm rotation (radians of club roll at the top)
-const ADDRESS_TOE_UP = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('toeup') ?? 10 : 10);   // degrees, driver
+const ADDRESS_TOE_UP = +(globalThis.location ? new URLSearchParams(globalThis.location.search).get('toeup') ?? 12 : 12);   // degrees, driver
 const _fq = globalThis.location ? new URLSearchParams(globalThis.location.search) : null, _fv = (n: string, d: number[]) => _fq?.get(n)?.split(',').map(Number) ?? d;
 // held-finish targets in the chest's frame (URL-tunable on golfer.html: fg = hands from the neck, fs = shaft back/down
 // added to the shoulder line, fpl/fpr = elbow poles). Traced against tools/refs/swing/rory_finish.jpg, right panel, mirrored.
@@ -104,7 +104,7 @@ const ARM_SCALE = +(_fq?.get('arm') ?? 1.08);
 const LEAN_K = _fv('lk', [0.35, 1.3]);
 // short clubs: weight a little on the lead side, the chest over the ball (pelvis this far toward the target with a wedge)
 const PEL_FWD = +(_fq?.get('pf') ?? 0.04);
-const HA_K = +(_fq?.get('hk') ?? 0.16);
+const HA_K = +(_fq?.get('hk') ?? 0.04);
 const MOCAP_PELVIS = new THREE.Vector3(...(_fv('mp', [0.55, 0.5, 1]) as [number, number, number]));
 const SIDE_ADJ = _fv('sa', [-0.2, 0.06]);
 const FIN = { g: _fv('fg', [0.15, 0.22, -0.17]), s: _fv('fs', [0.8, 0.6]), pl: _fv('fpl', [0.3, -0.7, 0.5]), pr: _fv('fpr', [-0.05, -0.4, 0.8]) };

@@ -172,8 +172,9 @@ export function buildClub(spec: ClubSpec, extraLength: number, gloveMat: THREE.M
     head = new THREE.Mesh(g, M.crown);
     // the face: a separate slightly lighter plate
     const face = new THREE.Mesh(new THREE.CircleGeometry(1, 32), M.face);
-    face.scale.set(0.022 * size, 0.05 * size, 1); face.rotation.y = Math.PI / 2; face.position.set(0.0005, 0.019 * size, 0.004 * size);
-    face.rotation.z = 0; face.rotateX(Math.PI / 2);
+    // a flat oval in the face plane (normal +x): wide toe-to-heel (z), short top-to-bottom (y). The old extra
+    // rotateX stood the plate on edge, so it stuck out of the head like a fin
+    face.scale.set(0.05 * size, 0.022 * size, 1); face.rotation.y = Math.PI / 2; face.position.set(0.0005, 0.019 * size, 0.004 * size);
     head.add(face);
     sweet = 0.019 * size + 0.002;
     hosel = new THREE.Vector3(-0.022 * size, 0.025 * size, -0.058 * size);

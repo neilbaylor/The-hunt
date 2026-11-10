@@ -311,7 +311,7 @@ function addressCam(out: THREE.Vector3, look: THREE.Vector3) {
   if (swingView === 'front') {
     // across the ball (the golfer's toe line) and ahead toward the target, low; aimed at his chest so the face, the
     // arms at the top and the finish all fit. Mirrors itself for a lefty through side.
-    if (portrait()) { out.set(-3.6 * side, 0.9, -1.15); look.set(0.25 * side, 1.02, 0.2); }
+    if (portrait()) { out.set(-3.7 * side, 0.85, -1.2); look.set(0.25 * side, 0.62, -0.1); }
     else { out.set(-3.1 * side, 1.0, -2.2); look.set(0.2 * side, 1.0, 0.1); }
   } else if (portrait()) {
     // phone held upright: from behind, down the line, with the golfer near the centre of the frame (camera between
@@ -759,7 +759,7 @@ function frame(now: number) {
   updateCamera(simDt, now);
   { const g = golfer.ballWorld(tmp); fill.target.position.set(g.x + (golfer.lefty ? 0.8 : -0.8), 1.1, g.z); fill.position.copy(camera.position).add(new THREE.Vector3(-1.5, 2.2, 0.5)); fill.intensity += ((state === 'intro' ? (INTRO === 'a' ? 0.8 : 2.4) : swingView === 'front' && camMode === 'address' ? 0.25 : 0.9) - fill.intensity) * Math.min(1, dt * 3); }
   // the sunlit side of him (intro A, the face-on swing cam) sits a touch lower in exposure so the cream visor and skin keep detail
-  const expK = state === 'intro' && INTRO === 'a' ? 0.84 : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.8 : 1;
+  const expK = state === 'intro' && INTRO === 'a' ? 0.84 : swingView === 'front' && camMode === 'address' && !aimCtl.active ? 0.72 : 1;
   post.setBloomScale(expK < 1 ? 0.2 : 1);
   introRim.visible = state === 'intro' && INTRO === 'a';
   fill.color.set(state === 'intro' && INTRO === 'a' ? '#ffd6a0' : '#fff3e6');   // warmer key on the close-up

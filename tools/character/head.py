@@ -772,6 +772,21 @@ if 'jawOpen' in morph_d:
             for v in dup_src:
                 d2[v] = morph_d[k_][ue[v]]; d2[newid[v]] = morph_d[k_][le[v]]
         morph_d[k_] = d2
+    # the mouth shapes, smoothed over the lips now that upper and lower are separate surfaces (the MakeHuman transfer is
+    # noisy at the seam, and each cut copy took one parent's delta): the open lip edges come out as smooth curves
+    _nb = [[] for _ in range(len(LV))]
+    for a_, b_, c_ in LF: _nb[a_] += [b_, c_]; _nb[b_] += [a_, c_]; _nb[c_] += [a_, b_]
+    _nb = [np.unique(n_) for n_ in _nb]
+    _rw = np.clip((half + 0.009 - np.abs(LV[:, 0] - mcx)) / 0.004, 0, 1) * np.clip((0.014 - np.abs(LV[:, 1] - seam_y_at(LV[:, 0]))) / 0.004, 0, 1) * (LV[:, 2] > zlip - 0.016)
+    _ri = np.nonzero(_rw > 0)[0]
+    for k_ in ('jawOpen', 'wide', 'pucker', 'grimace'):
+        if k_ not in morph_d: continue
+        D = morph_d[k_]
+        for _ in range(25):
+            avg = np.array([D[_nb[i]].mean(0) if len(_nb[i]) else D[i] for i in _ri])
+            D[_ri] += 0.6 * _rw[_ri, None] * (avg - D[_ri])
+        morph_d[k_] = D
+    print(f'  mouth shapes smoothed over {len(_ri)} lip verts')
     LIPIN = np.zeros(len(LV))
     # inner-lip strips: two rows back into the mouth from each lip edge (upper rises toward the gum, lower drops)
     chU = [int(cut[0])] + [int(v) for v in inner_v] + [int(cut[-1])]
